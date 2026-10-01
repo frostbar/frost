@@ -11,7 +11,8 @@ import Observation
 ///
 /// Decides and moves only when the layout is trustworthy and the user won't be disturbed: all permissions granted,
 /// collapsed, not editing, no move transaction, no mouse button held.
-/// Retries later when moving isn't convenient; a failed move is only logged (the icon is then marked as seen, no retries).
+/// Retries later when moving isn't convenient (checked again before each item of a batch); a failed move is only logged
+/// (the icon is then marked as seen, no retries).
 @MainActor
 final class NewItemPlacer {
     private let scanner: MenuBarItemScanner
@@ -130,7 +131,10 @@ final class NewItemPlacer {
         do {
             try await mover.transaction {
                 for item in items {
-                    if let reason = Self.stopReason(isShuttingDown: mover.isShuttingDown) {
+                    // Re-checked before every item: a batch takes about a second per item, and a ⌘-drag must never
+                    // start while the user holds a mouse button.
+                    if let reason = Self.stopReason(isShuttingDown: mover.isShuttingDown,
+                                                    isMouseButtonPressed: NSEvent.pressedMouseButtons != 0) {
                         FrostLog.newItems.notice("stopped placing new items (\(reason, privacy: .public)); the rest are retried later")
                         break
                     }
@@ -170,8 +174,10 @@ final class NewItemPlacer {
     }
 
     /// Why the rest of a batch must wait (nil = go on with the next item).
-    private static func stopReason(isShuttingDown: Bool) -> String? {
-        isShuttingDown ? "Frost is quitting" : nil
+    private static func stopReason(isShuttingDown: Bool, isMouseButtonPressed: Bool) -> String? {
+        if isShuttingDown { return "Frost is quitting" }
+        if isMouseButtonPressed { return "a mouse button is held" }
+        return nil
     }
 
     private func remember(_ identities: Set<ItemIdentity>, seeding: Bool) {
