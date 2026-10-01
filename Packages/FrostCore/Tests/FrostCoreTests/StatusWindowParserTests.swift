@@ -40,4 +40,10 @@ import CoreGraphics
         bad[kCGWindowBounds as String] = nil
         #expect(StatusWindowParser.parse([bad]).isEmpty)
     }
+
+    @Test func queryingNoWindowsReadsNothing() {
+        #expect(StatusWindowParser.windows(withIDs: [CGWindowID]()).isEmpty)
+        // Window ID 0 never exists.
+        #expect(StatusWindowParser.windows(withIDs: [CGWindowID(0)]).isEmpty)
+    }
 }

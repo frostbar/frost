@@ -334,7 +334,7 @@ public final class ItemImageCapturer {
         else { return ([:], []) }
         let ids = Set(targets.map(\.windowID))
         func currentFrames() -> [CGWindowID: CGRect] {
-            Dictionary(StatusWindowParser.currentWindows().filter { ids.contains($0.windowID) }
+            Dictionary(StatusWindowParser.windows(withIDs: ids)
                 .map { ($0.windowID, $0.frame) }, uniquingKeysWith: { a, _ in a })
         }
         let before = currentFrames()

@@ -1002,7 +1002,7 @@ final class FrostBarController {
         var previous: CGRect?
         var unchanged = 0
         while clock.now < deadline {
-            guard let window = StatusWindowParser.currentWindows().first(where: { $0.windowID == id })
+            guard let window = StatusWindowParser.windows(withIDs: [id]).first
             else { throw FrostBarError.itemNotFound }
             unchanged = window.isOnScreen && window.frame == previous ? unchanged + 1 : 0
             previous = window.frame

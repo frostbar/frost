@@ -401,7 +401,7 @@ final class SectionController {
     private func statusFrames() -> [CGWindowID: CGRect] {
         let windows: [RawStatusWindow]
         if let ids = locatedControls?.all {
-            windows = StatusWindowParser.currentWindows().filter { ids.contains($0.windowID) }
+            windows = StatusWindowParser.windows(withIDs: ids)
         } else {
             let row = scanner.menuBarDisplay?.frame ?? CGDisplayBounds(CGMainDisplayID())
             windows = StatusWindowParser.currentWindows().filter { abs($0.frame.minY - row.minY) < 1 }

@@ -139,7 +139,7 @@ final class OutsideClickFallback {
     /// The item's current frame (an app may change its icon width while the presentation is open); falls back to the
     /// frame at click time when it can't be read.
     private func currentItem() -> MenuBarItem {
-        guard let window = StatusWindowParser.currentWindows().first(where: { $0.windowID == item.windowID })
+        guard let window = StatusWindowParser.windows(withIDs: [item.windowID]).first
         else { return item }
         return MenuBarItem(windowID: item.windowID, frame: window.frame, isOnScreen: window.isOnScreen,
                            windowTitle: item.windowTitle, bundleID: item.bundleID, pid: item.pid,

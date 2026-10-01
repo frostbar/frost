@@ -136,10 +136,10 @@ public final class ItemMover {
             let known = Set(frames.keys)
             let result = try await Self.waitForSettle(
                 initialDelay: initialSettleDelay, interval: pollInterval, timeout: settleTimeout,
-                snapshot: { Self.frames(of: StatusWindowParser.currentWindows().filter { known.contains($0.windowID) }) },
+                snapshot: { Self.frames(of: StatusWindowParser.windows(withIDs: known)) },
                 satisfied: { Self.isSatisfied(itemID, destination, frames: $0) })
             if checkingControls, let controls = controlWindows(), itemID != controls.icon,
-               !Self.controlsInOrder(controls, windows: StatusWindowParser.currentWindows(),
+               !Self.controlsInOrder(controls, windows: StatusWindowParser.windows(withIDs: controls.all),
                                      displayBounds: menuBarDisplayBounds) {
                 FrostLog.mover.error("Frost's controls are out of order after moving \(itemID); moving the icon back")
                 do {
