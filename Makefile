@@ -1,7 +1,7 @@
 DERIVED := build/DerivedData
 APP := $(DERIVED)/Build/Products/Debug/Frost.app
 
-.PHONY: gen build release install test-core run clean dist sparkle-public-key dmg-background vm-up vm-deploy vm-run vm-shot vm-logs vm-down
+.PHONY: gen build release ci-build install test-core run clean dist sparkle-public-key dmg-background vm-up vm-deploy vm-run vm-shot vm-logs vm-down
 
 gen:
 	xcodegen generate --quiet
@@ -15,6 +15,16 @@ RELEASE_APP := $(DERIVED)/Build/Products/Release/Frost.app
 release: gen
 	xcodebuild -project Frost.xcodeproj -scheme Frost -configuration Release \
 	  -destination 'platform=macOS,arch=arm64' -derivedDataPath $(DERIVED) -quiet build
+
+# Unsigned Release build for the generic macOS destination (universal), the same command CI runs
+# (.github/workflows/ci.yml). Uses its own DerivedData so it doesn't replace the signed build of `make release`.
+CI_DERIVED := build/DerivedData-CI
+CI_BUILD_FLAGS ?= -quiet
+
+ci-build: gen
+	xcodebuild -project Frost.xcodeproj -scheme Frost -configuration Release \
+	  -destination 'generic/platform=macOS' -derivedDataPath $(CI_DERIVED) \
+	  CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" $(CI_BUILD_FLAGS) build
 
 # Install to /Applications and launch (runs Frost on this machine)
 install: release

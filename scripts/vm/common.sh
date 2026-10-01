@@ -13,10 +13,13 @@ VM_STATE="${FROST_VM_STATE:-$HOME/.local/share/frost-vm}"
 VM_KEY="$VM_STATE/id_ed25519"
 VM_RUN_LOG="$VM_STATE/run.log"
 VM_VENV="$VM_STATE/venv"
+# shellcheck disable=SC2034 # used by the scripts that source this file
 GUEST_APP="/Applications/Frost.app"
+# shellcheck disable=SC2034
 GUEST_LOG="/tmp/frost-stdout.log"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck disable=SC2034
 HOST_APP="$REPO_ROOT/build/DerivedData/Build/Products/Debug/Frost.app"
 
 mkdir -p "$VM_STATE"

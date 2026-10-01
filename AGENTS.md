@@ -19,6 +19,7 @@ shows the hidden ones in a glass panel below the menu bar (the Frost Bar).
 ./scripts/create-signing-cert.sh   # once: create the local signing identity "Frost Local Signing"
 make test-core                     # FrostCore unit tests (Swift Testing)
 make build                         # xcodegen generates the project + xcodebuild (Debug, arm64)
+make ci-build                      # unsigned universal Release build, the same command CI runs
 make vm-deploy && make vm-run      # deploy and run in the test VM (see below)
 scripts/release/release.sh 0.2.0   # package a release locally (DMG + appcast) without publishing; see docs/releasing.md
 ```
