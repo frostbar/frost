@@ -12,7 +12,7 @@ GITHUB_REPO="${GITHUB_REPO:-$(sed -n 's/^[[:space:]]*FROST_GITHUB_REPO:[[:space:
 FEED_URL="https://github.com/$GITHUB_REPO/releases/latest/download/appcast.xml"
 
 # Where --publish pushes: local branch RELEASE_BRANCH is pushed to REMOTE_BRANCH on GIT_REMOTE.
-RELEASE_BRANCH="${RELEASE_BRANCH:-public}"
+RELEASE_BRANCH="${RELEASE_BRANCH:-main}"
 GIT_REMOTE="${GIT_REMOTE:-origin}"
 REMOTE_BRANCH="${REMOTE_BRANCH:-main}"
 # Author of the version-bump commit and tag created by --publish (the public repository uses a GitHub noreply

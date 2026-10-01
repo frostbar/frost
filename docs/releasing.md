@@ -22,7 +22,7 @@ environment variable of the same name.
   single source. Info.plist's `SUFeedURL` is built from it and `config.sh` reads it. When the repository moves, change
   that line (and the two Releases links in `README.md`), then ship a release from the old location first so that
   existing installs learn the new feed URL.
-- **Publishing**: `--publish` pushes the local branch `RELEASE_BRANCH` (default `public`) to `GIT_REMOTE`
+- **Publishing**: `--publish` pushes the local branch `RELEASE_BRANCH` (default `main`) to `GIT_REMOTE`
   (`origin`) as `REMOTE_BRANCH` (`main`) and authors its commit and tag as `COMMIT_AUTHOR_NAME` /
   `COMMIT_AUTHOR_EMAIL` (the GitHub noreply address) without touching your git config.
 - **Signing**: `SIGNING_MODE=selfsigned` (default) or `developer-id` (see below).
