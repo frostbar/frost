@@ -5,6 +5,10 @@
 <h1 align="center">Frost</h1>
 
 <p align="center">
+  <a href="https://github.com/frostbar/frost/actions/workflows/ci.yml"><img src="https://github.com/frostbar/frost/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+</p>
+
+<p align="center">
   A menu bar manager for macOS 26 Tahoe, built with Liquid Glass.
 </p>
 
