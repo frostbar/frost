@@ -103,7 +103,7 @@ struct LayoutEditorContent: View {
 
     /// Footer hint: explains the badge when some items are off-screen, otherwise shows a tip.
     @ViewBuilder private var footer: some View {
-        let offscreen = state.layout.values.reduce(0) { $0 + $1.count(where: { !$0.isOnScreen }) }
+        let offscreen = state.obscured.count
         Group {
             if offscreen > 0 {
                 Label {
@@ -385,6 +385,7 @@ private struct ItemTile: View {
 
     private var image: CGImage? { state.images[item.windowID] }
     private var isPending: Bool { state.pending.contains(item.windowID) }
+    private var isObscured: Bool { state.obscured.contains(item.windowID) }
     private var name: String { state.names[item.windowID] ?? item.windowTitle }
     private var width: CGFloat { max(item.frame.width, 16) + 8 }
 
@@ -443,7 +444,7 @@ private struct ItemTile: View {
     @ViewBuilder private var badge: some View {
         if !item.isMovable {
             TileBadge(symbol: "lock.fill", tint: .gray)
-        } else if !item.isOnScreen {
+        } else if isObscured {
             TileBadge(symbol: "eye.trianglebadge.exclamationmark", tint: .orange)
         }
     }
@@ -457,7 +458,7 @@ private struct ItemTile: View {
 
     private var helpText: String {
         if !item.isMovable { return String(localized: "\(name) (fixed by the system; can’t be moved)", comment: "Tile tooltip; the argument is the icon name") }
-        if !item.isOnScreen { return String(localized: "\(name) (doesn’t fit in the menu bar)", comment: "Tile tooltip; the argument is the icon name") }
+        if isObscured { return String(localized: "\(name) (doesn’t fit in the menu bar)", comment: "Tile tooltip; the argument is the icon name") }
         return name
     }
 }

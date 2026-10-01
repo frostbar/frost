@@ -166,7 +166,7 @@ public final class ItemMover {
     /// doesn't reflect the real order (measured: they can end up left of the AH separator). Items pushed off
     /// screen by a separator (frame entirely left of the display) don't count: while collapsed their order is
     /// trustworthy.
-    nonisolated static func isObscured(_ item: MenuBarItem, displayBounds: CGRect) -> Bool {
+    public nonisolated static func isObscured(_ item: MenuBarItem, displayBounds: CGRect) -> Bool {
         !item.isOnScreen && item.frame.maxX > displayBounds.minX
     }
 

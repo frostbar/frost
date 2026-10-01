@@ -48,6 +48,13 @@ import CoreGraphics
         #expect(ItemMover.isVerifiable(item(3, x: 1513, onScreen: true), target: onScreen, displayBounds: display))
     }
 
+    @Test func onlyItemsWithinTheDisplayCountAsObscured() {
+        // The layout editor badges "doesn't fit" only for these: pushed-out items (left of the display) don't count.
+        #expect(ItemMover.isObscured(item(3, x: 907, onScreen: false), displayBounds: display))
+        #expect(!ItemMover.isObscured(item(3, x: -3500, onScreen: false), displayBounds: display))
+        #expect(!ItemMover.isObscured(item(3, x: 1513, onScreen: true), displayBounds: display))
+    }
+
     @Test func pushedOutItemsAreVerifiable() {
         // While collapsed, items pushed off to the left of the main display are in a trustworthy order.
         #expect(ItemMover.isVerifiable(item(3, x: -3500, onScreen: false), target: item(4, x: -3471, onScreen: false),

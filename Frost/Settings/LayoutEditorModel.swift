@@ -64,7 +64,7 @@ final class LayoutEditorModel {
     @ObservationIgnored private(set) var isActive = false
     /// This activation has entered editing and the menu bar has settled (a full refresh before that would read a menu
     /// bar that is still rearranging).
-    @ObservationIgnored private var hasSettled = false
+    private var hasSettled = false
     /// Incremented on each activation; async completions compare it with their captured value to discard results
     /// from an earlier session.
     @ObservationIgnored private var session = 0
@@ -233,9 +233,13 @@ final class LayoutEditorModel {
                 icons[item.windowID] = icon
             }
         }
+        let displayBounds = model.scanner.menuBarDisplay?.frame ?? CGDisplayBounds(CGMainDisplayID())
+        let obscured = hasSettled
+            ? Set(items.filter { ItemMover.isObscured($0, displayBounds: displayBounds) }.map(\.windowID))
+            : []
         return LayoutEditorState(
             phase: phase, layout: layout, images: model.capturer.images, tones: model.capturer.tones,
-            names: names, appIcons: icons, pending: pending, errorMessage: errorMessage,
+            names: names, appIcons: icons, pending: pending, obscured: obscured, errorMessage: errorMessage,
             isRetrying: isActive && fullRefreshSession == session,
             permissions: .init(accessibility: model.permissions.accessibility,
                                screenRecording: model.permissions.screenRecording))
@@ -419,6 +423,9 @@ struct LayoutEditorState {
     /// App icons for items without a captured image.
     var appIcons: [CGWindowID: NSImage]
     var pending: Set<CGWindowID>
+    /// Items that still don't fit after the menu bar expanded for editing (e.g. behind the notch). Empty until the
+    /// menu bar has settled, so items that are merely pushed out while it expands never flash the "doesn't fit" badge.
+    var obscured: Set<CGWindowID>
     var errorMessage: String?
     /// An automatic retry (full refresh) is in progress: shows progress when the menu bar can't be read or the
     /// separators can't be found.
