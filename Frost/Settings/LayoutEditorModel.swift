@@ -5,8 +5,9 @@ import Observation
 /// State and actions of the layout editor. Owned by the Settings window (same lifetime); views only read the derived
 /// `LayoutEditorState`.
 ///
-/// The editor is "active" when the Settings window is visible (open and not minimized) **and** the Layout tab is
-/// selected. While active:
+/// The editor is "active" when the Settings window is visible (open, not minimized, Frost not hidden, the window not
+/// entirely covered, and the user at the Mac; see `SettingsWindowController`) **and** the Layout tab is selected.
+/// While active:
 /// - the menu bar is in editing state (all sections expanded, both separators shown as lines); permissions are polled
 ///   every second;
 /// - every 2 s a cheap `rescan()` (no forced AX read) refreshes the layout and captures only the on-screen items in
@@ -81,7 +82,8 @@ final class LayoutEditorModel {
 
     // MARK: - Visibility
 
-    /// The Settings window became visible / invisible: opened, closed, minimized, restored from the Dock (called by
+    /// The Settings window became visible / invisible: opened, closed, minimized, restored from the Dock, Frost hidden
+    /// or unhidden, the window covered or uncovered, the user away or back (called by
     /// `SettingsWindowController`; SwiftUI doesn't reliably send onDisappear when the window closes). The menu bar
     /// shouldn't stay in editing state while the window is minimized.
     func setWindowVisible(_ visible: Bool) {

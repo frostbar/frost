@@ -49,6 +49,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private enum PauseReason {
         /// Displays asleep, screen locked or another user's session (`UserPresenceMonitor`).
         case userAway
+        /// Frost is hidden (Hide Frost, ⌘H, or another app's Hide Others).
+        case appHidden
+        /// The window is open but entirely covered (`NSWindow.occlusionState`), e.g. by a full-screen app.
+        case occluded
     }
 
     init(model: AppModel, initialTab: SettingsTab = .layout) {
@@ -81,6 +85,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
         tabs.onSelect = { [weak self] tab in self?.tabDidChange(tab) }
         if model.presence.isAway { pauseReasons.insert(.userAway) }
+        if NSApp.isHidden { pauseReasons.insert(.appHidden) }
+        for (name, hidden) in [(NSApplication.didHideNotification, true), (NSApplication.didUnhideNotification, false)] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setPaused(.appHidden, hidden) }
+            })
+        }
         observers.append(NotificationCenter.default.addObserver(
             forName: UserPresenceMonitor.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -186,6 +196,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     func windowDidMiniaturize(_ notification: Notification) {
         // The editor is not visible while minimized: same as closing, end editing and collapse the menu bar.
         layoutEditor.setWindowVisible(false)
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        // Only an open, non-minimized window counts as occluded (closing and minimizing are handled on their own).
+        let occluded = window.isVisible && !window.isMiniaturized && !window.occlusionState.contains(.visible)
+        setPaused(.occluded, occluded)
     }
 
     func windowDidDeminiaturize(_ notification: Notification) {
