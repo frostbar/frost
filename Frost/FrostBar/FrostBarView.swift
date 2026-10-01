@@ -98,20 +98,14 @@ enum FrostBarMetrics {
         max(standardTileWidth, min(rowWidth(columns: columns), state.maxWidth - 2 * padding))
     }
 
-    /// With a capture, the capture width (`imageWidth`, or the item's frame if none was recorded), at least one
-    /// standard tile wide; without a capture, a standard tile.
-    /// The tile width only changes when the capture width does, so live refreshes swapping captures never make the
-    /// panel jump.
-    static func tileWidth(_ item: MenuBarItem, hasImage: Bool, imageWidth: CGFloat? = nil, cap: CGFloat) -> CGFloat {
-        guard hasImage else { return standardTileWidth }
-        return min(max(standardTileWidth, (imageWidth ?? item.frame.width).rounded(.up)), cap)
-    }
-
+    /// Tile widths: the capture width, or for items without a capture yet the width the capture will have (the
+    /// item's frame), so the panel doesn't resize when a live refresh delivers it (see `TileWidth`).
     static func tileWidths(_ items: [MenuBarItem], _ state: FrostBarState) -> [CGFloat] {
         let cap = gridCap(state)
-        return items.map {
-            tileWidth($0, hasImage: state.images[$0.windowID] != nil, imageWidth: state.imageSizes[$0.windowID]?.width,
-                      cap: cap)
+        return items.map { item in
+            let captureWidth = state.images[item.windowID] == nil ? nil : state.imageSizes[item.windowID]?.width
+            return TileWidth.width(captureWidth: captureWidth, frameWidth: item.frame.width, standard: standardTileWidth,
+                                   cap: cap)
         }
     }
 

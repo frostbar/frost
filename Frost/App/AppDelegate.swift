@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.frostBar = frostBar
         model.toggleFrostBar = { [unowned frostBar] in frostBar.toggle(showAlwaysHidden: $0) }
         model.start()
+        frostBar.warmUp()
         let menus = MainMenu.make(target: self)
         NSApp.mainMenu = menus.menu
         NSApp.windowsMenu = menus.windowsMenu

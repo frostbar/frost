@@ -172,6 +172,16 @@ timing. Evidence (recordings, logs, analysis scripts) goes under `build/vm-shots
   starting). Drive the switches with real HID-level clicks from inside the guest, and get an idle baseline by posting
   the distributed notification `dev.frost.Frost.frameProbe` (object = label) without touching the window. Don't grab
   the VNC framebuffer meanwhile.
+- **Frost Bar first open / "the first click looks off"**: the same probe runs on the screen's display link from the
+  click on the snowflake for 1.5 s (`frame-probe frostbar-open-<n>`, numbered since launch) and for the launch warm-up
+  (`frostbar-warmup`). `firstFrame` is the click-to-panel latency; `notes=` adds checkpoints in ms after the click
+  (`cached(images=N)`, `ordered`, `animate`, `resize(…)` if the panel changes size while visible, `cycle` when a live
+  refresh round starts), so hitches can be attributed to the 0.18 s animation or to the first refresh round. Compare
+  open 1 with opens 2–3 after a fresh launch, with the image cache present and deleted; `sudo purge` in the guest
+  before launching approximates the cold start after an update. Click the snowflake with a HID-level event from inside
+  the guest and leave the pointer on it (parked over the menu bar left of the snowflake, it pauses live refresh). For
+  the look, record the panel area with `screencapture -v -R…` and compare each open's frames: the same number of
+  evenly spaced frames, the same opacity ramp and the same final panel bounds.
 - **Multi-display**: add a second display with `guest-virtual-display.m` (right, left, very wide on the left, below),
   dump every display's menu bar row with `dump-status-windows.swift --all`, screenshot it with
   `screencapture -D 2` and click on it with `guest-click.swift`. The virtual display has the same 30 pt menu bar as

@@ -91,8 +91,16 @@ For each item, record: environment (model / displays / macOS version) and result
 
 - [ ] Click the snowflake on a notched display (default) or with the mode set to Frost Bar: a rounded glass panel drops
   down from below the snowflake (top edge 6 pt below the menu bar, right edge aligned with the snowflake, clamped
-  8 pt inward at the screen edge), scaling + fading in from the top-right corner, with no continuous animation; no
-  hard edges from a clipped shadow around the panel (most visible over a white window).
+  8 pt inward at the screen edge), sliding down a few points while fading in (no scaling), with no continuous
+  animation; no hard edges from a clipped shadow around the panel (most visible over a white window).
+- [ ] **First open after launch looks the same as later opens (user report: "after upgrading, the animation on the
+  first click looks off")**: relaunch Frost (after an update or reinstall, with and without the image cache), wait a
+  couple of seconds, then click the snowflake: the panel appears right away and plays the same smooth drop-down as on
+  the second and third click, with no delay, stutter, flash or resize; nothing appears on screen at launch (the panel
+  is prepared invisibly, log `warm-up: panel rendered off view`). VM method: Debug build with
+  `FROST_TEST_FRAME_PROBE=1`; each open logs `frame-probe frostbar-open-<n>`: `frostbar-open-1` has the same
+  `firstFrame` (~10–20 ms) as later opens and no hitch during the animation (`at=` entries below ~250 ms), see
+  "Verification techniques" in `docs/testing-vm.md`.
 - [ ] Items are laid out in a grid (at most about 5 regular items per row; wide text items take their own width and wrap
   naturally; rows are left-aligned); hover highlights an item and the name bar at the bottom shows the app name (the
   item count when nothing is hovered); hovering doesn't resize the panel; with more items than fit the screen height,
@@ -102,7 +110,8 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] **No visible expansion in the menu bar (user report: "the hidden items expand, then disappear")**: delete the
   image cache (`rm -rf ~/Library/Caches/dev.frost.Frost/items`), relaunch Frost and click the snowflake: the menu bar
   always looks collapsed (hidden items never appear in it), and after about 0.3 s the app icons in the panel are
-  replaced by real captures. The freeze frame covers only the menu bar **to the left of** the snowflake (the
+  replaced by real captures in place: each placeholder tile already has the item's width, so the panel neither resizes
+  nor reflows when the captures arrive. The freeze frame covers only the menu bar **to the left of** the snowflake (the
   snowflake, clock and Control Center stay live). Check frame by frame in a screen recording (VM method: see
   "Verification techniques" in `docs/testing-vm.md`).
 - [ ] **Live refresh**: put a changing item in the Hidden section (temperature / network speed / timer; in the VM,
@@ -125,8 +134,8 @@ For each item, record: environment (model / displays / macOS version) and result
   during a refresh: the freeze frame is removed right away, the menu bar is collapsed, and no Frost windows are left
   behind (`panel closed during a live refresh cycle; it will collapse and clean up`).
 - [ ] **Cache first after relaunch**: with an image cache present, relaunch Frost and open the Frost Bar: the panel
-  shows cached images as soon as it appears (log `loaded N item image(s) from the disk cache`), then starts
-  refreshing every second.
+  shows cached images as soon as it appears (log `loaded N item image(s) from the disk cache`, written about a second
+  after launch, before the first click), then starts refreshing every second.
 - [ ] **Items under the notch / that don't fit** (a crowded notched display; in the VM, `vm-fake-items.sh launch A 30`
   and open with ⌥ held so they don't fit even when expanded): items that don't fit show the app icon (or the cached
   image from the disk cache), and the rest refresh every second as usual (log `captured 17 of 40 item(s)`), at the

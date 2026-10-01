@@ -10,7 +10,9 @@ import QuartzCore
 /// so a gap between ticks is time the main thread could not produce a frame (a hitch). After `duration` it logs the
 /// latency from the mark to the first tick, the longest gap, the number of hitches (gaps longer than 1.5 refresh
 /// periods), the total hitch time (the part of each gap beyond one period) and where each hitch happened (`at=` lists
-/// `<ms after the mark>+<gap ms>`), to `FrostLog.app` as `frame-probe <label> ...`.
+/// `<ms after the mark>+<gap ms>`), to `FrostLog.app` as `frame-probe <label> ...`. `mark(_:on:)` measures on a
+/// screen instead (for a window that doesn't exist yet, e.g. the Frost Bar's first open); `note(_:)` adds a named
+/// checkpoint (`notes=<name>@<ms after the mark>`) to the current measurement.
 @MainActor
 final class FrameProbe: NSObject {
     static let isEnabled = ProcessInfo.processInfo.environment["FROST_TEST_FRAME_PROBE"] == "1"
@@ -34,10 +36,27 @@ final class FrameProbe: NSObject {
 
     static func mark(_ label: String, in window: NSWindow, duration: Duration = .milliseconds(1200)) {
         guard isEnabled else { return }
+        begin(label, duration: duration) { window.displayLink(target: $0, selector: #selector(tick(_:))) }
+    }
+
+    static func mark(_ label: String, on screen: NSScreen, duration: Duration = .milliseconds(1200)) {
+        guard isEnabled else { return }
+        begin(label, duration: duration) { screen.displayLink(target: $0, selector: #selector(tick(_:))) }
+    }
+
+    /// Records a named checkpoint in the current measurement.
+    static func note(_ name: String) {
+        guard isEnabled, let current else { return }
+        current.notes.append(String(format: "%@@%.1f", name, (CACurrentMediaTime() - current.start) * 1000))
+    }
+
+    private static func begin(_ label: String, duration: Duration, link: (FrameProbe) -> CADisplayLink) {
         current?.finish()
         let probe = FrameProbe(label: label, duration: duration)
         current = probe
-        probe.start(in: window)
+        let displayLink = link(probe)
+        displayLink.add(to: .main, forMode: .common)
+        probe.link = displayLink
     }
 
     private let label: String
@@ -46,17 +65,12 @@ final class FrameProbe: NSObject {
     private var link: CADisplayLink?
     private var ticks: [CFTimeInterval] = []
     private var period: CFTimeInterval = 1.0 / 60
+    private var notes: [String] = []
 
     private init(label: String, duration: Duration) {
         self.label = label
         let parts = duration.components
         self.duration = Double(parts.seconds) + Double(parts.attoseconds) / 1e18
-    }
-
-    private func start(in window: NSWindow) {
-        let link = window.displayLink(target: self, selector: #selector(tick(_:)))
-        link.add(to: .main, forMode: .common)
-        self.link = link
     }
 
     @objc private func tick(_ link: CADisplayLink) {
@@ -89,7 +103,11 @@ final class FrameProbe: NSObject {
         let summary = String(format: "frames=%d firstFrame=%.1fms maxGap=%.1fms hitches=%d hitchTime=%.1fms period=%.1fms",
                              ticks.count, firstFrame, maxGap * 1000, hitches, hitchTime * 1000, period * 1000)
         let at = hitchList.joined(separator: ",")
-        FrostLog.app.notice("frame-probe \(self.label, privacy: .public) \(summary, privacy: .public) at=\(at, privacy: .public)")
+        let notes = self.notes.isEmpty ? "" : " notes=" + self.notes.joined(separator: ",")
+        FrostLog.app.notice("""
+            frame-probe \(self.label, privacy: .public) \(summary, privacy: .public) at=\(at, privacy: .public)\
+            \(notes, privacy: .public)
+            """)
     }
 }
 #endif

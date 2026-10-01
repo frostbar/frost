@@ -42,6 +42,9 @@ final class FrostBarController {
     /// Incremented on every presentation; a leftover observation callback from an earlier presentation sees the
     /// mismatch and doesn't re-register (so repeated opens don't stack observation chains).
     private var presentation = 0
+    #if DEBUG
+    private var openCount = 0
+    #endif
 
     private var openTask: Task<Void, Never>?
     private var hideTask: Task<Void, Never>?
@@ -116,6 +119,12 @@ final class FrostBarController {
         hideTask?.cancel()
         model.showAlwaysHidden = showAlwaysHidden
         liveStats = LiveRefreshStats()
+        #if DEBUG
+        openCount += 1
+        if let screen = app.sections.iconWindow?.screen ?? NSScreen.main {
+            FrameProbe.mark("frostbar-open-\(openCount)", on: screen, duration: .milliseconds(1500))
+        }
+        #endif
         openTask = Task { [weak self] in
             // The previous click forward hasn't finished (e.g. its menu is still open, or it's moving back); wait for
             // it so the layout is final.
@@ -124,9 +133,12 @@ final class FrostBarController {
             guard let self, self.isOpen, !Task.isCancelled else { return }
             await self.prepareLayout()
             guard self.isOpen, !Task.isCancelled else { return }
-            // The memory cache is empty after a relaunch: load screenshots from the disk cache first so the panel
-            // shows them as soon as it appears.
+            // The memory cache is empty after a relaunch: the warm-up has usually loaded the disk cache in the
+            // background already (`warmUp`); load whatever it hasn't so the panel shows it as soon as it appears.
             if self.app.permissions.screenRecording { self.app.capturer.loadCached(self.requestedItems) }
+            #if DEBUG
+            FrameProbe.note("cached(images=\(self.app.capturer.images.count))")
+            #endif
             self.present()
             // Show cached screenshots first, then start live refresh (the first round runs after the panel's
             // appearance animation, so the freeze frame captures the panel shadow in its final state).
@@ -169,6 +181,7 @@ final class FrostBarController {
 
     private func present() {
         let panel = panel ?? makePanel()
+        endPrerender()
         if !isPollingPermissions {
             isPollingPermissions = true
             app.permissions.startPolling()
@@ -177,6 +190,9 @@ final class FrostBarController {
         model.isPresented = false
         reposition()
         panel.makeKeyAndOrderFront(nil)
+        #if DEBUG
+        FrameProbe.note("ordered")
+        #endif
         presentedAt = .now
         installMonitors()
         presentation += 1
@@ -184,6 +200,11 @@ final class FrostBarController {
         // Switch to presented on the next run loop turn so the appearance animation starts from the initial state.
         Task { @MainActor [weak self] in
             guard let self, self.isOpen else { return }
+            #if DEBUG
+            FrameProbe.note("animate")
+            #endif
+            // The first live refresh round waits for the animation measured from here, when it really starts.
+            self.presentedAt = .now
             withAnimation(.easeOut(duration: 0.18)) { self.model.isPresented = true }
         }
     }
@@ -224,6 +245,91 @@ final class FrostBarController {
         return panel
     }
 
+    // MARK: - Warm-up
+
+    /// Prepares the first open at launch so it looks exactly like every later one. Without it, the first click pays
+    /// for everything at once on the main thread (in the VM: 0.3 s with the disk cache, 1.4 s without, before the
+    /// panel appears, then dropped frames during the appearance animation): reading and decoding the disk cache,
+    /// building the panel and its SwiftUI view graph, loading app icons, creating the window and rendering the glass
+    /// for the first time.
+    ///
+    /// Once the scan has the hidden items' owners (or after a few seconds), loads their disk-cached captures in the
+    /// background, then (in Frost Bar mode) builds the panel and has it render once, invisibly, at its real position:
+    /// the window is fully transparent and ignores the mouse while it renders, then it is ordered out. A click on the
+    /// Frost icon meanwhile simply opens the panel (`present` ends the warm-up).
+    func warmUp() {
+        Task { [weak self] in
+            for _ in 0..<Self.warmUpAttempts {
+                guard let self, !self.isOpen else { return }
+                if self.isReadyToWarmUp { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            guard let self, !self.isOpen, self.app.permissions.allGranted else { return }
+            let layout = self.app.layout
+            await self.app.capturer.preloadCached(layout[.hidden, default: []] + layout[.alwaysHidden, default: []])
+            guard !self.isOpen, self.usesFrostBar else { return }
+            #if DEBUG
+            if let screen = self.app.sections.iconWindow?.screen ?? NSScreen.main {
+                FrameProbe.mark("frostbar-warmup", on: screen, duration: .milliseconds(600))
+            }
+            #endif
+            self.prerender()
+        }
+    }
+
+    private var prerenderTask: Task<Void, Never>?
+    private static let warmUpAttempts = 20
+    /// How long the transparent panel stays ordered in during the warm-up (a few frames).
+    private static let prerenderDuration: Duration = .milliseconds(300)
+
+    /// The scan is usable and every hidden item's owner is known (the disk cache is keyed by it).
+    private var isReadyToWarmUp: Bool {
+        guard app.permissions.allGranted, app.scanner.status == .ok, app.sections.controlWindows != nil else {
+            return false
+        }
+        let layout = app.layout
+        return (layout[.hidden, default: []] + layout[.alwaysHidden, default: []]).allSatisfy { $0.bundleID != nil }
+    }
+
+    /// Whether a click on the Frost icon would open the Frost Bar on some display.
+    private var usesFrostBar: Bool {
+        let preferences = app.preferences
+        return NSScreen.screens.contains {
+            preferences.effectiveDisplayMode(for: $0, permissionsGranted: app.permissions.allGranted) == .frostBar
+        }
+    }
+
+    /// Orders the panel in, fully transparent and click-through, with its content in the presented state, so the
+    /// view graph, images, glass and window are created and rendered once; `endPrerender` orders it out again.
+    private func prerender() {
+        let panel = panel ?? makePanel()
+        guard !panel.isVisible else { return }
+        model.isPresented = true
+        reposition()
+        panel.alphaValue = 0
+        panel.ignoresMouseEvents = true
+        panel.orderFrontRegardless()
+        prerenderTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.prerenderDuration)
+            self?.endPrerender()
+        }
+        FrostLog.frostBar.info("warm-up: panel rendered off view")
+    }
+
+    /// Ends the warm-up render (also called by `present`, which then takes over the ordered-in panel).
+    private func endPrerender() {
+        guard let task = prerenderTask else { return }
+        prerenderTask = nil
+        task.cancel()
+        guard let panel else { return }
+        if !isOpen {
+            panel.orderOut(nil)
+            model.isPresented = false
+        }
+        panel.alphaValue = 1
+        panel.ignoresMouseEvents = false
+    }
+
     // MARK: - Positioning
 
     /// Places the panel by its content size: right edge aligned with the Frost icon's right edge, dropping down (at
@@ -252,7 +358,12 @@ final class FrostBarController {
                                          anchorMaxX: iconFrame?.maxX ?? screen.visibleFrame.maxX,
                                          screenFrame: screen.frame, visibleFrame: screen.visibleFrame,
                                          menuBarHeight: menuBarHeight)
-        if panel.frame != frame { panel.setFrame(frame, display: true) }
+        if panel.frame != frame {
+            #if DEBUG
+            if panel.isVisible { FrameProbe.note("resize(\(Int(panel.frame.width))x\(Int(panel.frame.height))->\(Int(frame.width))x\(Int(frame.height)))") }
+            #endif
+            panel.setFrame(frame, display: true)
+        }
     }
 
     /// Repositions when the content (icons, screenshots, state) changes, even if the size doesn't (e.g. only the ⌥
@@ -323,6 +434,8 @@ final class FrostBarController {
                 guard let delay = self?.delayBeforeNextCycle() else { return }
                 if delay > .zero {
                     do { try await Task.sleep(for: delay) } catch { return }
+                    // Decide again: the appearance animation may have started later than expected (`present`).
+                    continue
                 }
                 guard let self, self.isOpen, !Task.isCancelled else { return }
                 // A round left over from the previous loop is still running (the loop restarted on ⌥ toggle /
@@ -434,6 +547,9 @@ final class FrostBarController {
             ? .expandedAll : .expanded
         let context = captureContext()
         lastCycleStart = .now
+        #if DEBUG
+        FrameProbe.note("cycle")
+        #endif
         // The end time and `captureTask` are updated in the round's own task: on panel close / ⌥ toggle the loop is
         // cancelled and restarted, so a new loop may be the one waiting for this round.
         let task = Task { @MainActor [weak self] () -> Void in
