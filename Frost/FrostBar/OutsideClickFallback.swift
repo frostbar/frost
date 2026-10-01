@@ -4,7 +4,9 @@ import FrostCore
 /// System glue for the "close on outside click" fallback (decisions live in `OutsideClickDismissal`): while waiting for
 /// a non-menu presentation opened by a forwarded click to close, global + local mouse monitors watch for clicks. If the
 /// user clicks outside the presentation and the item and the presentation still doesn't close, click the item again to
-/// toggle it closed (sending Esc first when the target app is frontmost).
+/// toggle it closed (sending Esc first when the target app is frontmost). Esc and the toggle click wait while a mouse
+/// button is held or another menu is open (`OutsideClickDismissal`), so they never cancel the user's drag-selection or
+/// close a menu they just opened.
 ///
 /// Lifecycle: `hooks.presented` installs the monitors and `stop()` removes them (callers use `defer` so every exit path
 /// calls it).
@@ -16,6 +18,9 @@ final class OutsideClickFallback {
     private let owner: NSRunningApplication?
     private var dismissal = OutsideClickDismissal()
     private var monitors: [Any] = []
+    /// The presentation's windows (from `hooks.presented`); any other menu on screen defers Esc / the toggle click.
+    private var presentation: Set<CGWindowID> = []
+    private var loggedDeferral = false
     /// Whether the target app was frontmost at the last poll. By mouse-down it may already have lost activation to
     /// this click, so use the sample taken before it.
     private var ownerWasActive = false
@@ -34,7 +39,7 @@ final class OutsideClickFallback {
     }
 
     var hooks: NonMenuPresentationHooks {
-        NonMenuPresentationHooks(presented: { _ in await self.arm() },
+        NonMenuPresentationHooks(presented: { windows in await self.arm(presentation: windows) },
                                  poll: { isFading in await self.poll(isFading: isFading) })
     }
 
@@ -44,8 +49,9 @@ final class OutsideClickFallback {
         monitors.removeAll()
     }
 
-    private func arm() {
+    private func arm(presentation: Set<CGWindowID>) {
         guard !stopped, monitors.isEmpty else { return }
+        self.presentation = presentation
         ownerWasActive = owner?.isActive ?? false
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         // Clicks in other apps (including the presentation itself and the menu bar).
@@ -80,8 +86,23 @@ final class OutsideClickFallback {
     private func poll(isFading: Bool) async -> Bool {
         guard !stopped else { return false }
         let ownerIsActive = owner?.isActive ?? false
-        let action = dismissal.poll(now: .now, isFading: isFading, ownerIsActive: ownerIsActive)
+        let mousePressed = NSEvent.pressedMouseButtons != 0
+        // Reading the window list is only worth it while an Esc / toggle click may be due.
+        let mayAct = switch dismissal.phase {
+        case .outsideClick, .escapeSent: true
+        case .idle, .itemClicked, .finished: false
+        }
+        let foreignMenu = mayAct && ItemClicker.isForeignMenuOnScreen(excluding: presentation)
+        let action = dismissal.poll(now: .now, isFading: isFading, ownerIsActive: ownerIsActive,
+                                    isMouseButtonPressed: mousePressed, isForeignMenuOnScreen: foreignMenu)
         ownerWasActive = ownerIsActive
+        if dismissal.isDeferring, !loggedDeferral {
+            loggedDeferral = true
+            FrostLog.activation.notice("""
+                deferring the outside-click fallback for item \(self.item.windowID) \
+                (mouse button held: \(mousePressed), another menu open: \(foreignMenu))
+                """)
+        }
         switch action {
         case .none:
             return false

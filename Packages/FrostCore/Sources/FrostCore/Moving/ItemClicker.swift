@@ -123,6 +123,11 @@ public enum ItemClicker {
         containsMenu(currentOnscreenWindows())
     }
 
+    /// Whether a menu other than `presentation`'s windows is on screen (e.g. one the user just opened elsewhere).
+    public static func isForeignMenuOnScreen(excluding presentation: Set<CGWindowID>) -> Bool {
+        containsForeignMenu(currentOnscreenWindows(), presentation: presentation)
+    }
+
     /// All status item windows (layer-25 windows on the menu bar row, including off-screen ones and copies on
     /// other displays).
     public static func currentStatusWindowIDs() -> Set<CGWindowID> {
@@ -264,6 +269,11 @@ public enum ItemClicker {
 
     static func containsMenu(_ windows: [WindowInfo]) -> Bool {
         windows.contains { $0.layer == menuLayer }
+    }
+
+    /// Whether a menu (layer 101, any app) other than the presentation's own windows is on screen.
+    static func containsForeignMenu(_ windows: [WindowInfo], presentation: Set<CGWindowID>) -> Bool {
+        windows.contains { $0.layer == menuLayer && !presentation.contains($0.windowID) }
     }
 
     /// How long to wait for a detected presentation before giving up (nil = wait until it closes).

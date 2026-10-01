@@ -22,6 +22,11 @@ import Foundation
 /// No escalation while the presentation window is fading out (alpha < 1): it is already closing, and clicking the item
 /// now would just reopen it. The 60 s cap (`nonMenuCap` of `ItemClicker.waitForPresentationToClose`) remains the last
 /// resort.
+///
+/// Esc and the toggle click are **deferred** (not dropped: the phase is kept and they are sent once it is safe) while a
+/// mouse button is held (the user is drag-selecting, or still holding the outside click: the toggle click starts with a
+/// lone mouse-up and warps the cursor) or another menu is on screen (the outside click opened another app's menu; the
+/// toggle click would close it).
 public struct OutsideClickDismissal: Sendable {
     public enum Action: Equatable, Sendable {
         case none
@@ -75,6 +80,8 @@ public struct OutsideClickDismissal: Sendable {
 
     public let timing: Timing
     public private(set) var phase: Phase = .idle
+    /// Whether the last `poll` held back a due Esc / toggle click because the user was busy.
+    public private(set) var isDeferring = false
 
     public init(timing: Timing = .standard) {
         self.timing = timing
@@ -130,12 +137,21 @@ public struct OutsideClickDismissal: Sendable {
     /// Called on every poll (only while the presentation is still on screen). `isFading`: the presentation window is
     /// fading out (alpha < 1), i.e. it is already closing. `ownerIsActive`: the target app is frontmost right now
     /// (decides whether to send Esc first or click the item again directly once the grace period is over).
-    public mutating func poll(now: ContinuousClock.Instant, isFading: Bool, ownerIsActive: Bool) -> Action {
+    /// `isMouseButtonPressed` / `isForeignMenuOnScreen` (a menu outside the presentation is open): the user is busy,
+    /// so Esc and the toggle click wait (see the type's documentation).
+    public mutating func poll(now: ContinuousClock.Instant, isFading: Bool, ownerIsActive: Bool,
+                              isMouseButtonPressed: Bool = false, isForeignMenuOnScreen: Bool = false) -> Action {
+        let userIsBusy = isMouseButtonPressed || isForeignMenuOnScreen
+        isDeferring = false
         switch phase {
         case .idle, .finished:
             return .none
         case let .outsideClick(at, grace):
             guard now - at >= grace, !isFading else { return .none }
+            guard !userIsBusy else {
+                isDeferring = true
+                return .none
+            }
             guard ownerIsActive else {
                 phase = .itemClicked(at: now)
                 return .clickItem
@@ -144,6 +160,10 @@ public struct OutsideClickDismissal: Sendable {
             return .sendEscape
         case let .escapeSent(at):
             guard now - at >= timing.escapeWait, !isFading else { return .none }
+            guard !userIsBusy else {
+                isDeferring = true
+                return .none
+            }
             phase = .itemClicked(at: now)
             return .clickItem
         case let .itemClicked(at):

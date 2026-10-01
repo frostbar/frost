@@ -201,4 +201,77 @@ import CoreGraphics
         #expect(timing.ownerHandlesGrace > .milliseconds(500))
         #expect(timing.grace == .milliseconds(300))
     }
+
+    // MARK: - Deferring while the user is busy
+
+    @Test func defersEscapeWhileAMouseButtonIsHeld() {
+        // The user is drag-selecting (or still holding the outside click): an Esc now could cancel what they are
+        // doing. Wait, keeping the phase, and send it once the button is released.
+        var d = OutsideClickDismissal()
+        click(&d, outside, at: 0)
+        // Within the grace period nothing is due, so nothing is being deferred yet.
+        #expect(d.poll(now: ms(100), isFading: false, ownerIsActive: true, isMouseButtonPressed: true) == .none)
+        #expect(!d.isDeferring)
+        #expect(d.poll(now: ms(300), isFading: false, ownerIsActive: true, isMouseButtonPressed: true) == .none)
+        #expect(d.isDeferring)
+        #expect(d.phase == .outsideClick(at: ms(0), grace: .milliseconds(300)))
+        #expect(d.poll(now: ms(2000), isFading: false, ownerIsActive: true, isMouseButtonPressed: true) == .none)
+        #expect(d.poll(now: ms(2100), isFading: false, ownerIsActive: true) == .sendEscape)
+        #expect(!d.isDeferring)
+    }
+
+    @Test func defersTheToggleClickWhileAnotherMenuIsOpen() {
+        // The outside click opened another app's menu: a toggle click (mouse-up, warp, click) would close it.
+        var d = OutsideClickDismissal()
+        click(&d, outside, at: 0)
+        #expect(d.poll(now: ms(300), isFading: false, ownerIsActive: false, isForeignMenuOnScreen: true) == .none)
+        #expect(d.poll(now: ms(5000), isFading: false, ownerIsActive: false, isForeignMenuOnScreen: true) == .none)
+        #expect(d.phase == .outsideClick(at: ms(0), grace: .milliseconds(300)))
+        // The menu closed: toggle right away.
+        #expect(d.poll(now: ms(5100), isFading: false, ownerIsActive: false) == .clickItem)
+    }
+
+    @Test func defersTheClickAfterEscapeToo() {
+        var d = OutsideClickDismissal()
+        click(&d, outside, at: 0)
+        #expect(d.poll(now: ms(300), isFading: false, ownerIsActive: true) == .sendEscape)
+        #expect(d.poll(now: ms(1000), isFading: false, ownerIsActive: true, isMouseButtonPressed: true) == .none)
+        #expect(d.poll(now: ms(1100), isFading: false, ownerIsActive: true, isForeignMenuOnScreen: true) == .none)
+        #expect(d.phase == .escapeSent(at: ms(300)))
+        #expect(d.poll(now: ms(1200), isFading: false, ownerIsActive: true) == .clickItem)
+    }
+
+    @Test func givingUpIsNeverDeferred() {
+        // Giving up posts nothing (the caller moves the icon back as usual), so there is nothing to protect.
+        var d = OutsideClickDismissal()
+        click(&d, outside, at: 0)
+        #expect(d.poll(now: ms(300), isFading: false, ownerIsActive: false) == .clickItem)
+        #expect(d.poll(now: ms(1300), isFading: false, ownerIsActive: false, isMouseButtonPressed: true,
+                       isForeignMenuOnScreen: true) == .giveUp)
+    }
+
+    @Test func eachActionIsStillIssuedOnceWithDeferrals() {
+        var d = OutsideClickDismissal()
+        click(&d, outside, at: 0)
+        let actions = stride(from: 0, through: 6000, by: 50).map { t in
+            // Busy for a while in the middle of the escalation.
+            let busy = (500..<2500).contains(t)
+            return d.poll(now: ms(t), isFading: false, ownerIsActive: true, isMouseButtonPressed: busy)
+        }
+        #expect(actions.filter { $0 != .none } == [.sendEscape, .clickItem, .giveUp])
+    }
+
+    @Test func foreignMenusAreMenusOutsideThePresentation() {
+        typealias W = ItemClicker.WindowInfo
+        let popover = W(windowID: 10, layer: 25, ownerPID: 500)
+        let ownMenu = W(windowID: 11, layer: 101, ownerPID: 500)
+        let otherMenu = W(windowID: 12, layer: 101, ownerPID: 600)
+        let otherWindow = W(windowID: 13, layer: 0, ownerPID: 600)
+        // A menu that is part of the presentation (the item's own menu) doesn't count.
+        #expect(!ItemClicker.containsForeignMenu([popover, ownMenu, otherWindow], presentation: [10, 11]))
+        // Another app's menu does, and so does a menu the presentation opened later (the user is using it).
+        #expect(ItemClicker.containsForeignMenu([popover, otherMenu], presentation: [10]))
+        #expect(ItemClicker.containsForeignMenu([popover, ownMenu], presentation: [10]))
+        #expect(!ItemClicker.containsForeignMenu([popover, otherWindow], presentation: [10]))
+    }
 }
