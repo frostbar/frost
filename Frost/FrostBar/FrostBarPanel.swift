@@ -26,7 +26,7 @@ final class FrostBarPanel: NSPanel {
         isReleasedWhenClosed = false
         isMovable = false
         animationBehavior = .none
-        setAccessibilityLabel("Frost Bar")
+        setAccessibilityLabel(String(localized: "Frost Bar", comment: "Accessibility label of the Frost Bar panel"))
     }
 
     /// Keep AppKit from pushing the window below the menu bar: the transparent top margin (needed for the shadow) is

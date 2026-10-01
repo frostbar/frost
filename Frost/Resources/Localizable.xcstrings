@@ -450,7 +450,7 @@
       "shouldTranslate" : false
     },
     "Frost Bar" : {
-      "comment" : "Display mode",
+      "comment" : "Display mode\nAccessibility label of the Frost Bar panel",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
