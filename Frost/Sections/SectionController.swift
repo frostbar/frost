@@ -50,6 +50,7 @@ final class SectionController {
     @ObservationIgnored private var replicaClickMonitors: [Any] = []
     @ObservationIgnored private var replicaClickTask: Task<Void, Never>?
     @ObservationIgnored private var screenParametersObserver: NSObjectProtocol?
+    @ObservationIgnored private var displayRescanTask: Task<Void, Never>?
     /// Environment variable `FROST_TEST_DROP_REPLICA_CLICKS=1` (VM testing only): drops replica clicks the system
     /// redelivers to the button, simulating a real Mac where the first click on a replica isn't delivered, to exercise
     /// the fallback path (the VM's virtual display redelivers, so it can't reproduce this otherwise).
@@ -150,7 +151,10 @@ final class SectionController {
         screenParametersObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateReplicaClickMonitors() }
+            MainActor.assumeIsolated {
+                self?.updateReplicaClickMonitors()
+                self?.rescanAfterDisplayChange()
+            }
         }
 
         hidden = SeparatorItem(autosaveName: Self.hiddenAutosaveName)
@@ -573,6 +577,23 @@ final class SectionController {
     @objc private func checkForUpdates() { model?.updates.checkForUpdates() }
 
     // MARK: - Snowflake replicas on other displays
+
+    /// A display was connected, disconnected or rearranged: the scanned menu bar (`scanner.menuBarDisplay`) and the
+    /// replica frames (`scanner.replicaIconFrames`, used to recognize clicks on a snowflake replica) must be fresh, or
+    /// the first click on a newly connected display's snowflake is missed. The new display's menu bar windows show up
+    /// shortly after the notification, so rescan now and again a little later, then read ownership once more.
+    private func rescanAfterDisplayChange() {
+        scanner.rescan()
+        displayRescanTask?.cancel()
+        displayRescanTask = Task { [weak self] in
+            for delay: Duration in [.milliseconds(300), .seconds(1)] {
+                do { try await Task.sleep(for: delay) } catch { return }
+                self?.scanner.rescan()
+            }
+            self?.scanner.scheduleRescan(after: .zero, refreshOwnership: true)
+        }
+        FrostLog.sections.notice("display configuration changed (\(NSScreen.screens.count) display(s)); rescanning")
+    }
 
     /// With more than one display, monitors the mouse (global: events on a replica belong to another window; local:
     /// events the system redelivers to the Frost icon); removes the monitors with a single display.
