@@ -706,7 +706,8 @@ final class FrostBarController {
 
     /// An icon in the panel was clicked: close the panel, temporarily move the original icon into the Visible section
     /// (right of the Frost icon), click it, and move it back once its menu / popover closes. The whole flow is one move
-    /// transaction, mutually exclusive with layout editor moves; the click is ignored if a transaction is running.
+    /// transaction, mutually exclusive with layout editor moves; if another transaction is running it waits for it (up
+    /// to `moverWait`) before giving up on the click.
     ///
     /// The activation hand-off (`ActivationHandOff`) begins synchronously while handling the user's click event: only
     /// then does Frost's cooperative activation count as user intent.
@@ -734,6 +735,9 @@ final class FrostBarController {
             self.activationTask = nil
         }
     }
+
+    /// How long a click forward waits for another move transaction to finish before it is dropped.
+    private static let moverWait: Duration = .seconds(2)
 
     /// The current (or most recent) click forwarding task; tests and reopening the panel wait for it.
     var pendingActivation: Task<Void, Never>? { activationTask }
@@ -763,10 +767,23 @@ final class FrostBarController {
     }
 
     private func forward(_ id: CGWindowID, handOff: ActivationHandOff?) async {
+        let mover = app.mover
+        // Another transaction (an editor drop, a new-item placement) holds the mover: wait for it (bounded) instead of
+        // silently dropping the user's click. No suspension point between the wait and `transaction`, so nothing can
+        // slip in once it is idle.
+        if mover.isBusy {
+            FrostLog.frostBar.notice("activation waits for another move to finish")
+            guard await mover.waitUntilIdle(timeout: Self.moverWait), !Task.isCancelled else {
+                FrostLog.frostBar.error("activate dropped: another move was still in progress after \(Self.moverWait, privacy: .public)")
+                return
+            }
+        }
         do {
-            try await app.mover.transaction { try await self.moveOutClickAndRestore(id, handOff: handOff) }
+            try await mover.transaction { try await self.moveOutClickAndRestore(id, handOff: handOff) }
         } catch ItemMoveError.busy {
             FrostLog.frostBar.notice("activate ignored: another move is in progress")
+        } catch ItemMoveError.shuttingDown {
+            FrostLog.frostBar.notice("activate ignored: Frost is quitting")
         } catch {
             FrostLog.frostBar.error("activate failed: \(error, privacy: .public)")
         }
