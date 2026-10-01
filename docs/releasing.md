@@ -155,3 +155,13 @@ submits it with `notarytool --wait`, staples it and checks it with `spctl` befor
 path has not been exercised yet. Switching identities is a one-time change for users: Sparkle accepts the update
 because the EdDSA key is unchanged, but macOS sees a new code signature, so Accessibility and Screen Recording must be
 granted again once.
+
+## Repository protection
+
+`frostbar/frost` uses two repository rulesets (Settings → Rules → Rulesets):
+
+- **Protect main** (default branch), enforced for everyone including admins: no deletion, no force pushes, linear
+  history. Development is direct pushes (no pull requests), so every push to `main` must be a fast-forward —
+  `release.sh --publish` adds one commit on top of the published history, which satisfies this.
+- **Protect release tags** (`v*`): tags can't be deleted, moved or force-updated. Organization admins can bypass this
+  one to repair a botched release.
