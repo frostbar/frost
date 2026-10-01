@@ -42,10 +42,11 @@ public enum AXExtrasReader {
         var result: [AXItemInfo] = []
         for app in apps {
             let element = AXUIElementCreateApplication(app.pid)
-            AXUIElementSetMessagingTimeout(element, 0.25)
+            AXUIElementSetMessagingTimeout(element, messagingTimeout)
             guard let bar: AXUIElement = copy(element, kAXExtrasMenuBarAttribute),
-                  let children: [AXUIElement] = copy(bar, kAXChildrenAttribute) else { continue }
+                  let children: [AXUIElement] = copy(extrasBar(bar), kAXChildrenAttribute) else { continue }
             for child in children {
+                AXUIElementSetMessagingTimeout(child, messagingTimeout)
                 guard let frame = frame(of: child) else { continue }
                 let description: String? = copy(child, kAXDescriptionAttribute)
                 result.append(AXItemInfo(bundleID: app.bundleID, pid: app.pid, frame: frame, description: description))
@@ -59,11 +60,25 @@ public enum AXExtrasReader {
     /// background thread so a hung target app doesn't block the main thread).
     public static func element(pid: pid_t, matching frame: CGRect) -> AXUIElement? {
         let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.25)
+        AXUIElementSetMessagingTimeout(app, messagingTimeout)
         guard let bar: AXUIElement = copy(app, kAXExtrasMenuBarAttribute),
-              let children: [AXUIElement] = copy(bar, kAXChildrenAttribute) else { return nil }
-        let frames = children.map { self.frame(of: $0) ?? .zero }
+              let children: [AXUIElement] = copy(extrasBar(bar), kAXChildrenAttribute) else { return nil }
+        let frames = children.map { child in
+            AXUIElementSetMessagingTimeout(child, messagingTimeout)
+            return self.frame(of: child) ?? .zero
+        }
         return AXItemMatcher.bestMatch(for: frame, among: frames).map { children[$0] }
+    }
+
+    /// Messaging timeout for every element read here. A timeout set on an element applies to that element only (not to
+    /// elements obtained from it), so it is set on the app, the extras bar and each child: without it, a hung app
+    /// blocks each read for the system default (about 6 s) instead of 0.25 s.
+    static let messagingTimeout: Float = 0.25
+
+    /// Applies `messagingTimeout` to the extras bar element and returns it.
+    static func extrasBar(_ bar: AXUIElement) -> AXUIElement {
+        AXUIElementSetMessagingTimeout(bar, messagingTimeout)
+        return bar
     }
 
     static func frame(of element: AXUIElement) -> CGRect? {

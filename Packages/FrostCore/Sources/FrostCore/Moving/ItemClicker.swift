@@ -80,7 +80,7 @@ public enum ItemClicker {
             let frame = item.frame
             let error: AXError? = await Task.detached {
                 guard let element = AXExtrasReader.element(pid: pid, matching: frame) else { return nil }
-                AXUIElementSetMessagingTimeout(element, 0.25)
+                AXUIElementSetMessagingTimeout(element, AXExtrasReader.messagingTimeout)
                 return AXUIElementPerformAction(element, kAXPressAction as CFString)
             }.value
             if let error {
