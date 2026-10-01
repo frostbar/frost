@@ -1,0 +1,12 @@
+.DS_Store
+build/
+DerivedData/
+*.xcodeproj/
+.build/
+xcuserdata/
+.claude/worktrees/
+
+# Never commit signing certificates or private keys (docs/releasing.md)
+*.p12
+*.pem
+*.key

@@ -1,0 +1,73 @@
+name: Frost
+options:
+  bundleIdPrefix: dev.frost
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  # English is the development (base) language; other languages come from Frost/Resources/Localizable.xcstrings.
+  developmentLanguage: en
+packages:
+  FrostCore:
+    path: Packages/FrostCore
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.10.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "Frost Local Signing"
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: NO
+    SWIFT_STRICT_CONCURRENCY: complete
+    # Extract localizable strings from Swift sources into the String Catalog.
+    SWIFT_EMIT_LOC_STRINGS: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    # GitHub repository (owner/repo) used for releases: the Sparkle feed URL is built from it, and the release
+    # script (scripts/release/config.sh) reads it from here too.
+    FROST_GITHUB_REPO: frostbar/frost
+targets:
+  Frost:
+    type: application
+    platform: macOS
+    sources: [Frost]
+    dependencies:
+      - package: FrostCore
+      - package: Sparkle
+    info:
+      path: Frost/Resources/Info.plist
+      properties:
+        CFBundleName: Frost
+        CFBundleDisplayName: Frost
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSUIElement: true
+        # Let Sparkle-provided UI (update windows etc.) use the user's system language even when Frost itself has no
+        # localization for it (Frost ships English and Simplified Chinese).
+        CFBundleAllowMixedLocalizations: true
+        CFBundleLocalizations: [en, zh-Hans]
+        LSMinimumSystemVersion: "26.0"
+        NSHumanReadableCopyright: "© 2026 Kyle Zhang"
+        # Sparkle automatic updates: the feed is appcast.xml in the latest GitHub Release; the public key matches the
+        # EdDSA private key stored in the login keychain under account dev.frost.Frost (docs/releasing.md,
+        # "Keys and certificates").
+        SUFeedURL: "https://github.com/$(FROST_GITHUB_REPO)/releases/latest/download/appcast.xml"
+        SUPublicEDKey: "bSODBP2nCj1BVf+FVDE4o8boPvl+I9FpHjVsOn9u5PE="
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+    entitlements:
+      path: Frost/Resources/Frost.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.frost.Frost
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+schemes:
+  Frost:
+    build:
+      targets:
+        Frost: all
+    run:
+      config: Debug
