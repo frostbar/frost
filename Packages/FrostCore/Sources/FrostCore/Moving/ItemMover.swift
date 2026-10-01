@@ -14,6 +14,9 @@ public enum ItemMoveError: Error, Equatable, Sendable {
     /// position-based and the Frost icon was dragged instead. One attempt has been made to move the icon back to
     /// the right of H (not guaranteed to succeed).
     case controlsDisturbed
+    /// Frost is quitting (`ItemMover.beginShutdown`): no new move transaction may start, so the app never exits in
+    /// the middle of a ⌘-drag that a queued drop or a new-item placement started right before the quit.
+    case shuttingDown
 }
 
 /// Moves menu bar items with a synthetic ⌘-drag (implemented per spike-findings.md, "Task 11").
@@ -47,16 +50,45 @@ public final class ItemMover {
     /// "move out → click → move back" flow) must be wrapped in `transaction`.
     public private(set) var isBusy = false
 
+    /// Frost is quitting (`beginShutdown`): new transactions throw `.shuttingDown` unless they are the move-back
+    /// work quitting itself runs, and every move gets at most `shutdownMaxAttempts` attempts so quitting stays
+    /// responsive.
+    public private(set) var isShuttingDown = false
+    /// Attempts per move once shutting down (instead of `maxAttempts`).
+    public var shutdownMaxAttempts = 1
+
     public init(scanner: MenuBarItemScanner) { self.scanner = scanner }
 
     /// Runs a move transaction exclusively; throws `.busy` immediately if one is already in progress (the caller
-    /// decides: the layout editor waits for `isBusy` to become false and then runs, i.e. queues; the Frost Bar
-    /// click forward drops the click).
-    public func transaction<T>(_ body: () async throws -> T) async throws -> T {
+    /// decides: the layout editor and the Frost Bar click forward wait for `isBusy` to become false first, see
+    /// `waitUntilIdle`). Once shutting down, throws `.shuttingDown` unless `allowedDuringShutdown` (moving an icon
+    /// back to its section while quitting).
+    public func transaction<T>(allowedDuringShutdown: Bool = false, _ body: () async throws -> T) async throws -> T {
+        guard !isShuttingDown || allowedDuringShutdown else { throw ItemMoveError.shuttingDown }
         guard !isBusy else { throw ItemMoveError.busy }
         isBusy = true
         defer { isBusy = false }
         return try await body()
+    }
+
+    /// Frost is about to quit: from now on only transactions `allowedDuringShutdown` may start. Irreversible.
+    public func beginShutdown() {
+        guard !isShuttingDown else { return }
+        isShuttingDown = true
+        FrostLog.mover.notice("shutting down: no new move transactions")
+    }
+
+    /// Waits (polling every `poll`) until no transaction is running; returns false if one is still running after
+    /// `timeout` (or when the waiting task is cancelled while one is running). Callers that then start a
+    /// transaction must not suspend between this returning true and calling `transaction`, so nothing can slip in.
+    public func waitUntilIdle(timeout: Duration, poll: Duration = .milliseconds(50)) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while isBusy {
+            guard clock.now < deadline else { return false }
+            do { try await Task.sleep(for: poll) } catch { return !isBusy }
+        }
+        return true
     }
 
     /// Moves the item to `destination`. After each attempt, polls until the order is correct and frames are stable
@@ -78,8 +110,12 @@ public final class ItemMover {
     private func move(_ itemID: CGWindowID, to destination: MoveDestination, attempts: Int,
                       checkingControls: Bool) async throws {
         assert(isBusy, "ItemMover.move must be called inside transaction")
-        for _ in 1...max(1, attempts) {
+        for attempt in 1...max(1, attempts) {
             try Task.checkCancellation()
+            // Quitting began during this move: stop retrying (checked per attempt, so a move that was already
+            // retrying finishes its current attempt and then gives up).
+            guard attempt <= Self.attemptLimit(requested: attempts, isShuttingDown: isShuttingDown,
+                                               shutdownLimit: shutdownMaxAttempts) else { break }
             scanner.rescan()
             let items = scanner.items
             guard let item = items.first(where: { $0.windowID == itemID }) else { throw ItemMoveError.itemNotFound }
@@ -130,6 +166,11 @@ public final class ItemMover {
     }
 
     // MARK: - Pure logic (unit tested)
+
+    /// How many attempts a move may make: `requested`, capped at `shutdownLimit` while shutting down; at least one.
+    nonisolated static func attemptLimit(requested: Int, isShuttingDown: Bool, shutdownLimit: Int) -> Int {
+        max(1, isShuttingDown ? min(requested, shutdownLimit) : requested)
+    }
 
     /// Whether the item is already immediately left/right of the target (sorted by minX; `frames` holds every
     /// item on the scanned menu bar, excluding copies on other displays).
@@ -232,6 +273,12 @@ public final class ItemMover {
     /// Called on a background thread (it uses `usleep`) so Frost's own main thread can handle the events. The
     /// cursor is restored afterwards.
     nonisolated static func postCommandDrag(windowID: CGWindowID, mouseDown down: CGPoint, mouseUp up: CGPoint) {
+        // Tracked so quitting never exits between the mouse-down and the mouse-up / cursor restore.
+        SyntheticEventGate.posting { postCommandDragNow(windowID: windowID, mouseDown: down, mouseUp: up) }
+    }
+
+    private nonisolated static func postCommandDragNow(windowID: CGWindowID, mouseDown down: CGPoint,
+                                                       mouseUp up: CGPoint) {
         let source = CGEventSource(stateID: .hidSystemState)
         // Same as Ice: don't suppress local (the user's) mouse and keyboard events while posting synthetic ones.
         if let session = CGEventSource(stateID: .combinedSessionState) {

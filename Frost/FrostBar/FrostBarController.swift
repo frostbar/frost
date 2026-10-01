@@ -842,13 +842,10 @@ final class FrostBarController {
     private func retryRestore(_ plan: RestorePlan, controls: FrostControlWindows) async {
         let mover = app.mover, sections = app.sections
         // Wait up to 5 s for a running transaction (editor drag etc.) to finish.
-        let clock = ContinuousClock()
-        let deadline = clock.now + .seconds(5)
-        while mover.isBusy, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
+        _ = await mover.waitUntilIdle(timeout: .seconds(5))
         do {
-            try await mover.transaction {
+            // Putting the icon back is exactly what quitting waits for, so it may run while shutting down.
+            try await mover.transaction(allowedDuringShutdown: true) {
                 if sections.isEditing {
                     // While editing, positions may be under the notch and unreliable: collapse temporarily to move.
                     try await sections.whileCollapsedForMove { try await self.restoreIfNeeded(plan, controls: controls) }

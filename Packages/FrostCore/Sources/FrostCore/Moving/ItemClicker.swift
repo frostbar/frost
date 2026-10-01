@@ -383,6 +383,10 @@ public enum ItemClicker {
     /// lock screen's Shield window); with 0x33 it still reaches the target item.
     /// Called on a background thread; the cursor is restored afterwards.
     static func postClick(at point: CGPoint, windowID: CGWindowID) {
+        SyntheticEventGate.posting { postClickNow(at: point, windowID: windowID) }
+    }
+
+    private static func postClickNow(at point: CGPoint, windowID: CGWindowID) {
         let source = CGEventSource(stateID: .hidSystemState)
         let savedCursor = CGEvent(source: nil)?.location
         defer { if let savedCursor { CGWarpMouseCursorPosition(savedCursor) } }

@@ -30,33 +30,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Termination
 
-    /// If a move transaction (editor drag and drop, Frost Bar click forwarding or move-back) is in flight, defer
-    /// termination until it finishes; otherwise an icon temporarily moved into the Visible section would stay there
-    /// (the system has already remembered its new position). Waits at most 5 seconds.
+    /// Quitting must never leave an icon temporarily moved into the Visible section (the system has already
+    /// remembered its new position), nor exit in the middle of a ⌘-drag.
+    ///
+    /// - First `ItemMover.beginShutdown()`: from now on no new move transaction can start (a queued editor drop, a
+    ///   new-item placement, …); only the move-back work below may.
+    /// - If a transaction (editor drag and drop, Frost Bar click forwarding or move-back) or Frost Bar work is in
+    ///   flight, defer termination: `FrostBarController.prepareForTermination` ends a forwarded click's wait, moves
+    ///   the icon back and runs a pending move-back retry; then the reply is sent in the same main-actor turn that
+    ///   observes the mover idle, so nothing can start in between.
+    /// - While shutting down every move makes a single attempt (`ItemMover.shutdownMaxAttempts`): the worst case
+    ///   (an interrupted move-out, a move-back to the anchor then to the section boundary, and one retry of both) is
+    ///   about 4.5 s, below `terminationGrace`. After the grace period Frost quits anyway, but never while a
+    ///   synthetic event sequence is being posted (`SyntheticEventGate`), so the mouse-up and the cursor restore are
+    ///   never left pending.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let model, let frostBar, model.mover.isBusy || frostBar.hasPendingWork else { return .terminateNow }
+        guard let model, let frostBar else { return .terminateNow }
+        model.mover.beginShutdown()
+        guard model.mover.isBusy || frostBar.hasPendingWork else { return .terminateNow }
         FrostLog.app.notice("deferring termination until the in-flight move finishes")
         Task { @MainActor in
-            var finished = false
+            let preparation = TerminationPreparation()
             Task { @MainActor in
                 await frostBar.prepareForTermination()
-                while model.mover.isBusy {
-                    try? await Task.sleep(for: .milliseconds(50))
-                }
-                finished = true
+                preparation.isFinished = true
             }
             let clock = ContinuousClock()
             let deadline = clock.now + Self.terminationGrace
-            while !finished, clock.now < deadline {
-                try? await Task.sleep(for: .milliseconds(50))
+            while !(preparation.isFinished && !model.mover.isBusy) {
+                guard clock.now < deadline else {
+                    FrostLog.app.error("terminating with a move still in progress")
+                    break
+                }
+                try? await Task.sleep(for: Self.terminationPoll)
             }
-            if !finished { FrostLog.app.error("terminating with a move still in progress") }
+            // Never exit between a synthetic mouse-down and its mouse-up / cursor restore (posting takes < 0.2 s).
+            let postDeadline = clock.now + .seconds(1)
+            while SyntheticEventGate.isPosting, clock.now < postDeadline {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
     }
 
-    private static let terminationGrace: Duration = .seconds(5)
+    private static let terminationGrace: Duration = .seconds(6)
+    private static let terminationPoll: Duration = .milliseconds(20)
 
     // MARK: - Main menu
 
@@ -80,4 +99,10 @@ extension AppDelegate: NSMenuItemValidation {
         }
         return true
     }
+}
+
+/// Whether `FrostBarController.prepareForTermination` has finished (set from the task that runs it).
+@MainActor
+private final class TerminationPreparation {
+    var isFinished = false
 }

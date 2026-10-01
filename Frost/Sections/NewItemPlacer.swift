@@ -124,9 +124,17 @@ final class NewItemPlacer {
     }
 
     private func move(_ items: [MenuBarItem], controls: FrostControlWindows) async {
+        // Items a move was attempted for (moved or failed): only these are marked as seen. The rest of the batch is
+        // decided again later.
+        var attempted: [MenuBarItem] = []
         do {
             try await mover.transaction {
                 for item in items {
+                    if let reason = Self.stopReason(isShuttingDown: mover.isShuttingDown) {
+                        FrostLog.newItems.notice("stopped placing new items (\(reason, privacy: .public)); the rest are retried later")
+                        break
+                    }
+                    attempted.append(item)
                     do {
                         try await mover.move(item.windowID, to: .leftOf(controls.hiddenSeparator))
                         FrostLog.newItems.notice("moved new item \(item.identity.bundleID, privacy: .public) out of Always Hidden")
@@ -142,6 +150,9 @@ final class NewItemPlacer {
                     }
                 }
             }
+        } catch ItemMoveError.shuttingDown {
+            // Frost is quitting: these items aren't marked as seen and are placed on the next launch.
+            return
         } catch ItemMoveError.busy {
             // Another transaction just started: retry later (these items aren't marked as seen yet).
             schedule(after: Self.retryDelay)
@@ -153,8 +164,14 @@ final class NewItemPlacer {
         } catch {
             FrostLog.newItems.error("placing new items failed: \(error, privacy: .public)")
         }
-        considered.formUnion(items.map(\.windowID))
-        remember(Set(items.compactMap(NewItemPlacement.identity(of:))), seeding: false)
+        considered.formUnion(attempted.map(\.windowID))
+        remember(Set(attempted.compactMap(NewItemPlacement.identity(of:))), seeding: false)
+        if attempted.count < items.count, !mover.isShuttingDown { schedule(after: Self.retryDelay) }
+    }
+
+    /// Why the rest of a batch must wait (nil = go on with the next item).
+    private static func stopReason(isShuttingDown: Bool) -> String? {
+        isShuttingDown ? "Frost is quitting" : nil
     }
 
     private func remember(_ identities: Set<ItemIdentity>, seeding: Bool) {

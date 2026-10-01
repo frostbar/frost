@@ -364,6 +364,8 @@ final class LayoutEditorModel {
             }
             succeeded = true
         } catch is CancellationError {
+        } catch ItemMoveError.shuttingDown {
+            // Frost is quitting: the queued drop is simply not performed.
         } catch {
             if self.session == session {
                 showError(String(localized: "Couldn’t move “\(item.displayName)”. Try again.",
