@@ -184,8 +184,10 @@ For each item, record: environment (model / displays / macOS version) and result
 
 ## 6. Settings window appearance
 
-- [ ] **Known risk (d)**: how the transparent title bar, glass segmented control (glass morphing animation when
-  switching), glass cards and button hover / press effects look in Light and Dark Mode and on different wallpapers.
+- [ ] **Known risk (d)**: how the transparent title bar, the toolbar tabs (Layout / Behavior / About, the selected one
+  highlighted), glass cards and button hover / press effects look in Light and Dark Mode and on different wallpapers.
+- [ ] Switching tabs is instant: no transition, no window resize, no stutter; the window title follows the selected
+  tab. Returning to Layout expands the menu bar only after the tab is shown.
 - [ ] Switch the system between Light and Dark Mode: the Settings window, onboarding window and Frost Bar update
   immediately; images in the layout editor and Frost Bar refresh with the appearance (white / black glyphs never end
   up on a background of the same color; monochrome glyphs in the Frost Bar are tinted by the glass's actual

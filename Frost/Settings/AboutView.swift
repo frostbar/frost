@@ -4,8 +4,6 @@ import SwiftUI
 /// About tab: icon, name, version and permission status.
 struct AboutView: View {
     @Environment(AppModel.self) private var model
-    /// Toggled once on appear so the snowflake plays a one-shot animation (no continuously running animations in windows).
-    @State private var greet = false
 
     var body: some View {
         let permissions = model.permissions
@@ -40,17 +38,14 @@ struct AboutView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 0)
+            .padding(.top, 12)
             .padding(.bottom, 20)
             .animation(.snappy, value: permissions.accessibility)
             .animation(.snappy, value: permissions.screenRecording)
         }
         .scrollBounceBehavior(.basedOnSize)
         // Granting access in System Settings does not necessarily reactivate Frost, so poll while visible.
-        .onAppear {
-            permissions.startPolling()
-            greet.toggle()
-        }
+        .onAppear { permissions.startPolling() }
         .onDisappear { permissions.stopPolling() }
     }
 
@@ -60,7 +55,6 @@ struct AboutView: View {
                 .font(.system(size: 64, weight: .light))
                 .foregroundStyle(.linearGradient(colors: [.cyan, .blue], startPoint: .topLeading,
                                                  endPoint: .bottomTrailing))
-                .symbolEffect(.bounce, value: greet)
                 .frame(width: 96, height: 96)
                 .background {
                     Circle()

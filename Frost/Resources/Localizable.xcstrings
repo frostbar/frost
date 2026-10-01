@@ -481,17 +481,6 @@
         }
       }
     },
-    "Frost Settings" : {
-      "comment" : "Settings window title",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Frost 设置"
-          }
-        }
-      }
-    },
     "Frost needs Accessibility and Screen Recording permissions to show and move icons." : {
       "localizations" : {
         "zh-Hans" : {

@@ -74,7 +74,8 @@ Tahoe). The first implementation step is a half-day spike on a real Mac to verif
 - **Frost Bar**: a capsule-shaped glass panel (`.glassEffect()`) below the Frost item (or the notch); items at their
   original size in one row, with hover highlight + the app name; fades out with a slight scale; closes on an outside
   click or Esc.
-- **Settings window**: transparent title bar + glass background, about 640×520, a segmented control at the top:
+- **Settings window**: transparent title bar + glass background, 640 wide with a fixed size, standard settings-style
+  toolbar tabs (icon + label; the window title follows the selected tab):
   - Layout: three glass section bands with live item images; items can be dragged across sections and reordered.
     After a drop the item shows as pending until the real menu bar move succeeds.
   - Behavior: auto-rehide delay, display mode, launch at login (`SMAppService`).

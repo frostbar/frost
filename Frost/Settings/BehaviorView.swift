@@ -57,7 +57,7 @@ struct BehaviorView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 0)
+            .padding(.top, 12)
             .padding(.bottom, 20)
             .animation(.snappy, value: preferences.displayMode)
             .animation(.snappy, value: preferences.autoRehide)
