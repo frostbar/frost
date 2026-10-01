@@ -24,13 +24,13 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     }
 }
 
-/// Root of one settings tab: the tab's content over the translucent window background.
+/// Root of one settings tab: the tab's content filling the content area. It has no background of its own: the window's
+/// translucent background lies behind all tabs (see `SettingsWindowController`), so only the content cross-fades.
 struct SettingsPane<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(VisualEffectBackground().ignoresSafeArea())
     }
 }

@@ -4,8 +4,8 @@ import SwiftUI
 /// The settings window (a reused singleton) in the standard macOS settings style: an `NSTabViewController` with toolbar
 /// tabs (icon and label, the selected one highlighted), the window title following the selected tab, fixed size.
 ///
-/// Each tab is its own hosting controller living as long as the window, so switching tabs only swaps views: no
-/// transition, no window resize and no SwiftUI rebuild of the tab's content.
+/// Each tab is its own hosting controller living as long as the window, so switching tabs only swaps views (with a
+/// short cross-fade, instant under Reduce Motion): no window resize and no SwiftUI rebuild of the tab's content.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private static var shared: SettingsWindowController?
@@ -21,8 +21,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// Size of the tab content area below the toolbar (the same for every tab).
     static let contentSize = NSSize(width: 640, height: 470)
     /// Delay between showing the Layout tab and starting the editor (expanding the menu bar, rescans, captures), so the
-    /// switch renders first.
+    /// switch renders first. After a fade the editor starts once the fade has ended (plus a short margin) instead.
     private static let editorStartDelay: Duration = .milliseconds(150)
+    /// Margin between the end of the tab fade and the start of the editor.
+    private static let editorStartMarginAfterFade: Duration = .milliseconds(60)
 
     private let model: AppModel
     /// Layout editor state, living as long as the window. The editor is active (menu bar in editing state) only while
@@ -44,7 +46,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         layoutEditor = LayoutEditorModel(model: model)
         tabs = SettingsTabViewController()
         tabs.tabStyle = .toolbar
-        // Switch instantly: the default cross-fades the views.
+        // No built-in transition: `SettingsTabViewController` runs its own cross-fade.
         tabs.transitionOptions = []
         for tab in SettingsTab.allCases {
             let item = NSTabViewItem(viewController: Self.hostingController(for: tab, model: model,
@@ -118,8 +120,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             layoutEditor.setTabSelected(false)
             return
         }
+        let delay = tabs.lastTransitionDuration > 0
+            ? .seconds(tabs.lastTransitionDuration) + Self.editorStartMarginAfterFade
+            : Self.editorStartDelay
         editorStartTask = Task { [weak self] in
-            do { try await Task.sleep(for: Self.editorStartDelay) } catch { return }
+            do { try await Task.sleep(for: delay) } catch { return }
             guard let self, self.reportedTab == .layout else { return }
             self.editorStartTask = nil
             self.layoutEditor.setTabSelected(true)
@@ -182,14 +187,105 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 }
 
-/// Reports toolbar tab selections to the window controller.
+/// Reports toolbar tab selections to the window controller and cross-fades between tabs.
+///
+/// The window's translucent background is one `NSVisualEffectView` behind all tabs, outside the fade: cross-fading
+/// two behind-window materials visibly shifts the tint mid-fade. The tabs themselves are transparent, so a switch is a
+/// plain cross-fade of their content, run entirely by Core Animation: the incoming view is added (fully laid out and
+/// drawn) and only the presentation opacities of the two views animate, so the main thread does no per-frame work and
+/// the window never resizes. The outgoing view is removed when the fade ends.
 private final class SettingsTabViewController: NSTabViewController {
     var onSelect: ((SettingsTab) -> Void)?
+
+    /// Duration of the cross-fade (ease-in-out).
+    static let fadeDuration: TimeInterval = 0.18
+
+    /// Duration of the last switch's animation; 0 when it was instant (window not visible, Reduce Motion).
+    private(set) var lastTransitionDuration: TimeInterval = 0
+    /// Ends a cross-fade still running (another switch started): shows the incoming view at full opacity and removes
+    /// the outgoing one.
+    private var finishRunningFade: (() -> Void)?
+    /// Identifies the running fade, so a stale completion does nothing.
+    private var fadeGeneration = 0
+    private static let fadeKey = "frost.tabFade"
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        let background = NSVisualEffectView(frame: view.bounds)
+        background.material = .underWindowBackground
+        background.blendingMode = .behindWindow
+        background.state = .active
+        background.autoresizingMask = [.width, .height]
+        view.addSubview(background, positioned: .below, relativeTo: nil)
+    }
 
     override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
         super.tabView(tabView, didSelect: tabViewItem)
         if let id = tabViewItem?.identifier as? String, let tab = SettingsTab(rawValue: id) {
             onSelect?(tab)
         }
+    }
+
+    // `NSTabViewController` routes every switch through this method (`transitionOptions` stays empty, so `super`
+    // swaps the views instantly).
+    override func transition(from fromViewController: NSViewController, to toViewController: NSViewController,
+                             options: NSViewController.TransitionOptions = [],
+                             completionHandler completion: (() -> Void)? = nil) {
+        finishRunningFade?()
+        let outgoing = fromViewController.view, incoming = toViewController.view
+        guard let container = outgoing.superview, container.window?.isVisible == true,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            lastTransitionDuration = 0
+            // AppKit calls the completion on the main thread (synchronously for an instant switch).
+            nonisolated(unsafe) let completion = completion
+            super.transition(from: fromViewController, to: toViewController, options: []) { completion?() }
+            return
+        }
+        lastTransitionDuration = Self.fadeDuration
+
+        // Add the incoming view and finish its layout and drawing now, so no first-render work lands inside the fade.
+        incoming.wantsLayer = true
+        outgoing.wantsLayer = true
+        incoming.frame = container.bounds
+        incoming.autoresizingMask = [.width, .height]
+        container.addSubview(incoming, positioned: .above, relativeTo: outgoing)
+        incoming.layoutSubtreeIfNeeded()
+        incoming.displayIfNeeded()
+
+        fadeGeneration += 1
+        let generation = fadeGeneration
+        finishRunningFade = { [weak self] in
+            guard let self, self.fadeGeneration == generation else { return }
+            self.fadeGeneration += 1
+            self.finishRunningFade = nil
+            outgoing.removeFromSuperview()
+            outgoing.layer?.removeAnimation(forKey: Self.fadeKey)
+            incoming.layer?.removeAnimation(forKey: Self.fadeKey)
+            completion?()
+        }
+
+        // Model opacities stay 1 (the outgoing view is removed at the end); only the presentation fades.
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.fadeGeneration == generation else { return }
+                self.finishRunningFade?()
+            }
+        }
+        outgoing.layer?.add(Self.fade(from: 1, to: 0), forKey: Self.fadeKey)
+        incoming.layer?.add(Self.fade(from: 0, to: 1), forKey: Self.fadeKey)
+        CATransaction.commit()
+    }
+
+    private static func fade(from: Float, to: Float) -> CABasicAnimation {
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = from
+        fade.toValue = to
+        fade.duration = fadeDuration
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        // Hold the end value until the fade's completion removes the animation (no flash of the outgoing view).
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        return fade
     }
 }

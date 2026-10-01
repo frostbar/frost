@@ -166,10 +166,12 @@ timing. Evidence (recordings, logs, analysis scripts) goes under `build/vm-shots
   `ps` over a 30 s window.
 - **Frame timing / "the animation stutters"**: run a Debug build with `FROST_TEST_FRAME_PROBE=1`
   (`make vm-run FROST_ENV="FROST_TEST_FRAME_PROBE=1"`). `FrameProbe` puts a display link on the window for 1.2 s after
-  each settings tab switch and logs `frame-probe <label> frames=… firstFrame=… maxGap=… hitches=… hitchTime=…` (a hitch
-  is a gap of more than 1.5 refresh periods, i.e. the main thread missed a frame). Drive the switches with real
-  HID-level clicks from inside the guest, and get an idle baseline by posting the distributed notification
-  `dev.frost.Frost.frameProbe` (object = label) without touching the window. Don't grab the VNC framebuffer meanwhile.
+  each settings tab switch and logs `frame-probe <label> frames=… firstFrame=… maxGap=… hitches=… hitchTime=… at=…` (a
+  hitch is a gap of more than 1.5 refresh periods, i.e. the main thread missed a frame; `at=` lists each hitch as
+  `<ms after the switch>+<gap ms>`, which tells hitches during an animation from later work such as the layout editor
+  starting). Drive the switches with real HID-level clicks from inside the guest, and get an idle baseline by posting
+  the distributed notification `dev.frost.Frost.frameProbe` (object = label) without touching the window. Don't grab
+  the VNC framebuffer meanwhile.
 - **Multi-display**: add a second display with `guest-virtual-display.m` (right, left, very wide on the left, below),
   dump every display's menu bar row with `dump-status-windows.swift --all`, screenshot it with
   `screencapture -D 2` and click on it with `guest-click.swift`. The virtual display has the same 30 pt menu bar as

@@ -186,8 +186,10 @@ For each item, record: environment (model / displays / macOS version) and result
 
 - [ ] **Known risk (d)**: how the transparent title bar, the toolbar tabs (Layout / Behavior / About, the selected one
   highlighted), glass cards and button hover / press effects look in Light and Dark Mode and on different wallpapers.
-- [ ] Switching tabs is instant: no transition, no window resize, no stutter; the window title follows the selected
-  tab. Returning to Layout expands the menu bar only after the tab is shown.
+- [ ] Switching tabs cross-fades the content (about 0.2 s) over a background that stays still: no tint flicker, no
+  window resize, no stutter, also on the first visit to each tab and when clicking tabs in quick succession (the last
+  clicked tab ends up shown cleanly). With System Settings → Accessibility → Display → Reduce motion on, switching is
+  instant. The window title follows the selected tab. Returning to Layout expands the menu bar only after the fade.
 - [ ] Switch the system between Light and Dark Mode: the Settings window, onboarding window and Frost Bar update
   immediately; images in the layout editor and Frost Bar refresh with the appearance (white / black glyphs never end
   up on a background of the same color; monochrome glyphs in the Frost Bar are tinted by the glass's actual

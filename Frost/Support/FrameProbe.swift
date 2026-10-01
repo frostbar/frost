@@ -9,8 +9,8 @@ import QuartzCore
 /// `mark(_:in:)` starts a measurement window: a display link on the window ticks on the main run loop once per refresh,
 /// so a gap between ticks is time the main thread could not produce a frame (a hitch). After `duration` it logs the
 /// latency from the mark to the first tick, the longest gap, the number of hitches (gaps longer than 1.5 refresh
-/// periods) and the total hitch time (the part of each gap beyond one period), to `FrostLog.app` as
-/// `frame-probe <label> ...`.
+/// periods), the total hitch time (the part of each gap beyond one period) and where each hitch happened (`at=` lists
+/// `<ms after the mark>+<gap ms>`), to `FrostLog.app` as `frame-probe <label> ...`.
 @MainActor
 final class FrameProbe: NSObject {
     static let isEnabled = ProcessInfo.processInfo.environment["FROST_TEST_FRAME_PROBE"] == "1"
@@ -75,10 +75,12 @@ final class FrameProbe: NSObject {
         let firstFrame = (ticks.first.map { $0 - start } ?? duration) * 1000
         var maxGap = 0.0, hitches = 0, hitchTime = 0.0
         var previous = start
+        var hitchList: [String] = []
         for tick in ticks {
             let gap = tick - previous
             maxGap = max(maxGap, gap)
             if gap > period * 1.5 {
+                hitchList.append(String(format: "%.0f+%.0f", (previous - start) * 1000, gap * 1000))
                 hitches += 1
                 hitchTime += gap - period
             }
@@ -86,7 +88,8 @@ final class FrameProbe: NSObject {
         }
         let summary = String(format: "frames=%d firstFrame=%.1fms maxGap=%.1fms hitches=%d hitchTime=%.1fms period=%.1fms",
                              ticks.count, firstFrame, maxGap * 1000, hitches, hitchTime * 1000, period * 1000)
-        FrostLog.app.notice("frame-probe \(self.label, privacy: .public) \(summary, privacy: .public)")
+        let at = hitchList.joined(separator: ",")
+        FrostLog.app.notice("frame-probe \(self.label, privacy: .public) \(summary, privacy: .public) at=\(at, privacy: .public)")
     }
 }
 #endif
