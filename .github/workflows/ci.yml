@@ -1,0 +1,155 @@
+# Continuous integration: FrostCore unit tests, an unsigned Release build of the app, and repository lint checks.
+# The checks are informational: they are not required status checks on main (see docs/releasing.md).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The project is developed with Xcode 27 (Swift 6.4); the `xcode-27` runner image (public preview) provides it.
+  # Select the version explicitly so an image update doesn't silently change the toolchain.
+  DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+  XCODEGEN_VERSION: 2.46.0
+  # Pinned: the shellcheck shipped with ubuntu-latest is older and reports different warnings.
+  SHELLCHECK_VERSION: v0.11.0
+
+jobs:
+  test:
+    name: FrostCore tests
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: swift test
+        working-directory: Packages/FrostCore
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee "$RUNNER_TEMP/swift-test.log"
+
+      - name: Test summary
+        if: always()
+        run: |
+          log="$RUNNER_TEMP/swift-test.log"
+          [[ -f $log ]] || exit 0
+          {
+            echo "## FrostCore tests"
+            echo
+            echo '```'
+            grep -E 'Test run with [0-9]+ tests?' "$log" | tail -n 1 || true
+            grep -E '(Test|Suite) .* (failed|recorded an issue)' "$log" | head -n 50 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: App build (unsigned)
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Cache XcodeGen
+        id: xcodegen-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/xcodegen
+          key: xcodegen-${{ runner.os }}-${{ env.XCODEGEN_VERSION }}
+
+      - name: Install XcodeGen
+        run: |
+          if [[ ! -x ~/.cache/xcodegen/bin/xcodegen ]]; then
+            curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/xcodegen.zip" \
+              "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+            mkdir -p ~/.cache
+            unzip -q "$RUNNER_TEMP/xcodegen.zip" -d ~/.cache
+          fi
+          echo ~/.cache/xcodegen/bin >> "$GITHUB_PATH"
+          ~/.cache/xcodegen/bin/xcodegen --version
+
+      - name: Cache SwiftPM packages
+        uses: actions/cache@v5
+        with:
+          path: build/DerivedData-CI/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', 'Packages/FrostCore/Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      # Same command as `make ci-build` (Release, generic macOS destination, code signing disabled), with full
+      # xcodebuild output piped through xcbeautify so warnings show up as annotations.
+      - name: xcodebuild (Release, unsigned)
+        run: |
+          set -o pipefail
+          make ci-build CI_BUILD_FLAGS= | xcbeautify --renderer github-actions
+
+      - name: Package app
+        run: |
+          app=build/DerivedData-CI/Build/Products/Release/Frost.app
+          lipo -info "$app/Contents/MacOS/Frost"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/Frost-unsigned.zip"
+
+      - name: Upload unsigned app
+        uses: actions/upload-artifact@v7
+        with:
+          name: Frost-unsigned-${{ github.sha }}
+          path: ${{ runner.temp }}/Frost-unsigned.zip
+          retention-days: 7
+          if-no-files-found: error
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: No CJK text outside String Catalogs
+        run: |
+          if git grep -I -n -P "[\x{3000}-\x{303f}\x{4e00}-\x{9fff}\x{ff00}-\x{ffef}]" -- . ':!*.xcstrings'; then
+            echo "::error::CJK characters found outside *.xcstrings (the repository is English-only, see AGENTS.md)"
+            exit 1
+          fi
+
+      - name: shellcheck
+        run: |
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/shellcheck.tar.xz" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
+          sc="$RUNNER_TEMP/shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+          "$sc" --version
+          # All tracked shell scripts, warnings and errors only (info-level notes such as SC1091 for the dynamic
+          # `source "$(dirname "$0")/..."` paths are not reported).
+          git ls-files -z '*.sh' | xargs -0 "$sc" --severity=warning
+
+      - name: No private keys or certificates
+        run: |
+          status=0
+          if git ls-files | grep -E -i '\.(p12|pfx|pem|key)$'; then
+            echo "::error::Certificate or key files are committed"
+            status=1
+          fi
+          if git grep -I -n -E -e '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----'; then
+            echo "::error::A private key is committed"
+            status=1
+          fi
+          exit $status
