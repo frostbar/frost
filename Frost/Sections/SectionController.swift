@@ -12,15 +12,15 @@ import Observation
 @Observable
 @MainActor
 final class SectionController {
-    enum State: Int, Comparable, Sendable {
-        case collapsed, expanded, expandedAll
-        static func < (lhs: State, rhs: State) -> Bool { lhs.rawValue < rhs.rawValue }
-    }
+    typealias State = SectionState
 
     private(set) var state: State = .collapsed
     private(set) var isEditing = false
     /// Temporarily collapsed during editing to perform a move (see `whileCollapsedForMove`).
     @ObservationIgnored private var isSuspendedForMove = false
+    /// A temporary expansion (Frost Bar live refresh) in progress: state changes requested meanwhile are recorded
+    /// and applied by `restore` (see `TemporaryExpansion`).
+    @ObservationIgnored private var temporaryExpansion: TemporaryExpansion?
 
     /// Set by AppModel; used for navigation callbacks (Settings, Frost Bar).
     @ObservationIgnored weak var model: AppModel?
@@ -210,8 +210,15 @@ final class SectionController {
 
     // MARK: - State
 
-    /// Switches to `newState` (while editing, only records it without changing the appearance).
+    /// Switches to `newState` (while editing, only records it without changing the appearance). During a temporary
+    /// expansion only records the request: `restore` ends in it, so the freeze frame is removed only once the
+    /// requested state is confirmed.
     func setState(_ newState: State) {
+        if temporaryExpansion != nil {
+            temporaryExpansion?.request(newState)
+            FrostLog.sections.notice("state \(newState.rawValue) requested during a temporary expansion; applied when it ends")
+            return
+        }
         state = newState
         guard !isEditing else { return }
         applyLengths()
@@ -269,9 +276,10 @@ final class SectionController {
     /// changes nothing (`settled` is true).
     func temporarilyExpand(_ target: State) async -> (previous: State, settled: Bool) {
         let original = state
-        guard !isEditing, target > original else { return (original, true) }
+        guard !isEditing, temporaryExpansion == nil, target > original else { return (original, true) }
         cancelAutoRehide()
         let baseline = statusFrames()
+        temporaryExpansion = TemporaryExpansion(prior: original)
         state = target
         applyLengths()
         let settled = await waitForFastSettle(baseline: baseline, timeout: Self.expandSettleTimeout)
@@ -279,17 +287,37 @@ final class SectionController {
         return (original, settled)
     }
 
-    /// Restores the state from before `temporarilyExpand` and waits to settle; returns whether the change was confirmed.
-    /// Collapsing occasionally takes a few hundred ms to apply (about 0.5 s measured in a VM, with the separators still
-    /// at expanded length meanwhile), and the freeze frame must stay until then, so the timeout is longer than expanding.
+    /// Ends the temporary expansion and waits to settle; returns whether the final state was confirmed applied. The
+    /// final state is `previous` (the state before `temporarilyExpand`), unless the user asked for another one
+    /// meanwhile (e.g. clicked the Frost icon on a display that expands in the menu bar): then that one, so their click
+    /// is neither lost nor undone. Collapsing occasionally takes a few hundred ms to apply (about 0.5 s measured in a
+    /// VM, with the separators still at expanded length meanwhile), and the freeze frame must stay until then, so the
+    /// timeout is longer than expanding (the Frost Bar passes as much as its freeze frame allows).
     @discardableResult
-    func restore(_ previous: State) async -> Bool {
-        guard !isEditing, previous != state else { return true }
+    func restore(_ previous: State, timeout: Duration = SectionController.restoreSettleTimeout) async -> Bool {
+        let expansion = temporaryExpansion
+        temporaryExpansion = nil
+        let target = expansion?.finalState ?? previous
+        if let expansion, expansion.requested != nil {
+            FrostLog.sections.notice("""
+                ending a temporary expansion in state \(target.rawValue) requested meanwhile \
+                (was \(expansion.prior.rawValue))
+                """)
+        }
+        guard !isEditing else {
+            state = target
+            return true
+        }
+        guard target != state else {
+            // Already in the final state (the user asked for the temporary one): nothing to wait for.
+            if expansion != nil, target != .collapsed { armAutoRehide() }
+            return true
+        }
         let baseline = statusFrames()
-        state = previous
+        state = target
         applyLengths()
-        if previous != .collapsed { armAutoRehide() }
-        let settled = await waitForFastSettle(baseline: baseline, timeout: Self.restoreSettleTimeout)
+        if target != .collapsed { armAutoRehide() }
+        let settled = await waitForFastSettle(baseline: baseline, timeout: timeout)
         scanner.rescan()
         return settled
     }
@@ -501,11 +529,14 @@ final class SectionController {
             model?.toggleFrostBar(option)
             return
         }
-        switch (state, option) {
-        case (.collapsed, false): setState(.expanded)
-        case (.collapsed, true), (.expanded, true): setState(.expandedAll)
-        case (.expanded, false), (.expandedAll, _): setState(.collapsed)
+        // During a temporary expansion (the Frost Bar's live refresh, possibly on another display) the real state is
+        // the temporary one; judge the click against the state the user sees and let `restore` apply it.
+        if temporaryExpansion != nil {
+            temporaryExpansion?.iconClicked(option: option)
+            FrostLog.sections.notice("Frost icon clicked during a temporary expansion; applied when it ends")
+            return
         }
+        setState(state.afterIconClick(option: option))
     }
 
     private func showMenu() {

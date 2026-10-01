@@ -626,10 +626,17 @@ final class FrostBarController {
                     timing.perWindow = targets.isEmpty ? 0 : app.capturer.lastPerWindowCount
                 }
                 mark = clock.now
-                // Remove the freeze frame only once the collapse is confirmed (`restore` waits less than
-                // `MenuBarFreezeFrame.maximumDuration`).
-                await sections.restore(prior)
-                try? await Task.sleep(for: MenuBarFreezeFrame.settleDelay)
+                // Remove the freeze frame only once the collapse (or the state the user asked for meanwhile) is
+                // confirmed: keep polling for as long as the freeze frame may stay up.
+                let budget = Self.restoreBudget(sinceFreezeFrameShown: clock.now - shown)
+                if await sections.restore(prior, timeout: budget) {
+                    try? await Task.sleep(for: MenuBarFreezeFrame.settleDelay)
+                } else {
+                    FrostLog.frostBar.error("""
+                        the menu bar was not confirmed restored within \(budget, privacy: .public); \
+                        removing the freeze frame at its time limit
+                        """)
+                }
                 timing.collapse = clock.now - mark
             }
         } catch {
@@ -654,6 +661,16 @@ final class FrostBarController {
                 "live refresh cycle: captured \(captured.count) of \(ids.count) item(s); \(timing.description, privacy: .public)")
         }
     }
+
+    /// How long a round may wait for the menu bar to be restored: until shortly before the freeze frame's safety net
+    /// (`MenuBarFreezeFrame.maximumDuration`), leaving time for `settleDelay`; never less than a short minimum.
+    static func restoreBudget(sinceFreezeFrameShown elapsed: Duration) -> Duration {
+        let remaining = MenuBarFreezeFrame.maximumDuration - elapsed - MenuBarFreezeFrame.settleDelay - restoreMargin
+        return max(remaining, minimumRestoreBudget)
+    }
+
+    private static let restoreMargin: Duration = .milliseconds(100)
+    private static let minimumRestoreBudget: Duration = .milliseconds(300)
 
     private func refresh() {
         guard refreshTask == nil else { return }

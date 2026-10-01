@@ -45,8 +45,8 @@ import ScreenCaptureKit
 @MainActor
 final class MenuBarFreezeFrame {
     static let level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-    /// Safety net: a normal round takes ~0.2 s; collapsing occasionally takes ~0.5 s to apply, and
-    /// `SectionController.restoreSettleTimeout` waits up to 1.5 s.
+    /// Safety net: a normal round takes ~0.2 s; collapsing occasionally takes ~0.5 s to apply. A round keeps waiting
+    /// for the collapse to be confirmed until shortly before this limit (`FrostBarController.restoreBudget`).
     static let maximumDuration: Duration = .seconds(3)
 
     /// Log a capture / screen color space mismatch only once (rounds run every second).
