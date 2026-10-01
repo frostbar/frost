@@ -93,6 +93,17 @@ final class FrostBarController {
                 self?.close(animated: false)
             }
         })
+        // Displays asleep, screen locked, another user's session: nobody can see the panel, so close it (which stops
+        // live refresh: no more temporary expansions and captures). The user reopens it when back.
+        observers.append(NotificationCenter.default.addObserver(
+            forName: UserPresenceMonitor.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.app.presence.isAway, self.isOpen else { return }
+                FrostLog.frostBar.notice("user away: closing the Frost Bar")
+                self.close(animated: false)
+            }
+        })
     }
 
     // MARK: - Open / close
@@ -114,7 +125,7 @@ final class FrostBarController {
     }
 
     func open(showAlwaysHidden: Bool) {
-        guard !isOpen else { return }
+        guard !isOpen, !app.presence.isAway else { return }
         isOpen = true
         hideTask?.cancel()
         model.showAlwaysHidden = showAlwaysHidden

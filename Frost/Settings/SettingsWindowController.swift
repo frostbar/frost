@@ -40,6 +40,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var reportedTab: SettingsTab?
     /// Pending start of the editor after switching to the Layout tab (see `editorStartDelay`).
     private var editorStartTask: Task<Void, Never>?
+    /// Why the editor is paused although the window is open (see `PauseReason`); empty = not paused.
+    private var pauseReasons: Set<PauseReason> = []
+    private var observers: [NSObjectProtocol] = []
+
+    /// Situations in which nobody can see the editor, so the menu bar leaves editing mode (and the editor's refresh
+    /// loop stops) like when the window is minimized.
+    private enum PauseReason {
+        /// Displays asleep, screen locked or another user's session (`UserPresenceMonitor`).
+        case userAway
+    }
 
     init(model: AppModel, initialTab: SettingsTab = .layout) {
         self.model = model
@@ -70,6 +80,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         super.init()
         window.delegate = self
         tabs.onSelect = { [weak self] tab in self?.tabDidChange(tab) }
+        if model.presence.isAway { pauseReasons.insert(.userAway) }
+        observers.append(NotificationCenter.default.addObserver(
+            forName: UserPresenceMonitor.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.setPaused(.userAway, self.model.presence.isAway)
+            }
+        })
         tabDidChange(initialTab)
         #if DEBUG
         FrameProbe.installTrigger(window: window)
@@ -140,7 +159,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         WindowActivation.bringToFront(window)
         // Activation is asynchronous: the window usually becomes key on the next event loop pass (editing then starts
         // in `windowDidBecomeKey`).
-        if window.isKeyWindow {
+        if window.isKeyWindow, pauseReasons.isEmpty {
             isAwaitingKey = false
             layoutEditor.setWindowVisible(true)
         } else {
@@ -171,10 +190,33 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     func windowDidDeminiaturize(_ notification: Notification) {
         // If the Layout tab is still selected after restoring, re-enter editing (the editor decides based on the tab).
+        guard pauseReasons.isEmpty else { return }
         layoutEditor.setWindowVisible(true)
     }
 
+    /// Pauses the editor (ends editing, collapsing the menu bar, and stops its refreshes) while any pause reason holds;
+    /// once none does, resumes it if the window is still open and not minimized: right away if the window is key,
+    /// otherwise once it becomes key (as after `show()`: the user may not be looking at it).
+    private func setPaused(_ reason: PauseReason, _ paused: Bool) {
+        let wasPaused = !pauseReasons.isEmpty
+        if paused { pauseReasons.insert(reason) } else { pauseReasons.remove(reason) }
+        let isPaused = !pauseReasons.isEmpty
+        guard wasPaused != isPaused else { return }
+        if isPaused {
+            layoutEditor.setWindowVisible(false)
+            return
+        }
+        guard window.isVisible, !window.isMiniaturized else { return }
+        if window.isKeyWindow {
+            isAwaitingKey = false
+            layoutEditor.setWindowVisible(true)
+        } else {
+            isAwaitingKey = true
+        }
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
+        guard pauseReasons.isEmpty else { return }
         if isAwaitingKey {
             // The newly opened window actually reached the front: only now start editing (if the Layout tab is selected).
             isAwaitingKey = false

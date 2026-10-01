@@ -14,6 +14,8 @@ final class AppModel {
     let sections: SectionController
     /// Sparkle automatic updates.
     let updates: UpdateController
+    /// Whether the user is at the Mac (display sleep, screen lock, session switch).
+    let presence: UserPresenceMonitor
     /// Moves icons that new apps place in the Always Hidden section into the Hidden section.
     @ObservationIgnored let newItems: NewItemPlacer
 
@@ -36,6 +38,7 @@ final class AppModel {
         sections = SectionController(preferences: preferences, permissions: permissions, scanner: scanner)
         newItems = NewItemPlacer(scanner: scanner, mover: mover, sections: sections, permissions: permissions)
         updates = UpdateController()
+        presence = UserPresenceMonitor()
         sections.model = self
         mover.controlWindows = { [weak sections] in sections?.controlWindows }
         scanner.ownWindowIDs = { [weak sections] in sections?.controlWindows?.all ?? [] }
@@ -73,6 +76,7 @@ final class AppModel {
     }
 
     func start() {
+        presence.start()
         sections.install()
         scanner.start()
         newItems.start()
