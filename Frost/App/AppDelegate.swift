@@ -74,6 +74,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // Captures held back by the disk cache's write throttle (dynamic icons) are written now, so the next launch
+        // starts from the newest ones.
+        model?.capturer.flushDiskCache(synchronously: true)
+    }
+
     private static let terminationGrace: Duration = .seconds(6)
     private static let terminationPoll: Duration = .milliseconds(20)
 

@@ -181,6 +181,7 @@ final class LayoutEditorModel {
         refreshTask?.cancel()
         refreshTask = nil
         model.permissions.stopPolling()
+        model.capturer.flushDiskCache()
         pending.removeAll()
         optimisticMoves.removeAll()
         errorTask?.cancel()

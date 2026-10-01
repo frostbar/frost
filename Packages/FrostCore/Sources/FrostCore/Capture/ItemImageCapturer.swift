@@ -48,7 +48,20 @@ public final class ItemImageCapturer {
 
     /// nil = no disk cache.
     @ObservationIgnored private let diskCache: ItemImageDiskCache?
-    @ObservationIgnored private var didPrune = false
+    /// Expired entries are pruned at the first disk cache access, then once a day.
+    @ObservationIgnored private var pruneSchedule = PeriodicSchedule(interval: .seconds(24 * 3600))
+    /// Disk writes per item at most once per `diskWriteInterval` (live refresh recaptures changing icons every
+    /// second); the newest held-back capture is written when due, or by `flushDiskCache()`.
+    @ObservationIgnored private var diskWrites = DiskWriteThrottle<ItemImageCacheKey, DiskWrite>(
+        interval: ItemImageCapturer.diskWriteInterval)
+    public static let diskWriteInterval: Duration = .seconds(60)
+
+    /// A capture to write to the disk cache.
+    struct DiskWrite: Sendable {
+        let image: CGImage
+        let tone: GlyphTone
+        let style: GlyphStyle
+    }
     /// Keys already looked up on disk this run with no usable entry (avoids rereading the disk every time the panel
     /// opens). Removed once a new capture is taken.
     @ObservationIgnored private var diskMisses: Set<ItemImageCacheKey> = []
@@ -87,7 +100,7 @@ public final class ItemImageCapturer {
     ///
     /// Skips: items with unknown ownership (unstable identity); items whose identity is duplicated within `items`
     /// (indistinguishable); entries whose pixel size does not match the item's current frame (e.g. a text item's
-    /// content changed). On the first call, prunes entries not seen for 30 days in the background.
+    /// content changed). Prunes entries not seen for 30 days in the background (at most once a day).
     public func loadCached(_ items: [MenuBarItem]) {
         guard let diskCache else { return }
         let requests = cacheRequests(items)
@@ -132,11 +145,8 @@ public final class ItemImageCapturer {
     /// The lookups `loadCached` / `preloadCached` need for `items` (items without a capture yet, with a stable and
     /// unique identity, not already known to be missing from the disk cache). Prunes the disk cache once.
     private func cacheRequests(_ items: [MenuBarItem]) -> [CacheRequest] {
-        guard let diskCache else { return [] }
-        if !didPrune {
-            didPrune = true
-            Task.detached(priority: .utility) { diskCache.prune() }
-        }
+        guard diskCache != nil else { return [] }
+        pruneIfDue()
         let appearance = Self.currentAppearance
         let scale = menuBarScale
         let counts = Dictionary(items.map { ($0.identity, 1) }, uniquingKeysWith: +)
@@ -196,7 +206,8 @@ public final class ItemImageCapturer {
     /// captures once per second and the vast majority of icons do not change.
     ///
     /// Caches of windows that no longer exist are cleared; caches of still-existing windows outside the given set are
-    /// kept. New captures are also written to the disk cache (overwriting old entries).
+    /// kept. New captures are also written to the disk cache (overwriting old entries), each item at most once per
+    /// `diskWriteInterval` (see `flushDiskCache()`).
     @discardableResult
     public func capture(_ items: [MenuBarItem]) async -> Set<CGWindowID> {
         guard CGPreflightScreenCaptureAccess() else { return [] }
@@ -243,7 +254,7 @@ public final class ItemImageCapturer {
             }
         }
         guard generation == startGeneration else { return [] }
-        var toSave: [(ItemImageCacheKey, CGImage, GlyphTone, GlyphStyle)] = []
+        var toSave: [(key: ItemImageCacheKey, value: DiskWrite)] = []
         let counts = Dictionary(items.map { ($0.identity, 1) }, uniquingKeysWith: +)
         for item in items {
             guard let captured = fresh[item.windowID], let copy = PixelCopy(captured) else { continue }
@@ -256,8 +267,12 @@ public final class ItemImageCapturer {
             guard item.bundleID != nil, counts[item.identity] == 1 else { continue }
             let key = ItemImageCacheKey(identity: item.identity, appearance: appearance, scale: Int(scale))
             diskMisses.remove(key)
-            toSave.append((key, copy.image, tone, style))
+            if let write = diskWrites.offer(DiskWrite(image: copy.image, tone: tone, style: style), for: key, now: .now) {
+                toSave.append((key, write))
+            }
         }
+        // Held-back captures of items that stopped changing are written once their interval has passed.
+        toSave += diskWrites.takeDue(now: .now)
         // Prune by the status bar windows that still exist in the system (not by the given items), so capturing a
         // subset does not clear other items' caches. Do not assign when nothing changed (the assignment itself
         // notifies observers and makes Frost Bar redraw).
@@ -271,17 +286,39 @@ public final class ItemImageCapturer {
             pixels = pixels.filter { images[$0.key] != nil }
         }
         if let diskCache, !toSave.isEmpty {
-            Task.detached(priority: .utility) {
-                for (key, image, tone, style) in toSave {
-                    do {
-                        try diskCache.save(image, tone: tone, style: style, for: key)
-                    } catch {
-                        FrostLog.capture.error("could not write \(key.fileStem, privacy: .private) to the image cache: \(error, privacy: .public)")
-                    }
-                }
+            Task.detached(priority: .utility) { Self.write(toSave, to: diskCache) }
+        }
+        pruneIfDue()
+        return Set(fresh.keys)
+    }
+
+    /// Writes the held-back captures to the disk cache now (the Frost Bar closed, the layout editor stopped, Frost is
+    /// quitting). `synchronously`: write before returning (when quitting); otherwise in the background.
+    public func flushDiskCache(synchronously: Bool = false) {
+        guard let diskCache else { return }
+        let writes = diskWrites.takeAll(now: .now)
+        guard !writes.isEmpty else { return }
+        if synchronously {
+            Self.write(writes, to: diskCache)
+        } else {
+            Task.detached(priority: .utility) { Self.write(writes, to: diskCache) }
+        }
+    }
+
+    nonisolated private static func write(_ writes: [(key: ItemImageCacheKey, value: DiskWrite)],
+                                          to diskCache: ItemImageDiskCache) {
+        for (key, write) in writes {
+            do {
+                try diskCache.save(write.image, tone: write.tone, style: write.style, for: key)
+            } catch {
+                FrostLog.capture.error("could not write \(key.fileStem, privacy: .private) to the image cache: \(error, privacy: .public)")
             }
         }
-        return Set(fresh.keys)
+    }
+
+    private func pruneIfDue() {
+        guard let diskCache, pruneSchedule.runIfDue(now: .now) else { return }
+        Task.detached(priority: .utility) { diskCache.prune() }
     }
 
     /// Captures one menu bar strip covering `targets` (on the scanned display; only these windows, transparent

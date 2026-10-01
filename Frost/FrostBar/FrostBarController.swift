@@ -162,6 +162,9 @@ final class FrostBarController {
         isOpen = false
         openTask?.cancel()
         stopLiveRefresh()
+        // Live refresh held back disk cache writes of changing icons (at most one per item per minute): write the
+        // newest captures now.
+        app.capturer.flushDiskCache()
         removeMonitors()
         if isPollingPermissions {
             isPollingPermissions = false
