@@ -6,8 +6,8 @@ import AppKit
 @MainActor
 enum MainMenu {
     /// - Parameters:
-    ///   - target: Target of the About, Check for Updates and Settings items (must implement `showAbout(_:)` /
-    ///     `checkForUpdates(_:)` / `showSettings(_:)`).
+    ///   - target: Target of the About, Check for Updates, Settings and Hide items (must implement `showAbout(_:)` /
+    ///     `checkForUpdates(_:)` / `showSettings(_:)` / `hideFrost(_:)` / `hideOthers(_:)` / `showAll(_:)`).
     static func make(target: AnyObject) -> (menu: NSMenu, windowsMenu: NSMenu) {
         let main = NSMenu()
 
@@ -17,10 +17,11 @@ enum MainMenu {
         app.addItem(.separator())
         app.addItem(item("Settings…", #selector(AppDelegate.showSettings(_:)), key: ",", target: target))
         app.addItem(.separator())
-        app.addItem(item("Hide Frost", #selector(NSApplication.hide(_:)), key: "h"))
-        app.addItem(item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), key: "h",
-                         modifiers: [.command, .option]))
-        app.addItem(item("Show All", #selector(NSApplication.unhideAllApplications(_:))))
+        // AppKit disables its own Hide items for an accessory app, so these go through the app delegate.
+        app.addItem(item("Hide Frost", #selector(AppDelegate.hideFrost(_:)), key: "h", target: target))
+        app.addItem(item("Hide Others", #selector(AppDelegate.hideOthers(_:)), key: "h",
+                         modifiers: [.command, .option], target: target))
+        app.addItem(item("Show All", #selector(AppDelegate.showAll(_:)), target: target))
         app.addItem(.separator())
         app.addItem(item("Quit Frost", #selector(NSApplication.terminate(_:)), key: "q"))
 

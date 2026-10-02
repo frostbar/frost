@@ -52,9 +52,10 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] With the Settings or onboarding window key: ⌘W closes the window; ⌘Q quits Frost; ⌘, opens Settings; ⌘M
   minimizes the Settings window.
 - [ ] In selectable text (the version number on the About tab), ⌘C copies and ⌘A selects all.
-- [ ] **Hide Frost (⌘H)** with the Layout tab open: the menu bar leaves editing state and collapses. Reopen Settings
-  (right-click the snowflake → "Settings…"): editing resumes once the window is key. Same for another app's "Hide
-  Others" followed by "Show All".
+- [ ] **Hide Frost (⌘H)** with the Layout tab open: the Settings window hides, the menu bar leaves editing state and
+  collapses. Reopen Settings (right-click the snowflake → "Settings…"): editing resumes once the window is key.
+  Opening the Frost Bar while hidden shows Frost again (the Settings window comes back behind the front app; editing
+  waits until it is key). Another app's "Hide Others" doesn't hide Frost (macOS leaves accessory apps alone).
 - [ ] With the Frost Bar open, ⌘W closes the Frost Bar (same as Esc). **To be confirmed**: whether main menu shortcuts
   are delivered when the non-activating panel is key while Frost is not active.
 

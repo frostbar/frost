@@ -97,6 +97,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func checkForUpdates(_ sender: Any?) {
         model?.updates.checkForUpdates()
     }
+
+    // AppKit's own validation disables Hide / Hide Others / Show All for an accessory app (it can't be unhidden from
+    // the Dock or the app switcher), so ⌘H did nothing. Frost unhides itself whenever it shows a window (Settings… in
+    // the Frost icon's menu activates it), so hiding is safe; these actions are always enabled.
+
+    @objc func hideFrost(_ sender: Any?) {
+        NSApp.hide(sender)
+    }
+
+    @objc func hideOthers(_ sender: Any?) {
+        NSApp.hideOtherApplications(sender)
+    }
+
+    @objc func showAll(_ sender: Any?) {
+        NSApp.unhideAllApplications(sender)
+    }
 }
 
 extension AppDelegate: NSMenuItemValidation {
