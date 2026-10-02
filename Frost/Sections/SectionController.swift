@@ -31,6 +31,8 @@ final class SectionController {
 
     @ObservationIgnored private var iconItem: NSStatusItem?
     @ObservationIgnored private var iconImageView: NSImageView?
+    /// A dot on the Frost icon while an update found by a scheduled check awaits the user (`UpdateController`).
+    @ObservationIgnored private var updateBadge: NSView?
     @ObservationIgnored private var hidden: SeparatorItem?
     @ObservationIgnored private var alwaysHidden: SeparatorItem?
 
@@ -125,6 +127,20 @@ final class SectionController {
                 imageView.centerYAnchor.constraint(equalTo: button.centerYAnchor),
             ])
             iconImageView = imageView
+            let badge = NSView()
+            badge.wantsLayer = true
+            badge.layer?.cornerRadius = Self.updateBadgeSize / 2
+            badge.translatesAutoresizingMaskIntoConstraints = false
+            badge.isHidden = true
+            badge.setAccessibilityElement(false)
+            button.addSubview(badge)
+            NSLayoutConstraint.activate([
+                badge.widthAnchor.constraint(equalToConstant: Self.updateBadgeSize),
+                badge.heightAnchor.constraint(equalToConstant: Self.updateBadgeSize),
+                badge.centerXAnchor.constraint(equalTo: imageView.trailingAnchor),
+                badge.centerYAnchor.constraint(equalTo: imageView.topAnchor, constant: 1),
+            ])
+            updateBadge = badge
         }
         iconItem = icon
         if let window = icon.button?.window {
@@ -161,6 +177,26 @@ final class SectionController {
         alwaysHidden = SeparatorItem(autosaveName: Self.alwaysHiddenAutosaveName)
         applyLengths()
         settleAndRescan()
+        trackUpdateReminder()
+    }
+
+    // MARK: - Update reminder
+
+    static let updateBadgeSize: CGFloat = 6
+
+    /// Shows the update badge (and says so to VoiceOver) while `UpdateController.pendingUpdateVersion` is set.
+    private func trackUpdateReminder() {
+        let pending = withObservationTracking {
+            model?.updates.pendingUpdateVersion != nil
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.trackUpdateReminder() }
+        }
+        updateBadge?.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        updateBadge?.isHidden = !pending
+        iconItem?.button?.setAccessibilityLabel(pending
+            ? String(localized: "Frost, update available",
+                     comment: "Accessibility label of the Frost menu bar icon while an update is waiting to be installed")
+            : "Frost")
     }
 
     // MARK: - Control item windows
@@ -552,14 +588,24 @@ final class SectionController {
             action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
-        let update = NSMenuItem(
-            title: String(localized: "Check for Updates…", comment: "Frost icon context menu item"),
-            action: #selector(checkForUpdates), keyEquivalent: "")
+        let update: NSMenuItem
+        if model?.updates.pendingUpdateVersion != nil {
+            // A scheduled check found an update (gentle reminder): this brings its window to the front.
+            update = NSMenuItem(
+                title: String(localized: "Update Available…",
+                              comment: "Frost icon context menu item shown when an update is waiting to be installed"),
+                action: #selector(checkForUpdates), keyEquivalent: "")
+            update.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)
+        } else {
+            update = NSMenuItem(
+                title: String(localized: "Check for Updates…", comment: "Frost icon context menu item"),
+                action: #selector(checkForUpdates), keyEquivalent: "")
+            update.isEnabled = model?.updates.canCheckForUpdates ?? false
+            // The system adds icons automatically only to standard items like "Settings…"; give this one an icon too
+            // so the titles line up.
+            update.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
+        }
         update.target = self
-        update.isEnabled = model?.updates.canCheckForUpdates ?? false
-        // The system adds icons automatically only to standard items like "Settings…"; give this one an icon too so
-        // the titles line up.
-        update.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
         menu.addItem(update)
         menu.addItem(.separator())
         let quit = NSMenuItem(

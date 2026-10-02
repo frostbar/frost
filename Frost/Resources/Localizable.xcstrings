@@ -511,6 +511,17 @@
         }
       }
     },
+    "Frost, update available" : {
+      "comment" : "Accessibility label of the Frost menu bar icon while an update is waiting to be installed",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frost，有可用更新"
+          }
+        }
+      }
+    },
     "Frost’s separator isn’t in the menu bar.\nFrost will retry automatically. If this keeps happening, try relaunching Frost." : {
       "localizations" : {
         "zh-Hans" : {
@@ -982,6 +993,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "撤销"
+          }
+        }
+      }
+    },
+    "Update Available…" : {
+      "comment" : "Frost icon context menu item shown when an update is waiting to be installed",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有可用更新…"
           }
         }
       }
