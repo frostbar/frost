@@ -26,22 +26,24 @@ in the **Frost Bar**, a glass panel that drops down below the menu bar. It works
 
 - **Three sections**: Visible, Hidden and Always Hidden. Click the snowflake to show the hidden items; ⌥-click to
   show the always-hidden ones too. Items can hide again automatically after a delay.
-- **Frost Bar**: hidden items in a grid below the menu bar. Hover for the app name, click to open the item's menu.
-  Item images refresh every second while the panel is open, so temperature or network-speed items stay current.
-  Used by default on Macs with a notch; choose **Automatic**, **In Menu Bar** or **Frost Bar** in
-  **Settings → Behavior**.
-- **Layout editor**: live images of every menu bar item in three bands. Drag items between sections and Frost moves
-  them in the real menu bar.
-- **Icons stay where you put them**: new apps' icons land in Hidden, and when an app relaunches and macOS re-adds its
-  icon in another section, Frost moves it back (can be turned off in **Settings → Behavior**).
-- Permission onboarding, launch at login, multiple displays, automatic updates.
-- Available in English and Simplified Chinese (follows your macOS language).
+- **Frost Bar**: hidden items in a grid below the menu bar. Hover for the app name; click an item and its menu opens
+  as soon as the item is in place. Item images refresh live (every second) while the panel is open, so clocks,
+  temperature or network-speed items stay current.
+- **Show hidden icons** (**Settings → Behavior**): **Automatic** (the Frost Bar on displays with a notch, in the menu
+  bar elsewhere), **In Menu Bar** or **Frost Bar**.
+- **Layout editor** (**Settings → Layout**): live images of every menu bar item in three bands. Drag items between
+  sections and Frost moves them in the real menu bar.
+- **Keep icons in their sections**: new apps' icons land in Hidden, and when an app relaunches and macOS re-adds its
+  icon in another section, Frost moves it back (a toggle in **Settings → Behavior**).
+- **Multiple displays**: the snowflake works on every display's menu bar.
+- **Automatic updates** with gentle reminders: no pop-ups over your work, just a dot on the snowflake.
+- Permission onboarding, launch at login, English and Simplified Chinese (follows your macOS language).
 
 Hiding and showing items needs **no permissions**. Only the Frost Bar and the layout editor do.
 
 ## Screenshots
 
-| Layout editor | Behavior settings |
+| Settings → Layout | Settings → Behavior |
 | --- | --- |
 | <img src="docs/images/layout-editor.png" width="420" alt="Layout editor"> | <img src="docs/images/behavior.png" width="420" alt="Behavior settings"> |
 
@@ -71,14 +73,16 @@ disk image) runs from a temporary read-only location and can't update itself unt
 | Accessibility | Identifying which app owns each item; moving items between sections (synthesized ⌘-drags); clicking items in the Frost Bar | The Frost Bar and layout editor ask for the missing permission; hiding and showing still work |
 | Screen Recording | Capturing images of menu bar items for the Frost Bar and the layout editor | Same as above |
 
-Onboarding opens on first launch and can be reopened from **Settings → About**. Frost must be relaunched after
-granting Screen Recording; onboarding has a button for it.
+Onboarding opens on first launch; **Settings → About** shows each permission's status, and **Grant Access** reopens
+onboarding. Frost must be relaunched after granting Screen Recording; onboarding has a button for it.
 
 ## Updates
 
-Frost checks for updates once a day with [Sparkle](https://sparkle-project.org) and asks before installing anything.
-Check manually with **Check for Updates…** in the snowflake's right-click menu, or turn off **Automatically check for
-updates** under **Settings → Behavior**. Updates are verified with an EdDSA signature before they are installed.
+Frost checks for updates once a day with [Sparkle](https://sparkle-project.org). When a scheduled check finds a new
+version, a dot appears on the snowflake and its right-click menu shows **Update Available…**; nothing is installed
+without asking. Check manually with **Check for Updates…** in that menu or **Check Now** in **Settings → Behavior**,
+where you can also turn off **Automatically check for updates**. Updates are verified with an EdDSA signature before
+they are installed.
 
 ## Privacy
 
@@ -96,6 +100,8 @@ Requirements: Xcode 27 (Swift 6.4), [XcodeGen](https://github.com/yonaskolb/Xcod
 ./scripts/create-signing-cert.sh   # once: creates the self-signed "Frost Local Signing" identity
 make build                         # Debug build: build/DerivedData/Build/Products/Debug/Frost.app
 make test-core                     # unit tests (Swift Testing)
+make install                       # signed Release build, installed to /Applications and launched
+make ci-build                      # unsigned universal Release build, as run by CI
 ```
 
 A stable signing identity keeps macOS from asking for permissions again after every rebuild. If `codesign` reports
