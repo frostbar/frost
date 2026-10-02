@@ -872,6 +872,9 @@ final class FrostBarController {
             FrostLog.frostBar.notice("activate ignored: another move is in progress")
         } catch ItemMoveError.shuttingDown {
             FrostLog.frostBar.notice("activate ignored: Frost is quitting")
+        } catch is CancellationError {
+            // Only `prepareForTermination` cancels a forward; the icon has been moved back by now.
+            FrostLog.frostBar.notice("activate ended early: Frost is quitting")
         } catch {
             FrostLog.frostBar.error("activate failed: \(error, privacy: .public)")
         }
@@ -916,7 +919,11 @@ final class FrostBarController {
         // Move back: success, failure, and cancellation share this path. It runs in a task that doesn't inherit
         // cancellation so it still happens when cancelled. If the move out never took effect, `move` finds the item
         // already in place and returns.
-        let restoreError = await Task { @MainActor in await self.restore(plan, controls: controls) }.value
+        let cancelled = failure is CancellationError
+        let restoreError = await Task { @MainActor in
+            if cancelled { await self.closePresentation(of: id, openedAfter: beforeMove) }
+            return await self.restore(plan, controls: controls)
+        }.value
         if let restoreError {
             if case ItemMoveError.controlsDisturbed = restoreError {
                 // Routing fell back to position and dragged the Frost icon; retrying would just drag it again.
@@ -1090,6 +1097,23 @@ final class FrostBarController {
 
     /// Waits until all of the app's windows outside `baseline` are gone (up to 1 s; a closed menu's window disappears
     /// in ~0.25 s, a popover's in ~0.5 s).
+    /// Quitting cancels the wait for a forwarded click's menu / popover while it may still be open. An open menu
+    /// consumes the ⌘-drag's mouse-down, so the move back would fail (and while quitting, a failed move isn't retried
+    /// and the item lands at the section boundary instead of its old place): close it first with a click on the item,
+    /// as a user would.
+    private func closePresentation(of id: CGWindowID, openedAfter baseline: Set<CGWindowID>) async {
+        guard let pid = app.scanner.items.first(where: { $0.windowID == id })?.pid,
+              !ItemClicker.newWindows(ownedBy: pid, excluding: baseline).isEmpty else { return }
+        FrostLog.frostBar.notice("closing the presentation of item \(id) before moving it back")
+        do {
+            let item = try await settledOnScreenItem(id)
+            try await ItemClicker.click(item, forceEvent: true)
+            try await waitUntilDismissed(pid: pid, baseline: baseline)
+        } catch {
+            FrostLog.frostBar.error("closing the presentation of item \(id) failed: \(error, privacy: .public)")
+        }
+    }
+
     private func waitUntilDismissed(pid: pid_t, baseline: Set<CGWindowID>) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(1)
