@@ -47,6 +47,9 @@ public final class MenuBarItemScanner {
     /// Windows whose ownership was still unresolved after the last full AX read → the time of that read.
     /// These windows trigger a full read at most once per `OwnershipRefreshPolicy.retryInterval` (5 s).
     @ObservationIgnored private var unresolvedSince: [CGWindowID: ContinuousClock.Instant] = [:]
+    /// Follow-up reads scheduled since ownership was last fully resolved (see
+    /// `OwnershipRefreshPolicy.shouldScheduleRetry`).
+    @ObservationIgnored private var scheduledRetries = 0
 
     /// Frost's own status bar windows (injected by the app layer as `controlWindows.all`). `AXExtrasReader`
     /// skips this process, so these windows are assigned to this process directly and never count as
@@ -67,7 +70,10 @@ public final class MenuBarItemScanner {
         // didTerminate notifications: the system does not post those for LSUIElement (accessory) apps, and most
         // menu bar apps are LSUIElement (verified in the VM).
         runningAppsObservation = NSWorkspace.shared.observe(\.runningApplications) { [weak self] _, _ in
-            Task { @MainActor [weak self] in self?.scheduleRescan(refreshOwnership: true) }
+            Task { @MainActor [weak self] in
+                self?.scheduledRetries = 0
+                self?.scheduleRescan(refreshOwnership: true)
+            }
         }
         rescan()
         ownershipRefresher.refreshInBackground()
@@ -129,6 +135,17 @@ public final class MenuBarItemScanner {
         unresolvedSince = Dictionary(uniqueKeysWithValues: after
             .filter { ownershipCache[$0.windowID] == nil && !StaleWindowFilter.isCandidate($0) }
             .map { ($0.windowID, now) })
+        if unresolvedSince.isEmpty {
+            scheduledRetries = 0
+        } else if OwnershipRefreshPolicy.shouldScheduleRetry(unresolved: unresolvedSince.count,
+                                                             retriesSoFar: scheduledRetries) {
+            scheduledRetries += 1
+            FrostLog.scanner.notice("""
+                \(self.unresolvedSince.count) window(s) still without an owner; reading again in \
+                \(OwnershipRefreshPolicy.retryInterval, privacy: .public)
+                """)
+            scheduleRescan(after: OwnershipRefreshPolicy.retryInterval, refreshOwnership: true)
+        }
     }
 
     /// Builds `items` from the ownership cache (dropping leftover windows of apps that quit) and discards

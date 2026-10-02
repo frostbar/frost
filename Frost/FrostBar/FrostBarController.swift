@@ -286,10 +286,10 @@ final class FrostBarController {
     /// building the panel and its SwiftUI view graph, loading app icons, creating the window and rendering the glass
     /// for the first time.
     ///
-    /// Once the scan has the hidden items' owners (or after a few seconds), loads their disk-cached captures in the
-    /// background, then (in Frost Bar mode) builds the panel and has it render once, invisibly, at its real position:
-    /// the window is fully transparent and ignores the mouse while it renders, then it is ordered out. A click on the
-    /// Frost icon meanwhile simply opens the panel (`present` ends the warm-up).
+    /// Once the scan has the hidden items' owners (or after a few seconds), loads every item's disk-cached capture in
+    /// the background, then (in Frost Bar mode) builds the panel and has it render once, invisibly, at its real
+    /// position: the window is fully transparent and ignores the mouse while it renders, then it is ordered out. A
+    /// click on the Frost icon meanwhile simply opens the panel (`present` ends the warm-up).
     func warmUp() {
         Task { [weak self] in
             for _ in 0..<Self.warmUpAttempts {
@@ -298,8 +298,8 @@ final class FrostBarController {
                 try? await Task.sleep(for: .milliseconds(250))
             }
             guard let self, !self.isOpen, self.app.permissions.allGranted else { return }
-            let layout = self.app.layout
-            await self.app.capturer.preloadCached(layout[.hidden, default: []] + layout[.alwaysHidden, default: []])
+            // Every item, the Visible section's too: the layout editor shows them all.
+            await self.app.capturer.preloadCached(self.app.scanner.items)
             guard !self.isOpen, self.usesFrostBar else { return }
             #if DEBUG
             if let screen = self.app.sections.iconWindow?.screen ?? NSScreen.main {

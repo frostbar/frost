@@ -8,6 +8,18 @@ import CoreGraphics
 /// window is due for a retry) do a full read.
 public enum OwnershipRefreshPolicy {
     public static let retryInterval: Duration = .seconds(5)
+    /// How many follow-up reads the scanner schedules by itself when windows are still unresolved after a read.
+    public static let maxScheduledRetries = 3
+
+    /// Whether to schedule another full read on its own (`retryInterval` later) after a read that left `unresolved`
+    /// windows. Rescans retry unresolved windows anyway, but only when something rescans: right after launch, while
+    /// Frost's separators are still pushing items out, the read can't match the moving windows, and nothing may rescan
+    /// until the user opens the Frost Bar or the layout editor, which would then show placeholders instead of the
+    /// disk-cached images (they are keyed by owner). Bounded so windows that never resolve don't cost a read forever.
+    public static func shouldScheduleRetry(unresolved: Int, retriesSoFar: Int,
+                                           maxRetries: Int = maxScheduledRetries) -> Bool {
+        unresolved > 0 && retriesSoFar < maxRetries
+    }
 
     /// - Parameters:
     ///   - windowIDs: The windows found by this scan.

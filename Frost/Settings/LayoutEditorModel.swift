@@ -117,6 +117,12 @@ final class LayoutEditorModel {
         let permissions = model.permissions
         permissions.refresh()
         permissions.startPolling()
+        // Show every item's disk-cached capture (the launch warm-up has usually loaded them already; anything else is
+        // read off the main thread); items pushed off screen can't be captured until the menu bar has expanded.
+        if permissions.screenRecording {
+            let capturer = model.capturer, items = model.scanner.items
+            Task { await capturer.preloadCached(items) }
+        }
 
         endEditingTask?.cancel()
         endEditingTask = nil
@@ -243,9 +249,9 @@ final class LayoutEditorModel {
             ? Set(items.filter { ItemMover.isObscured($0, displayBounds: displayBounds) }.map(\.windowID))
             : []
         return LayoutEditorState(
-            phase: phase, layout: layout, images: model.capturer.images, tones: model.capturer.tones,
-            names: names, accessibilityLabels: labels, appIcons: icons, pending: pending, obscured: obscured,
-            errorMessage: errorMessage,
+            phase: phase, layout: layout, images: model.capturer.images, imageSizes: model.capturer.sizes,
+            tones: model.capturer.tones, names: names, accessibilityLabels: labels, appIcons: icons, pending: pending,
+            obscured: obscured, errorMessage: errorMessage,
             isRetrying: isActive && fullRefreshSession == session,
             permissions: .init(accessibility: model.permissions.accessibility,
                                screenRecording: model.permissions.screenRecording))
@@ -277,6 +283,8 @@ final class LayoutEditorModel {
         // refreshes when done).
         guard self.session == session, isActive, pending.isEmpty else { return }
         commitLayout()
+        // Owners just resolved (e.g. items pushed off screen since launch): show their disk-cached images first.
+        if model.permissions.screenRecording { await model.capturer.preloadCached(model.scanner.items) }
         await capture(all: true)
     }
 
@@ -426,6 +434,9 @@ struct LayoutEditorState {
     var phase: LayoutEditorModel.Phase
     var layout: MenuBarLayout
     var images: [CGWindowID: CGImage]
+    /// Size of each capture in points (a cached capture may be narrower or wider than the item is now: it is drawn at
+    /// its own size until a fresh capture replaces it).
+    var imageSizes: [CGWindowID: CGSize] = [:]
     var tones: [CGWindowID: GlyphTone]
     var names: [CGWindowID: String]
     /// VoiceOver labels (`MenuBarItem.accessibilityName`).

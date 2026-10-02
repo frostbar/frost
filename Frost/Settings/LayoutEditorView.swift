@@ -432,7 +432,8 @@ private struct ItemTile: View {
     /// Capture / fallback icon (`ItemGlyph`) on a plate chosen by glyph brightness.
     private var face: some View {
         let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-        return ItemGlyph(item: item, image: image, appIcon: state.appIcons[item.windowID])
+        return ItemGlyph(item: item, image: image, appIcon: state.appIcons[item.windowID],
+                         imageSize: state.imageSizes[item.windowID])
             .frame(width: width, height: Self.height)
             .background(background, in: shape)
             .clipShape(shape)
