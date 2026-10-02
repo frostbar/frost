@@ -133,6 +133,24 @@ final class MenuBarFreezeFrame {
         return frame
     }
 
+    /// Pays ScreenCaptureKit's one-time setup costs ahead of the first live refresh round (called by the Frost Bar's
+    /// launch warm-up): fetches the shareable content and takes one tiny screenshot of the managed menu bar, the same
+    /// kind of capture `show` takes, without showing anything. Measured in the VM, the first capture otherwise spends
+    /// tens of ms on the main thread setting up (e.g. a media clock) in the middle of the first round.
+    static func warmUp(managedDisplayID: CGDirectDisplayID, contentCache: ShareableContentCache) async {
+        guard let content = await contentCache.content(),
+              let display = content.displays.first(where: { $0.displayID == managedDisplayID }) else { return }
+        let config = SCScreenshotConfiguration()
+        config.sourceRect = CGRect(x: 0, y: 0, width: 2, height: 2)
+        config.width = 2
+        config.height = 2
+        config.showsCursor = false
+        config.displayIntent = .local
+        config.dynamicRange = .sdr
+        _ = try? await SCScreenshotManager.captureScreenshot(
+            contentFilter: SCContentFilter(display: display, excludingWindows: []), configuration: config)
+    }
+
     /// Removes the overlay windows (idempotent).
     func remove() {
         timeout?.cancel()

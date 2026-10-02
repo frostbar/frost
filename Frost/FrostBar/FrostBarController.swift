@@ -307,7 +307,24 @@ final class FrostBarController {
             }
             #endif
             self.prerender()
+            await self.warmUpCapturePipeline()
         }
+    }
+
+    /// The first live refresh round pays one-time setup costs on the main thread (measured in the VM:
+    /// ScreenCaptureKit's first capture sets up a media clock, the first window list lookup by ID connects to the
+    /// window server), which made the first open after launch hitch while every later one was smooth. Pay them now,
+    /// while nothing is shown: one freeze-frame-style screenshot, one look-up of Frost's own windows, and one capture
+    /// of the Visible section's items (the strip capture path; it also refreshes their cached images).
+    private func warmUpCapturePipeline() async {
+        try? await Task.sleep(for: Self.prerenderDuration)
+        guard !isOpen else { return }
+        await MenuBarFreezeFrame.warmUp(managedDisplayID: managedDisplayID, contentCache: app.capturer.contentCache)
+        if let controls = app.sections.controlWindows { _ = StatusWindowParser.windows(withIDs: controls.all) }
+        guard !isOpen, !app.mover.isBusy else { return }
+        let visible = app.layout[.visible, default: []].filter(\.isOnScreen)
+        if !visible.isEmpty { await app.capturer.capture(visible) }
+        FrostLog.frostBar.info("warm-up: capture pipeline ready")
     }
 
     private var prerenderTask: Task<Void, Never>?
