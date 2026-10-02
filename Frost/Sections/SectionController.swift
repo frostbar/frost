@@ -728,10 +728,20 @@ final class SectionController {
             // Global monitor events have no window, so `locationInWindow` is in screen coordinates (AppKit, bottom-left origin).
             let point = OutsideClickDismissal.cgPoint(fromAppKit: event.locationInWindow,
                                                       primaryScreenMaxY: NSScreen.screens.first?.frame.maxY ?? 0)
-            let hit = replicaClicks.globalMouseDown(at: point, time: event.timestamp, button: button,
-                                                    control: event.modifierFlags.contains(.control),
-                                                    option: event.modifierFlags.contains(.option),
-                                                    replicaIcons: scanner.replicaIconFrames)
+            let control = event.modifierFlags.contains(.control), option = event.modifierFlags.contains(.option)
+            var hit = replicaClicks.globalMouseDown(at: point, time: event.timestamp, button: button, control: control,
+                                                    option: option, replicaIcons: scanner.replicaIconFrames)
+            // A display connected moments ago: its replica may have appeared after the last rescan
+            // (`rescanAfterDisplayChange`). A click in another display's menu bar that misses every known replica is
+            // rare and cheap to double-check.
+            let pointer = NSEvent.mouseLocation
+            if !hit, isInMenuBar(pointer),
+               let screen = NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) }),
+               Self.displayID(of: screen) != iconDisplayID {
+                scanner.rescan()
+                hit = replicaClicks.globalMouseDown(at: point, time: event.timestamp, button: button, control: control,
+                                                    option: option, replicaIcons: scanner.replicaIconFrames)
+            }
             if hit {
                 let active = iconDisplayID ?? 0
                 FrostLog.sections.notice("mouse down on a Frost icon replica at (\(point.x), \(point.y)); active display \(active)")
