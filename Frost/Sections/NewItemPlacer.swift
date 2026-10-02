@@ -149,6 +149,11 @@ final class NewItemPlacer {
                         FrostLog.newItems.notice("moved new item \(item.identity.bundleID, privacy: .public) out of Always Hidden")
                     } catch is CancellationError {
                         throw CancellationError()
+                    } catch ItemMoveError.mouseButtonHeld {
+                        // The user held a mouse button throughout: nothing was posted; retry this one later too.
+                        attempted.removeLast()
+                        FrostLog.newItems.notice("stopped placing new items (a mouse button is held); the rest are retried later")
+                        break
                     } catch ItemMoveError.controlsDisturbed {
                         // Frost's own icons were dragged (routing fell back to position): stop moving the rest.
                         FrostLog.newItems.error("stopped placing new items: Frost's controls were disturbed")

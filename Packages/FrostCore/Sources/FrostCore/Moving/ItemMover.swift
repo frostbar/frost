@@ -17,6 +17,8 @@ public enum ItemMoveError: Error, Equatable, Sendable {
     /// Frost is quitting (`ItemMover.beginShutdown`): no new move transaction may start, so the app never exits in
     /// the middle of a ⌘-drag that a queued drop or a new-item placement started right before the quit.
     case shuttingDown
+    /// The user kept a mouse button held for longer than `ItemMover.mouseReleaseTimeout`: no ⌘-drag was posted.
+    case mouseButtonHeld
 }
 
 /// Moves menu bar items with a synthetic ⌘-drag (implemented per spike-findings.md, "Task 11").
@@ -40,6 +42,12 @@ public final class ItemMover {
     /// false once the move's frames have settled (the events have long been handled by then). The app layer keeps the
     /// Frost icon from drawing a pressed highlight meanwhile.
     public var syntheticDragActive: (Bool) -> Void = { _ in }
+
+    /// Whether the user holds a mouse button (injectable for tests). A ⌘-drag posted meanwhile gets mixed up with the
+    /// user's own drag: their drag events carry the item along, even off the menu bar, where releasing removes it
+    /// (measured in the VM: a queued layout editor drop's retry ran while the user dragged the next tile). So every
+    /// attempt first waits for the buttons to be released (`waitForMouseButtonsReleased`).
+    public var isMouseButtonHeld: () -> Bool = { UserMouseButtons.isAnyHeld }
 
     public var maxAttempts = 3
     /// Delay after posting events before the first check; then poll every `pollInterval` until the order is
@@ -121,6 +129,8 @@ public final class ItemMover {
             // retrying finishes its current attempt and then gives up).
             guard attempt <= Self.attemptLimit(requested: attempts, isShuttingDown: isShuttingDown,
                                                shutdownLimit: shutdownMaxAttempts) else { break }
+            // Before reading any frame: the mouse-down must land on the Frost icon where it is when posting.
+            try await waitForMouseButtonsReleased(timeout: Self.mouseReleaseTimeout(isShuttingDown: isShuttingDown))
             scanner.rescan()
             let items = scanner.items
             guard let item = items.first(where: { $0.windowID == itemID }) else { throw ItemMoveError.itemNotFound }
@@ -164,6 +174,25 @@ public final class ItemMover {
             }
         }
         throw ItemMoveError.didNotMove
+    }
+
+    /// Waits (polling every `poll`) while the user holds a mouse button; throws `.mouseButtonHeld` if still held after
+    /// `timeout`, `CancellationError` when cancelled.
+    func waitForMouseButtonsReleased(timeout: Duration, poll: Duration = .milliseconds(20)) async throws {
+        guard isMouseButtonHeld() else { return }
+        FrostLog.mover.notice("waiting for the mouse button to be released before the next ⌘-drag")
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while isMouseButtonHeld() {
+            guard clock.now < deadline else { throw ItemMoveError.mouseButtonHeld }
+            try await Task.sleep(for: poll)
+        }
+    }
+
+    /// How long a move waits for the user to let go of a mouse button: as long as a deliberate drag takes, but briefly
+    /// while quitting (which gives up after a few seconds anyway).
+    nonisolated static func mouseReleaseTimeout(isShuttingDown: Bool) -> Duration {
+        isShuttingDown ? .seconds(1) : .seconds(30)
     }
 
     /// Bounds of the display hosting the scanned menu bar (the active menu bar, not necessarily the main
