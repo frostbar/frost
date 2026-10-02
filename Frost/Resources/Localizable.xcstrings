@@ -1060,13 +1060,13 @@
         }
       }
     },
-    "Version %@ (%@)" : {
-      "comment" : "About tab: version (build number)",
+    "Version %@" : {
+      "comment" : "About tab: version",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "版本 %1$@（%2$@）"
+            "value" : "版本 %@"
           }
         }
       }

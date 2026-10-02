@@ -75,8 +75,7 @@ struct AboutView: View {
     private static var versionString: String {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "–"
-        let build = info?["CFBundleVersion"] as? String ?? "–"
-        return String(localized: "Version \(version) (\(build))", comment: "About tab: version (build number)")
+        return String(localized: "Version \(version)", comment: "About tab: version")
     }
 }
 
