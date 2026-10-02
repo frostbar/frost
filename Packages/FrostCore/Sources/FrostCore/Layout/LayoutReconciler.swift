@@ -14,10 +14,17 @@ import CoreGraphics
 ///   `previous` order, after their nearest predecessor (or first if there is none);
 /// - new items not in `previous` use the live section and order.
 ///
+/// When one of Frost's separators is itself off screen (squeezed under the notch while editing), every live section
+/// is classified against a separator whose position is not its real one, so no live position is trustworthy: pass
+/// `separatorsOnScreen: false` and every item already in `previous` keeps its `previous` section and order (measured
+/// on a notched MacBook: the AH separator went under the notch and an always-hidden item to the right of the notch
+/// was classified Hidden).
+///
 /// On every refresh the editor uses the result as the next `previous`; after a successful move, `moving` puts the
 /// moved item where the user dropped it.
 public enum LayoutReconciler {
-    public static func reconcile(live: MenuBarLayout, previous: MenuBarLayout) -> MenuBarLayout {
+    public static func reconcile(live: MenuBarLayout, previous: MenuBarLayout,
+                                 separatorsOnScreen: Bool = true) -> MenuBarLayout {
         guard !live.isEmpty, !previous.isEmpty else { return live }
 
         var previousSection: [CGWindowID: MenuBarSection] = [:]
@@ -30,7 +37,7 @@ public enum LayoutReconciler {
         for section in MenuBarSection.allCases {
             result[section] = []
             for item in live[section, default: []] {
-                if !item.isOnScreen, previousSection[item.windowID] != nil {
+                if !item.isOnScreen || !separatorsOnScreen, previousSection[item.windowID] != nil {
                     overridden.append(item)
                 } else {
                     result[section, default: []].append(item)

@@ -300,6 +300,11 @@ final class FrostBarController {
             guard let self, !self.isOpen, self.app.permissions.allGranted else { return }
             // Every item, the Visible section's too: the layout editor shows them all.
             await self.app.capturer.preloadCached(self.app.scanner.items)
+            self.preloadOnceOwnersAreKnown()
+            // Visible items are on screen and can be captured in either display mode; the layout editor shows them.
+            let visible = self.app.layout[.visible, default: []].filter(\.isOnScreen)
+            let missing = self.app.capturer.missing(visible)
+            if !missing.isEmpty, !self.app.mover.isBusy { await self.app.capturer.capture(missing) }
             guard !self.isOpen, self.usesFrostBar else { return }
             #if DEBUG
             if let screen = self.app.sections.iconWindow?.screen ?? NSScreen.main {
@@ -325,6 +330,23 @@ final class FrostBarController {
         let visible = app.layout[.visible, default: []].filter(\.isOnScreen)
         if !visible.isEmpty { await app.capturer.capture(visible) }
         FrostLog.frostBar.info("warm-up: capture pipeline ready")
+    }
+
+    /// The disk cache is keyed by an item's owner, which is read through Accessibility and may not be known yet at
+    /// warm-up (measured on a notched MacBook: 12 of 17 cached images loaded at launch; the five pushed-out items only
+    /// when the layout editor opened, which showed their app-icon placeholders for ~0.3 s). Poll briefly for the
+    /// remaining owners and preload again once they are known.
+    private func preloadOnceOwnersAreKnown() {
+        guard app.scanner.items.contains(where: { $0.bundleID == nil }) else { return }
+        Task { [weak self] in
+            for _ in 0..<20 {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self else { return }
+                if !self.app.scanner.items.contains(where: { $0.bundleID == nil }) { break }
+            }
+            guard let self, self.app.permissions.screenRecording else { return }
+            await self.app.capturer.preloadCached(self.app.scanner.items)
+        }
     }
 
     private var prerenderTask: Task<Void, Never>?

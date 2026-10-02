@@ -12,6 +12,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     /// Opens (creating if needed) the settings window and brings Frost to the front; switches to `tab` if non-nil.
     static func show(model: AppModel, tab: SettingsTab? = nil) {
+        // Start reading cached item images now, before the Layout tab is shown, so its tiles have them from the first
+        // frame instead of showing app-icon placeholders that swap a moment later.
+        if model.permissions.screenRecording {
+            let capturer = model.capturer, items = model.scanner.items
+            Task { await capturer.preloadCached(items) }
+        }
         let controller = shared ?? SettingsWindowController(model: model, initialTab: tab ?? .layout)
         shared = controller
         if let tab { controller.select(tab) }

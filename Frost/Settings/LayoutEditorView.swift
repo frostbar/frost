@@ -432,10 +432,18 @@ private struct ItemTile: View {
     /// Capture / fallback icon (`ItemGlyph`) on a plate chosen by glyph brightness.
     private var face: some View {
         let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-        return ItemGlyph(item: item, image: image, appIcon: state.appIcons[item.windowID],
-                         imageSize: state.imageSizes[item.windowID])
+        // A placeholder that gets its first real capture cross-fades instead of swapping in one frame (both layers
+        // stay in the hierarchy, only their opacity animates); later captures of the same item update in place.
+        return ZStack {
+            ItemGlyph(item: item, image: nil, appIcon: state.appIcons[item.windowID],
+                      imageSize: state.imageSizes[item.windowID])
+                .opacity(image == nil ? 1 : 0)
+            ItemGlyph(item: item, image: image, appIcon: nil, imageSize: state.imageSizes[item.windowID])
+                .opacity(image == nil ? 0 : 1)
+        }
             .frame(width: width, height: Self.height)
             .background(background, in: shape)
+            .animation(.easeOut(duration: 0.15), value: image != nil)
             .clipShape(shape)
             .overlay(shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5))
     }

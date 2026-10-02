@@ -121,7 +121,13 @@ final class LayoutEditorModel {
         // read off the main thread); items pushed off screen can't be captured until the menu bar has expanded.
         if permissions.screenRecording {
             let capturer = model.capturer, items = model.scanner.items
-            Task { await capturer.preloadCached(items) }
+            Task {
+                await capturer.preloadCached(items)
+                // Items already on screen (the Visible section) can be captured right away, so a tile never shows its
+                // app-icon placeholder and then swaps to the real image a moment later.
+                let missing = capturer.missing(items.filter(\.isOnScreen))
+                if !missing.isEmpty { await capturer.capture(missing) }
+            }
         }
 
         endEditingTask?.cancel()
@@ -223,12 +229,30 @@ final class LayoutEditorModel {
     /// The layout the editor shows: the live layout merged with `previous` (off-screen items keep their sections),
     /// with in-flight drops applied on top.
     var layout: MenuBarLayout {
-        var layout = LayoutReconciler.reconcile(live: model.layout, previous: previous)
+        // Until the menu bar has settled after entering editing, live positions are transient: while the separators
+        // shrink, the system briefly places items on the other side of a separator (on a notched Mac the first
+        // hidden item was classified Always Hidden for ~0.4 s and visibly slid there and back). Show the snapshot
+        // taken before editing until then.
+        var layout = hasSettled || previous.isEmpty
+            ? LayoutReconciler.reconcile(live: model.layout, previous: previous,
+                                         separatorsOnScreen: separatorsOnScreen)
+            : previous
         guard !layout.isEmpty else { return layout }
         for move in optimisticMoves {
             layout = LayoutReconciler.moving(move.id, to: move.section, at: move.index, in: layout)
         }
         return layout
+    }
+
+    /// Whether both of Frost's separators are on screen. While editing on a crowded notched display one of them can
+    /// be squeezed under the notch; live sections are then classified against a separator that isn't where it really
+    /// is, so the editor keeps the collapsed snapshot's sections (see `LayoutReconciler`).
+    private var separatorsOnScreen: Bool {
+        guard let controls = model.sections.controlWindows else { return true }
+        let items = model.scanner.items
+        return [controls.hiddenSeparator, controls.alwaysHiddenSeparator].allSatisfy { id in
+            items.first { $0.windowID == id }?.isOnScreen ?? true
+        }
     }
 
     var state: LayoutEditorState {
@@ -298,7 +322,8 @@ final class LayoutEditorModel {
     }
 
     private func commitLayout() {
-        let reconciled = LayoutReconciler.reconcile(live: model.layout, previous: previous)
+        let reconciled = LayoutReconciler.reconcile(live: model.layout, previous: previous,
+                                                    separatorsOnScreen: separatorsOnScreen)
         guard !reconciled.isEmpty, Self.ids(reconciled) != Self.ids(previous) else { return }
         previous = reconciled
     }

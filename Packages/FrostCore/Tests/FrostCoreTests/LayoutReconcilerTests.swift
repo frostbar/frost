@@ -125,4 +125,27 @@ import CoreGraphics
         layout[.hidden] = [item(1)]
         #expect(ids(LayoutReconciler.moving(9, to: .visible, at: 0, in: layout)) == ids(layout))
     }
+
+    @Test func keepsPreviousSectionsWhenASeparatorIsOffScreen() {
+        // Collapsed snapshot: 1 is always hidden, 2 and 3 hidden. While editing on a notched display the AH separator
+        // is squeezed under the notch, so the on-screen item 1 is classified Hidden.
+        let previous: MenuBarLayout = [.alwaysHidden: [item(1)], .hidden: [item(2), item(3)],
+                                       .visible: []]
+        let live: MenuBarLayout = [.alwaysHidden: [], .hidden: [item(1), item(2), item(3)],
+                                   .visible: [], ]
+        let untrusted = LayoutReconciler.reconcile(live: live, previous: previous, separatorsOnScreen: false)
+        #expect(untrusted[.alwaysHidden]?.map(\.windowID) == [1])
+        #expect(untrusted[.hidden]?.map(\.windowID) == [2, 3])
+        // With both separators on screen, on-screen items use their live sections.
+        let trusted = LayoutReconciler.reconcile(live: live, previous: previous)
+        #expect(trusted[.alwaysHidden]?.map(\.windowID) == [])
+        #expect(trusted[.hidden]?.map(\.windowID) == [1, 2, 3])
+    }
+
+    @Test func newItemsUseLiveSectionsEvenWhenSeparatorsAreOffScreen() {
+        let previous: MenuBarLayout = [.alwaysHidden: [], .hidden: [item(2)], .visible: []]
+        let live: MenuBarLayout = [.alwaysHidden: [], .hidden: [item(2), item(9)], .visible: []]
+        let result = LayoutReconciler.reconcile(live: live, previous: previous, separatorsOnScreen: false)
+        #expect(result[.hidden]?.map(\.windowID) == [2, 9])
+    }
 }
