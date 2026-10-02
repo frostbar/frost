@@ -142,6 +142,9 @@ over the Frost Bar; close it via Notification Center's AX "Close" action.
   to Frost's button (a real Mac does not), but not a right click. `FROST_TEST_DROP_REPLICA_CLICKS=1`
   (`make vm-run FROST_ENV="FROST_TEST_DROP_REPLICA_CLICKS=1"`) makes Frost drop the redelivered click so the
   replica-click fallback (`ReplicaClickDetector`) can be tested with left clicks too.
+- Display mode Automatic: the VM has no notch, so Automatic expands in the menu bar on every display.
+  `FROST_TEST_NOTCH_PRIMARY_DISPLAY=1` (Debug builds) makes Automatic treat the primary display as notched: the Frost
+  Bar on the main display and In Menu Bar on the virtual one, like a notched Mac with an external display.
 
 ## Verification techniques
 
