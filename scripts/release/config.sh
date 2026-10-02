@@ -31,17 +31,29 @@ COMMIT_AUTHOR_NAME="${COMMIT_AUTHOR_NAME:-Kyle Zhang}"
 COMMIT_AUTHOR_EMAIL="${COMMIT_AUTHOR_EMAIL:-1912137+kylezh@users.noreply.github.com}"
 
 # ---- Code signing ------------------------------------------------------------------------------
+# Both modes sign every executable with the Hardened Runtime (codesign --options runtime).
 # selfsigned: sign with the self-signed identity in the login keychain, no notarization (current method).
 #   Every release must use the same certificate and private key: macOS identifies the app by its signature, and
 #   after a certificate change users must grant Accessibility / Screen Recording again.
-# developer-id: (optional, untested) Developer ID signing + hardened runtime + notarytool notarization + staple.
+# developer-id: sign with "Developer ID Application: <DEVELOPER_ID_NAME> (<TEAM_ID>)" with a secure timestamp, then
+#   notarize the DMG with notarytool and staple the ticket. Switch-over steps: docs/releasing.md, "Switching to
+#   Developer ID and notarization".
 SIGNING_MODE="${SIGNING_MODE:-selfsigned}"
 SELF_SIGNED_IDENTITY="${SELF_SIGNED_IDENTITY:-Frost Local Signing}"
-# Required by developer-id mode (ignored otherwise):
-DEVELOPER_ID_IDENTITY="${DEVELOPER_ID_IDENTITY:-Developer ID Application: YOUR NAME (TEAMID)}"
-DEVELOPMENT_TEAM_ID="${DEVELOPMENT_TEAM_ID:-}"
-# Name of the keychain credentials saved with `xcrun notarytool store-credentials <profile>`.
+# Required by developer-id mode (ignored otherwise): the name and the 10-character Team ID exactly as they appear in
+# the certificate's common name, "Developer ID Application: <name> (<team id>)" (security find-identity -v -p
+# codesigning lists it). DEVELOPER_ID_IDENTITY defaults to that common name; set it only to pick the certificate
+# some other way (e.g. by its SHA-1 hash when the keychain holds two certificates with the same name).
+DEVELOPER_ID_NAME="${DEVELOPER_ID_NAME:-}"
+TEAM_ID="${TEAM_ID:-}"
+DEVELOPER_ID_IDENTITY="${DEVELOPER_ID_IDENTITY:-Developer ID Application: $DEVELOPER_ID_NAME ($TEAM_ID)}"
+# Keychain profile holding the notary credentials, created once with `xcrun notarytool store-credentials`.
 NOTARY_PROFILE="${NOTARY_PROFILE:-frost-notary}"
+# Entitlements per mode (relative to the repository root). The self-signed certificate has no Team ID, so library
+# validation would reject Sparkle.framework: that mode needs com.apple.security.cs.disable-library-validation, which
+# Developer ID signing doesn't (see the comments in both files).
+SELF_SIGNED_ENTITLEMENTS="Frost/Resources/Frost-SelfSigned.entitlements"
+DEVELOPER_ID_ENTITLEMENTS="Frost/Resources/Frost.entitlements"
 
 # ---- Sparkle ----------------------------------------------------------------------------------
 # The EdDSA private key lives in the login keychain (account name passed to generate_keys --account). Alternatively,
