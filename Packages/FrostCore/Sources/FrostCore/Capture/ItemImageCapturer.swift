@@ -65,14 +65,28 @@ public final class ItemImageCapturer {
     /// Keys already looked up on disk this run with no usable entry (avoids rereading the disk every time the panel
     /// opens). Removed once a new capture is taken.
     @ObservationIgnored private var diskMisses: Set<ItemImageCacheKey> = []
+    /// Captures taken with the previous appearance (see `appearanceDidChange`): still shown, but replaced by the disk
+    /// cache entry for the new appearance or the next capture, and reported by `missing(_:)`.
+    @ObservationIgnored private var stale: Set<CGWindowID> = []
 
     public init(diskCache: ItemImageDiskCache? = ItemImageDiskCache.defaultDirectory.map(ItemImageDiskCache.init)) {
         self.diskCache = diskCache
-        // Glyph colors change with the appearance (light/dark), so clear the cache.
+        // Glyph colors change with the appearance (light/dark): captures must be retaken.
         appearanceObservation = NSApplication.shared.observe(\.effectiveAppearance) { [weak self] _, _ in
         // KVO callbacks have no thread guarantee; hop back to the main actor.
-            Task { @MainActor in self?.invalidate() }
+            Task { @MainActor in self?.appearanceDidChange() }
         }
+    }
+
+    /// The appearance changed: captures in flight (old appearance) are discarded, but the existing images stay on
+    /// screen until fresh ones arrive, so the Frost Bar and the layout editor never blank every tile or resize twice
+    /// (monochrome glyphs are template-tinted in the Frost Bar anyway). They are marked stale: `loadCached` replaces
+    /// them with the disk cache entries for the new appearance, and `missing` reports them so they are recaptured.
+    public func appearanceDidChange() {
+        generation += 1
+        stale.formUnion(images.keys)
+        pixels.removeAll()
+        diskMisses.removeAll()
     }
 
     /// Clears all in-memory caches (the disk cache is stored per appearance and is unaffected).
@@ -85,13 +99,14 @@ public final class ItemImageCapturer {
         sizes.removeAll()
         pixels.removeAll()
         diskMisses.removeAll()
+        stale.removeAll()
     }
 
-    /// Returns the items in `images` that have no capture yet, for the caller to capture one by one. Fills from the
-    /// disk cache first (see `loadCached(_:)`).
+    /// Returns the items in `images` that have no current capture (none yet, or a stale one from the previous
+    /// appearance), for the caller to capture. Fills from the disk cache first (see `loadCached(_:)`).
     public func missing(_ items: [MenuBarItem]) -> [MenuBarItem] {
         loadCached(items)
-        return items.filter { images[$0.windowID] == nil }
+        return items.filter { images[$0.windowID] == nil || stale.contains($0.windowID) }
     }
 
     /// Fills in, from the disk cache, items in `items` that have no capture yet (entries for the current menu bar
@@ -99,8 +114,10 @@ public final class ItemImageCapturer {
     /// for anything `preloadCached(_:)` hasn't loaded yet.
     ///
     /// Skips: items with unknown ownership (unstable identity); items whose identity is duplicated within `items`
-    /// (indistinguishable); entries whose pixel size does not match the item's current frame (e.g. a text item's
-    /// content changed). Prunes entries not seen for 30 days in the background (at most once a day).
+    /// (indistinguishable); entries whose height does not match the item's (another menu bar height). An entry of a
+    /// different width (a text item whose content changed) is used anyway, drawn at its own width: an old picture of
+    /// the item until a capture replaces it is better than a blank placeholder. Prunes entries not seen for 30 days in
+    /// the background (at most once a day).
     public func loadCached(_ items: [MenuBarItem]) {
         guard let diskCache else { return }
         let requests = cacheRequests(items)
@@ -128,7 +145,6 @@ public final class ItemImageCapturer {
     struct CacheRequest: Sendable {
         let windowID: CGWindowID
         let key: ItemImageCacheKey
-        let pixelWidth: Int
         let pixelHeight: Int
         let scale: CGFloat
     }
@@ -151,27 +167,44 @@ public final class ItemImageCapturer {
         let scale = menuBarScale
         let counts = Dictionary(items.map { ($0.identity, 1) }, uniquingKeysWith: +)
         return items.compactMap { item in
-            guard images[item.windowID] == nil, item.bundleID != nil, counts[item.identity] == 1 else { return nil }
+            guard images[item.windowID] == nil || stale.contains(item.windowID), item.bundleID != nil,
+                  counts[item.identity] == 1 else { return nil }
             let key = ItemImageCacheKey(identity: item.identity, appearance: appearance, scale: Int(scale))
             guard !diskMisses.contains(key) else { return nil }
             return CacheRequest(windowID: item.windowID, key: key,
-                                pixelWidth: Int((item.frame.width * scale).rounded()),
                                 pixelHeight: Int((item.frame.height * scale).rounded()), scale: scale)
         }
     }
 
-    /// Reads and prepares one entry (callable off the main actor); nil when it is missing or its pixel size doesn't
-    /// match the item's current frame.
+    /// Reads and prepares one entry (callable off the main actor); nil when it is missing, its height doesn't match
+    /// the item's, or it has no visible pixels.
     nonisolated private static func prepare(_ request: CacheRequest, from diskCache: ItemImageDiskCache)
         -> PreparedCapture? {
-        guard let cached = diskCache.load(request.key),
-              abs(cached.image.width - request.pixelWidth) <= 1, abs(cached.image.height - request.pixelHeight) <= 1,
-              let copy = PixelCopy(cached.image)
+        guard let cached = diskCache.load(request.key), abs(cached.image.height - request.pixelHeight) <= 1,
+              let copy = PixelCopy(cached.image), copy.hasVisiblePixels
         else { return nil }
         var template: CGImage?
         if case .monochrome(let tone) = cached.style { template = GlyphMask.make(from: copy.image, tone: tone) }
         return PreparedCapture(image: copy.image, bytes: copy.bytes, tone: cached.tone, style: cached.style,
                                template: template)
+    }
+
+    /// Copies and classifies a fresh capture (callable off the main actor); nil when it has no visible pixels (a
+    /// window caught mid-move or not drawn yet: storing it would blank the tile). `unchanged` when its pixels equal
+    /// `previous` (then it isn't classified).
+    nonisolated private static func prepareFresh(_ image: CGImage, previous: Data?) -> FreshCapture? {
+        guard let copy = PixelCopy(image), copy.hasVisiblePixels else { return nil }
+        if copy.bytes == previous { return .unchanged }
+        let style = GlyphStyle.of(copy.image)
+        var template: CGImage?
+        if case .monochrome(let tone) = style { template = GlyphMask.make(from: copy.image, tone: tone) }
+        return .changed(PreparedCapture(image: copy.image, bytes: copy.bytes, tone: GlyphTone.of(copy.image),
+                                        style: style, template: template))
+    }
+
+    enum FreshCapture: Sendable {
+        case unchanged
+        case changed(PreparedCapture)
     }
 
     private func apply(_ prepared: [PreparedCapture?], for requests: [CacheRequest], from diskCache: ItemImageDiskCache,
@@ -184,10 +217,11 @@ public final class ItemImageCapturer {
                 continue
             }
             // Captured while the entry was loading: keep the fresh capture.
-            guard images[request.windowID] == nil else { continue }
+            guard images[request.windowID] == nil || stale.contains(request.windowID) else { continue }
             store(capture.image, tone: capture.tone, style: capture.style, template: capture.template,
                   scale: request.scale, for: request.windowID)
             pixels[request.windowID] = capture.bytes
+            stale.remove(request.windowID)
             loaded.append(request.key)
         }
         guard !loaded.isEmpty else { return }
@@ -254,20 +288,38 @@ public final class ItemImageCapturer {
             }
         }
         guard generation == startGeneration else { return [] }
+        // Copy and classify off the main thread (a first round after opening the Frost Bar replaces every tile).
+        let inputs = items.compactMap { item in
+            fresh[item.windowID].map { image in
+                (id: item.windowID, image: image, previous: images[item.windowID] == nil ? nil : pixels[item.windowID])
+            }
+        }
+        let prepared = await Task.detached(priority: .userInitiated) {
+            Dictionary(inputs.compactMap { input in
+                Self.prepareFresh(input.image, previous: input.previous).map { (input.id, $0) }
+            }, uniquingKeysWith: { a, _ in a })
+        }.value
+        guard generation == startGeneration else { return [] }
         var toSave: [(key: ItemImageCacheKey, value: DiskWrite)] = []
         let counts = Dictionary(items.map { ($0.identity, 1) }, uniquingKeysWith: +)
         for item in items {
-            guard let captured = fresh[item.windowID], let copy = PixelCopy(captured) else { continue }
+            guard let result = prepared[item.windowID] else {
+                if fresh[item.windowID] != nil {
+                    FrostLog.capture.notice("discarding a blank capture of item \(item.windowID)")
+                }
+                continue
+            }
             // Pixel-identical to the existing capture: leave it as is.
-            if pixels[item.windowID] == copy.bytes, images[item.windowID] != nil { continue }
-            let style = GlyphStyle.of(copy.image)
-            let tone = GlyphTone.of(copy.image)
-            store(copy.image, tone: tone, style: style, scale: scale, for: item.windowID)
-            pixels[item.windowID] = copy.bytes
+            guard case .changed(let capture) = result else { continue }
+            store(capture.image, tone: capture.tone, style: capture.style, template: capture.template, scale: scale,
+                  for: item.windowID)
+            pixels[item.windowID] = capture.bytes
+            stale.remove(item.windowID)
             guard item.bundleID != nil, counts[item.identity] == 1 else { continue }
             let key = ItemImageCacheKey(identity: item.identity, appearance: appearance, scale: Int(scale))
             diskMisses.remove(key)
-            if let write = diskWrites.offer(DiskWrite(image: copy.image, tone: tone, style: style), for: key, now: .now) {
+            let write = DiskWrite(image: capture.image, tone: capture.tone, style: capture.style)
+            if let write = diskWrites.offer(write, for: key, now: .now) {
                 toSave.append((key, write))
             }
         }
@@ -284,6 +336,7 @@ public final class ItemImageCapturer {
             templates = templates.filter { images[$0.key] != nil }
             sizes = sizes.filter { images[$0.key] != nil }
             pixels = pixels.filter { images[$0.key] != nil }
+            stale = stale.filter { images[$0] != nil }
         }
         if let diskCache, !toSave.isEmpty {
             Task.detached(priority: .utility) { Self.write(toSave, to: diskCache) }
@@ -380,12 +433,6 @@ public final class ItemImageCapturer {
         return (result, moved)
     }
 
-    private func store(_ image: CGImage, tone: GlyphTone, style: GlyphStyle, scale: CGFloat, for id: CGWindowID) {
-        var template: CGImage?
-        if case .monochrome(let tone) = style { template = GlyphMask.make(from: image, tone: tone) }
-        store(image, tone: tone, style: style, template: template, scale: scale, for: id)
-    }
-
     private func store(_ image: CGImage, tone: GlyphTone, style: GlyphStyle, template: CGImage?, scale: CGFloat,
                        for id: CGWindowID) {
         images[id] = image
@@ -433,5 +480,20 @@ struct PixelCopy: Sendable {
         guard let image = context.makeImage() else { return nil }
         self.image = image
         bytes = Data(bytes: data, count: context.bytesPerRow * height)
+    }
+
+    /// Whether any pixel is not fully transparent.
+    var hasVisiblePixels: Bool { Self.hasVisiblePixels(bytes) }
+
+    /// `bytes` are 32-bit little-endian premultiplied ARGB pixels (BGRA in memory, alpha in each pixel's last byte).
+    static func hasVisiblePixels(_ bytes: Data) -> Bool {
+        bytes.withUnsafeBytes { raw in
+            var index = 3
+            while index < raw.count {
+                if raw[index] != 0 { return true }
+                index += 4
+            }
+            return false
+        }
     }
 }
