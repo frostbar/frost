@@ -1,7 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements of Frost signed with a Developer ID certificate (scripts/release/release.sh, SIGNING_MODE=developer-id).
+  Builds signed with the self-signed "Frost Local Signing" identity (every Xcode build and SIGNING_MODE=selfsigned)
+  use Frost-SelfSigned.entitlements instead: the same set plus one exception. See docs/releasing.md, "Hardened
+  Runtime and entitlements".
+
+  Frost runs with the Hardened Runtime and needs no Hardened Runtime exception and no resource-access entitlement:
+  - Synthesized CGEvents (HID tap, session tap, window routing through field 0x33): gated by TCC (Accessibility /
+    PostEvent), not by an entitlement.
+  - Accessibility (reading and pressing other apps' AXUIElements): TCC Accessibility only.
+  - ScreenCaptureKit captures and CGWindowList (window titles of other apps): TCC Screen Recording only.
+  - No private CoreGraphics / SkyLight (CGS*) calls, no Apple Events, no JIT, no DYLD_* environment variables (the
+    FROST_TEST_* hooks are ordinary environment variables, which the Hardened Runtime leaves alone).
+  - Sparkle (non-sandboxed host): its helpers (Autoupdate, Updater.app, Installer.xpc, Downloader.xpc) only link
+    system libraries and need nothing from the host app; Downloader.xpc keeps its own (empty) entitlements.
+  - Library validation stays on: with Developer ID, the app and Sparkle.framework carry the same Team ID.
+-->
 <plist version="1.0">
 <dict>
+	<!-- Not sandboxed: Frost reads and drives other apps' menu bar items. -->
 	<key>com.apple.security.app-sandbox</key>
 	<false/>
 </dict>

@@ -19,7 +19,11 @@ settings:
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: "Frost Local Signing"
     DEVELOPMENT_TEAM: ""
-    ENABLE_HARDENED_RUNTIME: NO
+    # Hardened Runtime in every configuration (required for notarization). Debug keeps it too, so VM tests run under
+    # the same runtime restrictions as releases: Xcode still injects com.apple.security.get-task-allow into Debug
+    # builds (lldb attaches), and the FROST_TEST_* hooks are plain environment variables (only DYLD_* ones are
+    # stripped). See docs/releasing.md, "Hardened Runtime and entitlements".
+    ENABLE_HARDENED_RUNTIME: YES
     SWIFT_STRICT_CONCURRENCY: complete
     # Extract localizable strings from Swift sources into the String Catalog.
     SWIFT_EMIT_LOC_STRINGS: YES
@@ -56,13 +60,14 @@ targets:
         SUPublicEDKey: "bSODBP2nCj1BVf+FVDE4o8boPvl+I9FpHjVsOn9u5PE="
         SUEnableAutomaticChecks: true
         SUScheduledCheckInterval: 86400
-    entitlements:
-      path: Frost/Resources/Frost.entitlements
-      properties:
-        com.apple.security.app-sandbox: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.frost.Frost
+        # Xcode builds are always signed with the self-signed "Frost Local Signing" identity, which needs the library
+        # validation exception (the file explains why). Developer ID releases are re-signed by
+        # scripts/release/release.sh with Frost/Resources/Frost.entitlements, which has no exception. Set as a build
+        # setting, not with XcodeGen's `entitlements:` key, which rewrites the file and drops its comments.
+        CODE_SIGN_ENTITLEMENTS: Frost/Resources/Frost-SelfSigned.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 schemes:
   Frost:

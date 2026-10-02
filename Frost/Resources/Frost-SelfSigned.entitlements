@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements of Frost signed with the self-signed "Frost Local Signing" identity: every Xcode build (project.yml,
+  Debug and Release) and scripts/release/release.sh with SIGNING_MODE=selfsigned. Identical to Frost.entitlements
+  (which documents why nothing else is needed) plus one Hardened Runtime exception. Developer ID releases use
+  Frost.entitlements. See docs/releasing.md, "Hardened Runtime and entitlements".
+-->
+<plist version="1.0">
+<dict>
+	<!-- Not sandboxed: Frost reads and drives other apps' menu bar items. -->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<!--
+	  Required only because the certificate is self-signed. Library validation (part of the Hardened Runtime) lets a
+	  process load only code signed by Apple or by its own Team ID, and a self-signed certificate has no Team ID: even
+	  Sparkle.framework (and Debug's Frost.debug.dylib), signed with the very same certificate, is rejected with
+	  "mapping process and mapped file (non-platform) have different Team IDs" and Frost would not launch. Measured on
+	  a Mac with SIP enabled; the test VM runs with SIP disabled and does not enforce library validation, so it cannot
+	  catch a missing exception. Not needed (and not used) with a Developer ID certificate.
+	-->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
