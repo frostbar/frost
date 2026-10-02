@@ -16,7 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let frostBar = FrostBarController(app: model)
         self.frostBar = frostBar
         model.toggleFrostBar = { [unowned frostBar] in frostBar.toggle(showAlwaysHidden: $0) }
-        model.newItems.isPaused = { [unowned frostBar] in frostBar.isOpen }
+        // A click forward closes the panel first and then waits for the mover: placement must yield to it too.
+        model.newItems.isPaused = { [unowned frostBar] in frostBar.isOpen || frostBar.pendingActivation != nil }
         model.start()
         frostBar.warmUp()
         let menus = MainMenu.make(target: self)

@@ -47,7 +47,8 @@ final class NewItemPlacer {
     private var refreshedForSeeding = false
     private var evaluateTask: Task<Void, Never>?
     /// Placement waits while this is true (the Frost Bar is open: moving items would rearrange it under the user's
-    /// pointer). Set by the app delegate.
+    /// pointer; or it is forwarding a click, which waits for the mover and would otherwise be starved by the rest of a
+    /// batch). Set by the app delegate.
     var isPaused: () -> Bool = { false }
 
     init(scanner: MenuBarItemScanner, mover: ItemMover, sections: SectionController,
@@ -187,7 +188,7 @@ final class NewItemPlacer {
     private static func stopReason(isShuttingDown: Bool, isMouseButtonPressed: Bool, isPaused: Bool) -> String? {
         if isShuttingDown { return "Frost is quitting" }
         if isMouseButtonPressed { return "a mouse button is held" }
-        if isPaused { return "the Frost Bar is open" }
+        if isPaused { return "the Frost Bar is open or forwarding a click" }
         return nil
     }
 
