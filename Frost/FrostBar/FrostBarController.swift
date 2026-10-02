@@ -484,8 +484,12 @@ final class FrostBarController {
     private func installMonitors() {
         removeMonitors()
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        // Clicks in other apps.
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
+        // Clicks in other apps (not Frost's own synthetic events: a new item placed meanwhile, see `NewItemPlacer`).
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            guard !SyntheticEvents.isPostedByFrost(event) else {
+                FrostLog.frostBar.debug("ignoring Frost's own synthetic mouse event")
+                return
+            }
             MainActor.assumeIsolated { self?.close() }
         }) {
             monitors.append(global)
@@ -500,7 +504,7 @@ final class FrostBarController {
     }
 
     private func handleLocalMouseDown(_ event: NSEvent) {
-        guard isOpen, event.window !== panel else { return }
+        guard isOpen, event.window !== panel, !SyntheticEvents.isPostedByFrost(event) else { return }
         // A left click on the Frost icon is handled by `toggle` (close or switch ⌥); closing here first would make
         // it reopen immediately.
         if event.window === app.sections.iconWindow, event.type == .leftMouseDown,

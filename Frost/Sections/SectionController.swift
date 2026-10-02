@@ -476,7 +476,8 @@ final class SectionController {
             self.setState(.collapsed)
         }
         // Clicks in other apps.
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] _ in
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
+            guard !SyntheticEvents.isPostedByFrost(event) else { return }
             MainActor.assumeIsolated { self?.outsideClick(at: NSEvent.mouseLocation) }
         }) {
             outsideClickMonitors.append(global)
@@ -485,6 +486,7 @@ final class SectionController {
         // status items (snowflake, separators) are in the menu bar and excluded by `outsideClick`; clicking the
         // snowflake toggles via `handleIconClick`.
         if let local = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
+            guard !SyntheticEvents.isPostedByFrost(event) else { return event }
             MainActor.assumeIsolated {
                 let point = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? NSEvent.mouseLocation
                 self?.outsideClick(at: point, in: event.window)

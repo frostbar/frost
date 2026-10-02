@@ -46,6 +46,9 @@ final class NewItemPlacer {
     /// A full ownership read happened before seeding (otherwise most icons have no owner yet and seeding is incomplete).
     private var refreshedForSeeding = false
     private var evaluateTask: Task<Void, Never>?
+    /// Placement waits while this is true (the Frost Bar is open: moving items would rearrange it under the user's
+    /// pointer). Set by the app delegate.
+    var isPaused: () -> Bool = { false }
 
     init(scanner: MenuBarItemScanner, mover: ItemMover, sections: SectionController,
          permissions: PermissionsService, defaults: UserDefaults = .standard) {
@@ -99,8 +102,9 @@ final class NewItemPlacer {
             refreshedForSeeding = true
         }
         guard layoutIsTrustworthy, let controls = sections.controlWindows else { return }
-        guard !mover.isBusy, NSEvent.pressedMouseButtons == 0 else {
-            // Not a good time to move (another move transaction running, mouse held down): check again later.
+        guard !mover.isBusy, NSEvent.pressedMouseButtons == 0, !isPaused() else {
+            // Not a good time to move (another move transaction running, mouse held down, the Frost Bar open): check
+            // again later.
             schedule(after: Self.retryDelay)
             return
         }
@@ -134,7 +138,8 @@ final class NewItemPlacer {
                     // Re-checked before every item: a batch takes about a second per item, and a ⌘-drag must never
                     // start while the user holds a mouse button.
                     if let reason = Self.stopReason(isShuttingDown: mover.isShuttingDown,
-                                                    isMouseButtonPressed: NSEvent.pressedMouseButtons != 0) {
+                                                    isMouseButtonPressed: NSEvent.pressedMouseButtons != 0,
+                                                    isPaused: isPaused()) {
                         FrostLog.newItems.notice("stopped placing new items (\(reason, privacy: .public)); the rest are retried later")
                         break
                     }
@@ -174,9 +179,10 @@ final class NewItemPlacer {
     }
 
     /// Why the rest of a batch must wait (nil = go on with the next item).
-    private static func stopReason(isShuttingDown: Bool, isMouseButtonPressed: Bool) -> String? {
+    private static func stopReason(isShuttingDown: Bool, isMouseButtonPressed: Bool, isPaused: Bool) -> String? {
         if isShuttingDown { return "Frost is quitting" }
         if isMouseButtonPressed { return "a mouse button is held" }
+        if isPaused { return "the Frost Bar is open" }
         return nil
     }
 

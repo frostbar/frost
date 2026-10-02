@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let frostBar = FrostBarController(app: model)
         self.frostBar = frostBar
         model.toggleFrostBar = { [unowned frostBar] in frostBar.toggle(showAlwaysHidden: $0) }
+        model.newItems.isPaused = { [unowned frostBar] in frostBar.isOpen }
         model.start()
         frostBar.warmUp()
         let menus = MainMenu.make(target: self)
