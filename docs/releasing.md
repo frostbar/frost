@@ -23,8 +23,18 @@ environment variable of the same name.
   that line (and the two Releases links in `README.md`), then ship a release from the old location first so that
   existing installs learn the new feed URL.
 - **Publishing**: `--publish` pushes the local branch `RELEASE_BRANCH` (default `main`) to `GIT_REMOTE`
-  (`origin`) as `REMOTE_BRANCH` (`main`) and authors its commit and tag as `COMMIT_AUTHOR_NAME` /
-  `COMMIT_AUTHOR_EMAIL` (the GitHub noreply address) without touching your git config.
+  (`origin`) as `REMOTE_BRANCH` (`main`) together with the tag, atomically, and authors its commit and tag as
+  `COMMIT_AUTHOR_NAME` / `COMMIT_AUTHOR_EMAIL` (the GitHub noreply address) without touching your git config.
+- **Pushing over HTTPS**: when the remote's SSH URL can't be used (e.g. the ssh agent is unavailable), set
+  `GIT_PUSH_URL` to an HTTPS URL and `GIT_USE_GH_CREDENTIALS=1` so the credentials come from `gh`:
+
+  ```sh
+  GIT_PUSH_URL=https://<user>@github.com/<owner>/<repo>.git GIT_USE_GH_CREDENTIALS=1 \
+    scripts/release/release.sh 0.2.0 --publish
+  ```
+
+  This is the same as `git -c credential.helper= -c credential.helper='!gh auth git-credential' push <url> …`;
+  the fetch and tag checks of `--publish` use the same URL.
 - **Signing**: `SIGNING_MODE=selfsigned` (default) or `developer-id` (see below).
 
 ## Keys and certificates
@@ -101,20 +111,29 @@ Gatekeeper "Open Anyway" step.
    `SUFeedURL` and `SUPublicEDKey`, builds `Frost-0.2.0.dmg` (with
    [dmgbuild](https://github.com/dmgbuild/dmgbuild) through `uvx`; a plain DMG without `uv`), mounts it to check the
    app inside, signs the DMG with the EdDSA key, verifies that signature against the app's `SUPublicEDKey` with
-   OpenSSL, and writes `appcast.xml` and `release-notes.md`. At the end it prints the exact commands that would
-   publish it.
+   OpenSSL (OpenSSL 3 is looked up: `$OPENSSL`, Homebrew's `openssl@3`, then `PATH`; the system's LibreSSL can't
+   verify Ed25519), and writes `appcast.xml` and `release-notes.md`. The version bump stays uncommitted in
+   `project.yml` and `Frost/Resources/Info.plist` (the script says so); at the end it prints how to publish.
 4. Optionally test the update in the VM (below).
-5. Publish, on branch `RELEASE_BRANCH` with a clean tree and `gh auth login` done:
+5. Publish, on branch `RELEASE_BRANCH` with `gh auth login` done:
 
    ```sh
    scripts/release/release.sh 0.2.0 --publish
    ```
 
-   This commits the version bump, tags `v0.2.0`, pushes branch and tag, and runs
+   Before building, the preflight checks that `gh` is logged in, fetches `REMOTE_BRANCH` and requires the local
+   branch to contain it (`git merge-base --is-ancestor`), and checks that the tag exists neither locally nor on the
+   remote (`git ls-remote --tags`). It then rebuilds, commits the version bump, tags `v0.2.0`, pushes branch and tag
+   with `git push --atomic` (both land or neither does), and runs
    `gh release create v0.2.0 --verify-tag … Frost-0.2.0.dmg appcast.xml`.
 
-`--allow-dirty` builds from an uncommitted tree for local experiments (never with `--publish`). Running the script
-twice for the same version keeps the build number.
+The working tree must be clean, except for exactly the version bump a previous run of the script left in
+`project.yml` / `Info.plist` (so "build locally, inspect, then `--publish`" works; the bump is reused, keeping the
+build number). `--allow-dirty` builds from an uncommitted tree for local experiments (never with `--publish`).
+A failed run reports what it leaves behind: an uncommitted version bump (rerunning reuses it; `git checkout --
+project.yml Frost/Resources/Info.plist` undoes it), or, if the push was rejected, the release commit on the branch
+(the local tag is deleted, nothing is pushed: pull and rerun `--publish`). If only `gh release create` fails after
+the push, the script prints the command to create the release.
 
 ## Testing an update in the VM
 

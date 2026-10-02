@@ -11,10 +11,20 @@ FROST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GITHUB_REPO="${GITHUB_REPO:-$(sed -n 's/^[[:space:]]*FROST_GITHUB_REPO:[[:space:]]*//p' "$FROST_ROOT/project.yml" | head -1)}"
 FEED_URL="https://github.com/$GITHUB_REPO/releases/latest/download/appcast.xml"
 
-# Where --publish pushes: local branch RELEASE_BRANCH is pushed to REMOTE_BRANCH on GIT_REMOTE.
+# Where --publish pushes: local branch RELEASE_BRANCH is pushed to REMOTE_BRANCH on GIT_REMOTE (together with the
+# tag, atomically). Before building, --publish fetches REMOTE_BRANCH from there and checks that RELEASE_BRANCH contains
+# it and that the tag doesn't exist there yet.
 RELEASE_BRANCH="${RELEASE_BRANCH:-main}"
 GIT_REMOTE="${GIT_REMOTE:-origin}"
 REMOTE_BRANCH="${REMOTE_BRANCH:-main}"
+# Optional: a URL to fetch from / push to instead of GIT_REMOTE (e.g. when the remote's SSH URL can't be used because
+# the ssh agent is unavailable). With GIT_USE_GH_CREDENTIALS=1, HTTPS credentials come from gh (`gh auth
+# git-credential`) instead of the configured credential helpers:
+#   GIT_PUSH_URL=https://<user>@github.com/<owner>/<repo>.git GIT_USE_GH_CREDENTIALS=1 \
+#     scripts/release/release.sh <version> --publish
+# (the same as: git -c credential.helper= -c credential.helper='!gh auth git-credential' push <url> ...).
+GIT_PUSH_URL="${GIT_PUSH_URL:-}"
+GIT_USE_GH_CREDENTIALS="${GIT_USE_GH_CREDENTIALS:-0}"
 # Author of the version-bump commit and tag created by --publish (the public repository uses a GitHub noreply
 # address; the global git config is left untouched).
 COMMIT_AUTHOR_NAME="${COMMIT_AUTHOR_NAME:-Kyle Zhang}"
