@@ -43,6 +43,10 @@ public final class ItemMover {
     /// Frost icon from drawing a pressed highlight meanwhile.
     public var syntheticDragActive: (Bool) -> Void = { _ in }
 
+    /// Called with the milestones of each ⌘-drag (`down`, `lifted`, `up`, then `landed` or `settled`) and the instant
+    /// each happened, so the Frost Bar's click forward can break its latency down (`ForwardTrace`).
+    public var milestone: (_ label: String, _ at: ContinuousClock.Instant) -> Void = { _, _ in }
+
     /// Whether the user holds a mouse button (injectable for tests). A ⌘-drag posted meanwhile gets mixed up with the
     /// user's own drag: their drag events carry the item along, even off the menu bar, where releasing removes it
     /// (measured in the VM: a queued layout editor drop's retry ran while the user dragged the next tile). So every
@@ -57,11 +61,28 @@ public final class ItemMover {
     public var initialSettleDelay: Duration = .milliseconds(50)
     public var pollInterval: Duration = .milliseconds(25)
     public var settleTimeout: Duration = .seconds(1)
+    /// `.itemLanded` moves: how often the item's frame is checked after the mouse-up, and how long to wait for it to land
+    /// before falling back to waiting for every window to settle (the slide of the other windows takes ~0.4 s).
+    public var landingPollInterval: Duration = .milliseconds(8)
+    public var landingTimeout: Duration = .milliseconds(700)
+
+    /// When `move` returns after posting a ⌘-drag.
+    public enum Completion: Sendable {
+        /// Once every window on the menu bar has stopped moving (the order is right and the frames are stable).
+        case settled
+        /// As soon as the moved item has reached its final frame (`LandingDetector`), while the windows left of it may
+        /// still be sliding. For a click that must follow at once (the Frost Bar's click forward); falls back to
+        /// `.settled` if the item isn't seen landing within `landingTimeout`.
+        case itemLanded
+    }
 
     /// Whether a move transaction is in progress. `@MainActor` only prevents concurrent access; it doesn't keep a
     /// whole transaction spanning awaits from being interleaved, so every move (including Frost Bar's entire
     /// "move out → click → move back" flow) must be wrapped in `transaction`.
     public private(set) var isBusy = false
+    /// Incremented whenever a transaction starts, so work prepared outside a transaction (the Frost Bar's freeze-frame
+    /// screenshot) can tell whether a move may have happened meanwhile.
+    public private(set) var transactionCount = 0
 
     /// Frost is quitting (`beginShutdown`): new transactions throw `.shuttingDown` unless they are the move-back
     /// work quitting itself runs, and every move gets at most `shutdownMaxAttempts` attempts so quitting stays
@@ -90,6 +111,7 @@ public final class ItemMover {
         guard !isShuttingDown || allowedDuringShutdown else { throw ItemMoveError.shuttingDown }
         guard !isBusy else { throw ItemMoveError.busy }
         isBusy = true
+        transactionCount &+= 1
         defer { isBusy = false }
         return try await body()
     }
@@ -123,15 +145,17 @@ public final class ItemMover {
     /// the menu bar while moving).
     /// Must be called inside `transaction` (`assert(isBusy)` in debug). Throws `CancellationError` when the task
     /// is cancelled.
-    public func move(_ itemID: CGWindowID, to destination: MoveDestination) async throws {
-        try await move(itemID, to: destination, attempts: maxAttempts, checkingControls: true)
+    /// `completion`: see `Completion`.
+    public func move(_ itemID: CGWindowID, to destination: MoveDestination,
+                     until completion: Completion = .settled) async throws {
+        try await move(itemID, to: destination, attempts: maxAttempts, checkingControls: true, completion: completion)
     }
 
     /// - `checkingControls`: after each attempt, check the order of Frost's controls (see `controlsInOrder`); if
     ///   disturbed, move the icon back to `.rightOf(H)` once and throw `.controlsDisturbed` (no further retries:
     ///   retrying would just keep dragging the icon).
     private func move(_ itemID: CGWindowID, to destination: MoveDestination, attempts: Int,
-                      checkingControls: Bool) async throws {
+                      checkingControls: Bool, completion: Completion = .settled) async throws {
         assert(isBusy, "ItemMover.move must be called inside transaction")
         for attempt in 1...max(1, attempts) {
             try Task.checkCancellation()
@@ -173,11 +197,29 @@ public final class ItemMover {
                 ⌘-drag of \(itemID, privacy: .public) to \(String(describing: destination), privacy: .public) \
                 (attempt \(attempt, privacy: .public)): \(posted.description, privacy: .public)
                 """)
+            if let downAt = posted.downAt { milestone("down", downAt) }
+            if let liftedAt = posted.liftedAt { milestone("lifted", liftedAt) }
+            if let releasedAt = posted.releasedAt { milestone("up", releasedAt) }
 
-            let result = try await Self.waitForSettle(
-                initialDelay: initialSettleDelay, interval: pollInterval, timeout: settleTimeout,
-                snapshot: { Self.frames(of: StatusWindowParser.windows(withIDs: known)) },
-                satisfied: { Self.isSatisfied(itemID, destination, frames: $0) })
+            let snapshot = { Self.frames(of: StatusWindowParser.windows(withIDs: known)) }
+            let satisfied = { Self.isSatisfied(itemID, destination, frames: $0) }
+            let result: SettleResult
+            let clock = ContinuousClock()
+            let settleStart = clock.now
+            if completion == .itemLanded,
+               try await Self.waitForLanding(LandingDetector(itemID: itemID, destination: destination),
+                                             interval: landingPollInterval, timeout: landingTimeout,
+                                             snapshot: snapshot) {
+                result = SettleResult(satisfied: true, settled: false)
+                milestone("landed", .now)
+            } else {
+                let elapsed = clock.now - settleStart
+                result = try await Self.waitForSettle(
+                    initialDelay: completion == .itemLanded ? .zero : initialSettleDelay, interval: pollInterval,
+                    timeout: Self.remainingSettleTimeout(settleTimeout, elapsed: elapsed), snapshot: snapshot,
+                    satisfied: satisfied)
+                milestone("settled", .now)
+            }
             if checkingControls, let controls = controlWindows(), itemID != controls.icon,
                !Self.controlsInOrder(controls, windows: StatusWindowParser.windows(withIDs: controls.all),
                                      displayBounds: menuBarDisplayBounds) {
@@ -294,6 +336,28 @@ public final class ItemMover {
         Dictionary(windows.map { ($0.windowID, $0.frame) }, uniquingKeysWith: { a, _ in a })
     }
 
+    /// What is left of `timeout` after `elapsed` (an `.itemLanded` move that fell back to waiting for every window),
+    /// but at least `minimumFallbackSettle`, so a move that didn't take effect still cools down before its retry.
+    nonisolated static func remainingSettleTimeout(_ timeout: Duration, elapsed: Duration) -> Duration {
+        max(timeout - elapsed, minimumFallbackSettle)
+    }
+
+    nonisolated static let minimumFallbackSettle: Duration = .milliseconds(300)
+
+    /// Takes a snapshot right away, then every `interval`, until `detector` reports the moved item landed (true), or
+    /// `timeout` passes (false). (The item usually lands within a few ms of the mouse-up, before the first snapshot.)
+    static func waitForLanding(_ detector: LandingDetector, interval: Duration, timeout: Duration,
+                               snapshot: () -> [CGWindowID: CGRect]) async throws -> Bool {
+        var detector = detector
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while true {
+            if detector.observe(snapshot()) { return true }
+            guard clock.now < deadline else { return false }
+            try await Task.sleep(for: interval)
+        }
+    }
+
     struct SettleResult: Equatable {
         /// Whether the last snapshot satisfies the target order.
         var satisfied: Bool
@@ -340,6 +404,10 @@ public final class ItemMover {
         var plannedMouseUp: CGPoint
         /// The user pressed a mouse button meanwhile, so the mouse-up was posted right away.
         var interrupted = false
+        /// When the mouse-down was posted, the item was seen lifted, and the mouse-up was posted.
+        var downAt: ContinuousClock.Instant?
+        var liftedAt: ContinuousClock.Instant?
+        var releasedAt: ContinuousClock.Instant?
 
         var description: String {
             let lift = liftedAfter.map { "lifted after \($0) ms" } ?? "not seen lifted"
@@ -401,11 +469,15 @@ public final class ItemMover {
         var release = release
         var up = plannedMouseUp
         downEvent.post(tap: .cgSessionEventTap)
+        report.downAt = start
         while true {
             usleep(dragPollMicroseconds)
             let frames = frames(of: StatusWindowParser.windows(withIDs: known))
             let ready = release.observe(frames)
-            if release.isLifted, report.liftedAfter == nil { report.liftedAfter = elapsed() }
+            if release.isLifted, report.liftedAfter == nil {
+                report.liftedAfter = elapsed()
+                report.liftedAt = clock.now
+            }
             if let point = release.dropPoint(in: frames), release.isLifted { up = point }
             if ready { break }
             if UserMouseButtons.isAnyHeld { report.interrupted = true; break }
@@ -415,6 +487,7 @@ public final class ItemMover {
         report.releasedAfter = elapsed()
         report.mouseUp = up
         event(.leftMouseUp, up)?.post(tap: .cgSessionEventTap)
+        report.releasedAt = clock.now
         usleep(20_000)
         return report
     }

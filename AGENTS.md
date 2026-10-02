@@ -98,7 +98,9 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   brightens once per second (measured on a real Mac; it can't be reproduced in the VM because windows there don't
   touch the menu bar — when verifying, place a window directly below the menu bar). The top edge of the Frost Bar
   panel window sits exactly at the menu bar's bottom edge (`FrostBarMetrics.topInset`), so the panel shadow is not
-  drawn into the menu bar. Each round holds `ItemMover.transaction`; click forwarding waits for it to finish first.
+  drawn into the menu bar. Each round holds `ItemMover.transaction` from showing the freeze frame until it is removed;
+  click forwarding waits for that. The freeze frame's screenshot is taken before the transaction, so a click during it
+  doesn't wait (the round then gives up if a transaction ran meanwhile: the screenshot would be stale).
   Never put any Frost window at layer 25: the scanner treats layer-25 windows on the menu bar row as status items.
 - Capturing several status items at once: an `SCContentFilter(display:including:)` containing only those items'
   windows + `backgroundColor = .clear` yields crops that are pixel-identical (alpha included) to per-window
@@ -118,7 +120,10 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   mouse-down (the Frost icon) over to close the gap; the mouse-up is placed against those *current* positions. A
   mouse-up posted at a fixed delay with frames read before the drag is either ignored (before the lift) or lands one
   slot off (target among the sliding windows). `ItemMover` releases via `DragRelease` (`spike-findings.md`, "Later
-  measurement").
+  measurement"). After the mouse-up the item jumps into its slot without sliding; only the windows left of it slide
+  (~0.4 s). The Frost Bar clicks as soon as the item has landed (`ItemMover.move(_:to:until: .itemLanded)`,
+  `LandingDetector`): its menu still opens at the final position. Click-to-menu latency is measured with
+  `scripts/vm/guest-click-latency.swift` and the per-forward `click forward of …` log line.
 - Views inside `.glassEffect` don't receive SwiftUI drops (put drop targets outside the glass layer).
 - Cooperative activation (macOS 14+): a forwarded click doesn't count as user intent, so the target app's polite
   `activate()` is refused, and transient popovers therefore don't close on outside clicks. After detecting a

@@ -72,6 +72,8 @@ final class FrostBarController {
     /// The last forwarded click's non-menu presentation may stay on screen after the wait times out / gives up; live
     /// refresh pauses while it's still there.
     private var lingeringPresentation: Set<CGWindowID> = []
+    /// Milestones of the click forward in progress, logged once the item has been clicked.
+    private var forwardTrace: ForwardTrace?
     /// Environment variable `FROST_LIVE_REFRESH_TRACE=1`: log timings for every round (for measurements in the VM).
     private static let traceCycles = ProcessInfo.processInfo.environment["FROST_LIVE_REFRESH_TRACE"] == "1"
 
@@ -81,6 +83,7 @@ final class FrostBarController {
 
         let workspace = NSWorkspace.shared.notificationCenter
         app.capturer.traceStripMismatches = Self.traceCycles
+        app.mover.milestone = { [weak self] label, instant in self?.forwardTrace?.mark(label, at: instant) }
         observers.append(workspace.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil,
                                                queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.close(animated: false) }
@@ -698,8 +701,10 @@ final class FrostBarController {
 
     /// Under a freeze frame (`MenuBarFreezeFrame`, covering only the changing part of the menu bar): expand
     /// temporarily -> capture the menu bar strip once and crop out each item -> collapse -> remove the freeze frame, so
-    /// the user never sees the menu bar change. No expansion if the freeze frame capture fails. The whole thing is one
-    /// move transaction (mutually exclusive with click forwarding and editor drags). Ends early at a checkpoint when
+    /// the user never sees the menu bar change. No expansion if the freeze frame capture fails. Everything from showing
+    /// the freeze frame on is one move transaction (mutually exclusive with click forwarding and editor drags); the
+    /// freeze frame's screenshot is taken before it, so a click on a tile meanwhile starts its move at once instead of
+    /// waiting for the round (the round then gives up without showing anything). Ends early at a checkpoint when
     /// the panel closes, a mouse button is pressed, or the pointer enters the changing part of the menu bar: no more
     /// capturing, but it always collapses and removes the freeze frame. Items still off screen after expanding (under
     /// the notch) are recorded in `retryPolicy` and keep their cached screenshot or app icon without affecting the
@@ -713,16 +718,26 @@ final class FrostBarController {
         var captured: Set<CGWindowID>?
         /// Items on screen after expanding (the rest are under the notch / don't fit).
         var onScreen: Set<CGWindowID> = []
-        var freezeFrameFailed = false
+        let mover = app.mover
+        let transactionsBefore = mover.transactionCount
+        guard let screenshot = await MenuBarFreezeFrame.capture(
+            menuBarFallbackHeight: sections.iconWindow?.frame.height ?? 24, iconFrames: frostIconFrames,
+            managedDisplayID: managedDisplayID, contentCache: app.capturer.contentCache)
+        else {
+            liveStats.freezeFrameFailed()
+            return
+        }
+        // The screenshot must still show the menu bar as it is: give up if a move ran or started meanwhile (e.g. a click
+        // on a tile, which closed the panel) or anything else now pauses live refresh. No suspension point between this
+        // check and taking the transaction.
+        guard !shouldAbortCycle, !mover.isBusy, mover.transactionCount == transactionsBefore, activationTask == nil,
+              sections.state == .collapsed else {
+            liveStats.aborted()
+            return
+        }
         do {
-            try await app.mover.transaction { () async -> Void in
-                guard let freeze = await MenuBarFreezeFrame.show(
-                    menuBarFallbackHeight: sections.iconWindow?.frame.height ?? 24, iconFrames: frostIconFrames,
-                    managedDisplayID: managedDisplayID, contentCache: app.capturer.contentCache)
-                else {
-                    freezeFrameFailed = true
-                    return
-                }
+            try await mover.transaction { () async -> Void in
+                let freeze = await MenuBarFreezeFrame.show(screenshot)
                 let shown = clock.now
                 timing.freezeFrame = shown - start
                 // Every exit path removes the freeze frame (`MenuBarFreezeFrame.maximumDuration` is a safety net).
@@ -768,10 +783,6 @@ final class FrostBarController {
             return
         }
         timing.total = clock.now - start
-        if freezeFrameFailed {
-            liveStats.freezeFrameFailed()
-            return
-        }
         guard let captured else {
             liveStats.aborted()
             return
@@ -823,18 +834,23 @@ final class FrostBarController {
     /// then does Frost's cooperative activation count as user intent.
     func activate(_ id: CGWindowID) {
         guard activationTask == nil else { return }
+        forwardTrace = ForwardTrace()
         close()
         let handOff = ActivationHandOff.begin(for: app.scanner.items.first { $0.windowID == id })
+        forwardTrace?.mark("closed")
         activationTask = Task { [weak self] in
             guard let self else {
                 handOff?.finish()
                 return
             }
-            // A live refresh round (temporary expansion) is running: wait for it to collapse and remove its freeze
-            // frame before moving (`captureTask` also holds the move transaction).
-            if let capture = self.captureTask {
+            self.forwardTrace?.mark("started")
+            // A live refresh round holds the move transaction (temporary expansion): wait for it to collapse and
+            // remove its freeze frame before moving. A round still taking its freeze-frame screenshot doesn't hold it
+            // and gives up once it sees this click (`captureWhileExpanded`): no need to wait for it.
+            if let capture = self.captureTask, self.app.mover.isBusy {
                 FrostLog.frostBar.notice("activation waits for the live refresh cycle to restore the collapsed state")
                 await capture.value
+                self.forwardTrace?.mark("liveRefreshDone")
             }
             // The previous move-back failed and awaits a retry: retry now, or it would stay in the Visible section
             // after this move.
@@ -842,6 +858,7 @@ final class FrostBarController {
             await self.forward(id, handOff: handOff)
             // On error (e.g. the move out failed) `clickAndWait` may not have run: make sure activation is handed back.
             handOff?.finish()
+            self.forwardTrace = nil
             self.activationTask = nil
         }
     }
@@ -904,6 +921,7 @@ final class FrostBarController {
 
     private func moveOutClickAndRestore(_ id: CGWindowID, handOff: ActivationHandOff?) async throws {
         let sections = app.sections, scanner = app.scanner, mover = app.mover
+        forwardTrace?.mark("transaction")
         guard !sections.isEditing else { throw FrostBarError.editing }
         if sections.state != .collapsed {
             sections.setState(.collapsed)
@@ -933,7 +951,11 @@ final class FrostBarController {
         // Window snapshot before the move, to detect a menu accidentally opened by the ⌘-drag (see `clickAndWait`).
         let beforeMove = ItemClicker.onscreenWindowIDs()
         do {
-            try await mover.move(id, to: .rightOf(controls.icon))
+            forwardTrace?.mark("moveStart")
+            // Click as soon as the item has reached its final frame (the windows left of it may still be sliding, which
+            // doesn't move it or its menu; see `LandingDetector`).
+            try await mover.move(id, to: .rightOf(controls.icon), until: .itemLanded)
+            forwardTrace?.mark("moved")
             try await clickAndWait(id, strayBaseline: beforeMove, handOff: handOff)
         } catch {
             failure = error
@@ -1061,6 +1083,7 @@ final class FrostBarController {
                               handOff: ActivationHandOff?) async throws {
         defer { handOff?.finish() }
         let item = try await settledOnScreenItem(id)
+        forwardTrace?.mark("onScreen")
         if let strayBaseline, let pid = item.pid,
            !ItemClicker.newWindows(ownedBy: pid, excluding: strayBaseline).isEmpty {
             FrostLog.frostBar.notice("a presentation opened during the move; dismissing it before clicking")
@@ -1071,7 +1094,13 @@ final class FrostBarController {
         let fallback = OutsideClickFallback(item: item, baseline: baseline)
         // Every exit path (closed, abandoned, timed out, cancelled, error) removes the mouse monitors.
         defer { fallback?.stop() }
+        forwardTrace?.mark("click")
         try await ItemClicker.click(item)
+        forwardTrace?.mark("clicked")
+        if let trace = forwardTrace {
+            FrostLog.frostBar.notice("click forward of \(id, privacy: .public): \(trace.description, privacy: .public)")
+            forwardTrace = nil
+        }
         lingeringPresentation = []
         let hooks = Self.nonMenuHooks(fallback: fallback, handOff: handOff) { [weak self] windows in
             await self?.recordPresentation(windows)
@@ -1145,20 +1174,19 @@ final class FrostBarController {
     }
 
     /// After moving out, confirms the item's frame is stable and on screen: the click must land at the final position,
-    /// or the menu opens mid-animation. `ItemMover.move` already waited for all frames to settle (on-screen moves
-    /// animate for ~450 ms); this double-checks via CGWindowList every 40 ms until 2 identical reads, up to 1.5 s.
+    /// or the menu opens mid-animation. `ItemMover.move` already waited for the item to land in its final frame
+    /// (`LandingDetector`) and rescanned; this double-checks via CGWindowList every 10 ms until 2 identical on-screen reads
+    /// (the first compared with the scanned frame), up to 1.5 s.
     private func settledOnScreenItem(_ id: CGWindowID) async throws -> MenuBarItem {
         let clock = ContinuousClock()
         let deadline = clock.now + .milliseconds(1500)
-        var previous: CGRect?
-        var unchanged = 0
+        var previous = app.scanner.items.first { $0.windowID == id && $0.isOnScreen }?.frame
         while clock.now < deadline {
             guard let window = StatusWindowParser.windows(withIDs: [id]).first
             else { throw FrostBarError.itemNotFound }
-            unchanged = window.isOnScreen && window.frame == previous ? unchanged + 1 : 0
-            previous = window.frame
-            if unchanged >= 2 { break }
-            try await Task.sleep(for: .milliseconds(40))
+            if window.isOnScreen, window.frame == previous { break }
+            previous = window.isOnScreen ? window.frame : nil
+            try await Task.sleep(for: .milliseconds(10))
         }
         app.scanner.rescan()
         guard let item = app.scanner.items.first(where: { $0.windowID == id }) else { throw FrostBarError.itemNotFound }

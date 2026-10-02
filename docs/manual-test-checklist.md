@@ -205,6 +205,10 @@ For each item, record: environment (model / displays / macOS version) and result
   with real third-party items** (the first synthesized click after a ⌘-drag move has been observed to be ignored), and
   test separately: a regular menu, a popover app, and an app that shows nothing when clicked (it should move back
   after about 1 second).
+- [ ] **Click latency**: a hidden item's menu / popover appears about 0.15–0.2 s after clicking its tile (log
+  `click forward of <id>: … click <ms>`), already at the item's final position right of the snowflake (not sliding in
+  after it), also when the panel was opened just before the click; repeated quick clicks on tiles never leave an item
+  stranded in the Visible section.
 - [ ] With a menu kept open for a long time (including over 60 seconds), the item is not moved away; after clicking
   elsewhere to close the menu, the item moves back.
 - [ ] Popover items: move back after the popover closes; if the popover never closes, they are forced back after

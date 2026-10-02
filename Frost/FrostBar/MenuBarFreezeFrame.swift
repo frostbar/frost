@@ -61,12 +61,17 @@ final class MenuBarFreezeFrame {
 
     var isShown: Bool { !windows.isEmpty }
 
-    /// Captures the menu bar and shows the overlay, returning once it is actually on screen. On failure shows nothing
-    /// and returns nil. `iconFrames`: the Frost icon's frame on each display (AppKit global coordinates; the real window
-    /// plus replicas on other displays); each menu bar strip covers only the area left of its own icon.
-    /// `managedDisplayID`: the display of the scanned menu bar (uses `menuBarFallbackHeight` when it auto-hides).
-    static func show(menuBarFallbackHeight: CGFloat, iconFrames: [CGRect], managedDisplayID: CGDirectDisplayID,
-                     contentCache: ShareableContentCache) async -> MenuBarFreezeFrame? {
+    /// Screenshots of the menu bar strips, taken by `capture` and put on screen by `show`.
+    struct Capture {
+        fileprivate let shots: [(Strip, CGImage)]
+    }
+
+    /// Captures the menu bar (shows nothing yet; `show` puts it on screen). Returns nil on failure.
+    /// `iconFrames`: the Frost icon's frame on each display (AppKit global coordinates; the real window plus replicas on
+    /// other displays); each menu bar strip covers only the area left of its own icon. `managedDisplayID`: the display of
+    /// the scanned menu bar (uses `menuBarFallbackHeight` when it auto-hides).
+    static func capture(menuBarFallbackHeight: CGFloat, iconFrames: [CGRect], managedDisplayID: CGDirectDisplayID,
+                        contentCache: ShareableContentCache) async -> Capture? {
         let strips = menuBarStrips(fallbackHeight: menuBarFallbackHeight, iconFrames: iconFrames,
                                    managedDisplayID: managedDisplayID)
         guard !strips.isEmpty else { return nil }
@@ -121,7 +126,13 @@ final class MenuBarFreezeFrame {
                 return nil
             }
         }
-        let frame = MenuBarFreezeFrame(windows: captured.map { makeWindow(strip: $0.0, image: $0.1) })
+        return Capture(shots: captured)
+    }
+
+    /// Shows the overlay made from `capture`, returning once it is actually on screen. The menu bar must not have
+    /// changed since the capture.
+    static func show(_ capture: Capture) async -> MenuBarFreezeFrame {
+        let frame = MenuBarFreezeFrame(windows: capture.shots.map { makeWindow(strip: $0.0, image: $0.1) })
         for window in frame.windows { window.orderFrontRegardless() }
         frame.timeout = Task { [weak frame] in
             try? await Task.sleep(for: maximumDuration)

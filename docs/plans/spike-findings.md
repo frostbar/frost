@@ -182,6 +182,28 @@ Frost icon) only after the windows have stopped moving, aimed at the target's fr
 layout editor drops: every one landed on the first attempt; moves whose target doesn't slide (the Frost Bar's move out
 and back) still release after 40–70 ms, the others after 300–500 ms.
 
+**Later measurement (VM, macOS 26.6.2; Frost Bar click latency)**: on the mouse-up the dragged item does **not** slide
+into place: its window jumps from the cursor straight into its new slot within a few ms (sometimes through one
+intermediate frame that still overlaps its right neighbor). What animates for the next ~0.4 s are the windows **left**
+of the slot (the Frost icon and the separators making room); the menu bar is right-aligned, so nothing right of the slot
+moves. A menu or popover opened as soon as the item is in its slot is anchored at the item's final position (80+
+forwards, menus left-aligned with the item, popovers centered under it), even while the icon left of it still slides.
+So the click forward clicks once the item has landed (`LandingDetector`: in the right order, on the row, touching the
+window on its right, the same frame in two snapshots 8 ms apart) instead of waiting for every window to stop moving.
+Rarely the item stays lifted for ~0.5 s after the mouse-up and lands only then; the landing wait simply lasts longer.
+Breakdown of a click on a tile → menu before the change (median of 80 forwards): tile mouse-up → Frost's action ~15 ms,
+→ mouse-down ~30 ms, lift ~20–30 ms later, mouse-up 3 snapshots (~30 ms) after the lift, then 320–470 ms waiting for
+all windows to settle and 90 ms re-checking the item's frame (2 × 40 ms), and ~10 ms from the click (AXPress or HID)
+to the menu window: 663 ms median, 811 ms p90. A click while a live refresh round was taking its freeze-frame
+screenshot waited ~75 ms for the round; the screenshot is now taken before the round takes the move transaction, so
+such a click starts its move at once and the round gives up without showing anything. After both changes (VM, 160+
+forwards of menus and popovers from Hidden and Always Hidden, no misplaced menu, every item back in its slot): 194 ms
+median, 262 ms p90; ~140–190 ms with the panel open for a few seconds (tile mouse-up → Frost's action ~15 ms, mouse-down
++15 ms, lift +25 ms, mouse-up +30 ms, landed +35–45 ms including a fixed 20 ms after the mouse-up, click +5 ms, menu
++15–25 ms), ~205–250 ms when a live refresh round holds the menu bar expanded at the click (it collapses first,
+~70–90 ms), ~140 ms when the click comes during a round's screenshot. Outliers up to ~0.75 s remain when the click
+follows a round's collapse closely: the lift itself, or the drop after the mouse-up, then occasionally takes ~0.5 s.
+
 ## Off-screen moves (both directions): feasible or not, alternatives
 
 - **An off-screen mouse-down routed by position is neither feasible nor safe.** Warping the cursor to X's center
@@ -401,7 +423,9 @@ Conclusions:
   - **Remove `temporarilyExpand(.expandedAll)` from steps 3 and 7.** Moving out from off screen and moving back to the
     original position (including exactly next to an off-screen neighbor) were both verified.
   - After moving out, **wait until frames settle (about 450 ms of animation) before rescanning and clicking**: the
-    click or AXPress position must be the final one, or the menu opens at a mid-animation position.
+    click or AXPress position must be the final one, or the menu opens at a mid-animation position. (Later refined:
+    the item itself doesn't animate; only the windows left of it do. Clicking once the item has landed in its slot is
+    enough, see "Later measurement (VM, macOS 26.6.2; Frost Bar click latency)".)
   - Move back using the original anchor; off-screen coordinates can be used directly.
 - AXPress does fire for hidden items, but the menu appears off screen or the popover is clamped to the left edge, so
   the "move out" step cannot be skipped.

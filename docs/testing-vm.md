@@ -116,6 +116,7 @@ sticks. Alternatively, disable SIP once with `tart run --recovery frost-test`, t
 | `guest-click.swift x y windowID` | Frost's synthetic click (`HIDTAP=1` for the HID tap) |
 | `guest-moveclick.swift …` | Frost's ⌘-drag move followed by a click (reproduces known risk (a)) |
 | `guest-axpress.swift pid [index]` | list / AXPress an app's menu bar extras |
+| `guest-click-latency.swift title tile [--ah] [--dwell s] [--runs n]` | Frost Bar click-to-menu latency: opens the panel with a HID click on the snowflake (⌥ with `--ah`), waits `--dwell` s, clicks the tile whose accessibility label contains `tile` (`--list` prints them), samples the window list every ~4 ms until the menu / popover appears, checks it is anchored at the item's final frame right of the snowflake, closes it and waits for the item to return; one JSON line per run plus a median / p90 summary |
 | `set-display-profile.swift [icc \| --reset]` | assign a ColorSync profile to the guest display (e.g. the host's "Color LCD", for wide-gamut freeze-frame checks) or reset it |
 
 VNC key mapping (Apple's VNC server): VNC `alt` = ⌘, `meta` = ⌥, `super` = nothing.
@@ -197,5 +198,12 @@ timing. Evidence (recordings, logs, analysis scripts) goes under `build/vm-shots
   dump every display's menu bar row with `dump-status-windows.swift --all`, screenshot it with
   `screencapture -D 2` and click on it with `guest-click.swift`. The virtual display has the same 30 pt menu bar as
   the main one, which is the hardest case for telling real windows and replicas apart.
+- **Click forwarding latency**: run `guest-click-latency.swift` (needs the panel's items to be FakeItems with known
+  window titles, see `dump-status-windows.swift`) for a menu and a popover item in Hidden and in Always Hidden, with
+  `--dwell 4` (live refresh running) and `--dwell 0.35` (right after opening, the first round is taking its freeze
+  frame). Each forward also logs `click forward of <id>: transaction …, down …, lifted …, up …, landed …, click …` (ms
+  since Frost handled the tile click); match the lines to the runs by time (`epoch` is the wall clock of the tile's
+  mouse-up) for a breakdown. A ticking clock item next to the snowflake shifts neighbours by a point or two every
+  second; that's not a misplaced menu.
 - **Popover dismissal timing**: post the outside click from inside the guest and sample the window list every 10 ms
   on the same clock; FakeItems logs every click / menu / popover open and close to `/tmp/fakeitems.log`.
