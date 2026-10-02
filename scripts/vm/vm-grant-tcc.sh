@@ -56,7 +56,15 @@ PY
     ;;
   *) echo "unknown option $action" >&2; exit 2 ;;
 esac
-# Make tccd drop its cache (system + per-user instances respawn on demand).
-sudo killall tccd 2>/dev/null || true
 REMOTE
+# tccd answers from the database it was just given (it needs no restart, and ignores SIGTERM anyway), but a running
+# process caches its own AXIsProcessTrusted() answer until the "com.apple.accessibility.api" distributed notification,
+# which System Settings posts when the user flips the switch. Post it in the GUI session so a running Frost picks up
+# the Accessibility change live (its onboarding / layout editor poll every second). Screen Recording still needs a
+# relaunch: CGPreflightScreenCaptureAccess() only changes in a new process (that is by design; onboarding asks for it).
+if [[ "$action" != --show ]]; then
+  vm_gui /usr/bin/osascript -l JavaScript -e 'ObjC.import("Foundation");
+    $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately(
+      "com.apple.accessibility.api", $(), $(), true)' >/dev/null
+fi
 [[ "$action" == --show ]] || log "TCC ${action#--} done for $BUNDLE_ID ($SERVICES)"

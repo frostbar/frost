@@ -70,7 +70,13 @@ Environment overrides: `FROST_VM` (VM name, default `frost-test`), `FROST_VM_USE
   `/Library/Application Support/com.apple.TCC/TCC.db`. The `csreq` column is compiled
   from the deployed app's designated requirement (`identifier "dev.frost.Frost" and
   certificate leaf = H"…"`), so the grant keeps matching after rebuilds as long as the
-  build is signed with "Frost Local Signing". It then restarts `tccd`. It also pushes
+  build is signed with "Frost Local Signing". `tccd` answers from the changed database right away (it doesn't need a
+  restart, and it ignores `SIGTERM` anyway), but a running process keeps its own cached `AXIsProcessTrusted()` answer
+  until the `com.apple.accessibility.api` distributed notification that System Settings posts when the user flips the
+  switch: the script posts it in the guest's GUI session, so a running Frost's onboarding and layout editor (which
+  poll every second) pick up an Accessibility grant or revocation live, as on a real Mac. Screen Recording changes
+  still need a relaunch: `CGPreflightScreenCaptureAccess()` only changes in a new process (by design; onboarding asks
+  the user to relaunch). It also pushes
   macOS's recurring "…is requesting to bypass the system private window picker"
   screen-capture alert (replayd's `ScreenCaptureApprovals.plist`, not TCC) out to 2099
   for Frost and for SSH-launched `screencapture`. `vm-deploy.sh` runs it on every
@@ -106,7 +112,7 @@ sticks. Alternatively, disable SIP once with `tart run --recovery frost-test`, t
 | --- | --- |
 | `dump-status-windows.swift [--all]` | print the status item windows left to right (x, width, onscreen, windowID, title); `--all`: every display's menu bar row (y, height) and the display list — replicas on other displays too |
 | `guest-virtual-display.m w h [hidpi] [right\|left\|above\|below\|x,y]` | add a second display to the guest (CoreGraphics' private `CGVirtualDisplay`, like DeskPad); it exists while the process runs. Compile with `clang -fobjc-arc -framework Foundation -framework CoreGraphics`, start it inside the GUI session (`launchctl asuser`, see `vm_gui`) with `nohup … &`. Not in the VNC framebuffer: `screencapture -x -D 2 out.png` in the guest. Clicks there: `guest-click.swift` with guest coordinates |
-| `guest-drag.swift x0 y0 x1 y1 [steps] [hold]` | slow drag made of real `leftMouseDragged` events (points). Needed for the layout editor: VNC pointer drags start a drag session but never reach SwiftUI drop targets |
+| `guest-drag.swift x0 y0 x1 y1 [steps] [hold]` | slow drag made of real `leftMouseDragged` events (points). Needed for the layout editor: VNC pointer drags start a drag session but never reach SwiftUI drop targets. To find the tiles, read the Settings window's accessibility tree from a guest process (each tile is an `AXImage` labelled "App — item", with its frame), and check the result the same way: editor drops can be scripted and verified without screenshots |
 | `guest-click.swift x y windowID` | Frost's synthetic click (`HIDTAP=1` for the HID tap) |
 | `guest-moveclick.swift …` | Frost's ⌘-drag move followed by a click (reproduces known risk (a)) |
 | `guest-axpress.swift pid [index]` | list / AXPress an app's menu bar extras |
