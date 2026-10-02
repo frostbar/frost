@@ -40,12 +40,8 @@ struct BehaviorView: View {
                         .labelsHidden()
                         .fixedSize()
                     }
-                    Text(preferences.displayMode.explanation)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    DisplayModeExplanation(mode: preferences.displayMode)
                         .padding(.leading, SettingRow<EmptyView>.textInset)
-                        .contentTransition(.opacity)
                     if preferences.displayMode != .inline && !model.permissions.allGranted {
                         InlineNotice(text: String(localized: "The Frost Bar needs Accessibility and Screen Recording permissions. Until they’re granted, hidden icons expand in the menu bar."),
                                      symbol: "info.circle.fill", tint: .orange)
@@ -63,6 +59,28 @@ struct BehaviorView: View {
             .animation(.snappy, value: preferences.autoRehide)
         }
         .scrollBounceBehavior(.basedOnSize)
+    }
+}
+
+/// The selected display mode's explanation. All explanations are laid out on top of each other (only the selected one
+/// visible), so the card is as tall as the longest one whatever the selection: switching modes never animates the
+/// card's height (pushing the cards below) or overlaps texts of different line counts. The text switches instantly.
+private struct DisplayModeExplanation: View {
+    let mode: Preferences.DisplayMode
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(Preferences.DisplayMode.allCases, id: \.self) { candidate in
+                Text(candidate.explanation)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .opacity(candidate == mode ? 1 : 0)
+                    .accessibilityHidden(candidate != mode)
+            }
+        }
+        .transaction { $0.animation = nil }
     }
 }
 
