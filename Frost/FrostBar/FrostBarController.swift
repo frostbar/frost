@@ -108,27 +108,46 @@ final class FrostBarController {
 
     // MARK: - Open / close
 
-    /// The Frost icon was clicked (display mode is Frost Bar). Clicking again closes it; clicking with a different ⌥
-    /// state while open shows / hides the Always Hidden section instead.
+    /// The Frost icon was clicked (display mode is Frost Bar). While the panel is open, a plain click always closes
+    /// it (one click, whatever the ⌥ state it was opened with); a ⌥-click shows / hides the Always Hidden section
+    /// instead (a short fade and height change, see `FrostBarContent`).
     func toggle(showAlwaysHidden: Bool) {
         guard isOpen else {
             open(showAlwaysHidden: showAlwaysHidden)
             return
         }
-        if showAlwaysHidden != model.showAlwaysHidden {
-            model.showAlwaysHidden = showAlwaysHidden
+        guard showAlwaysHidden else {
+            close()
+            return
+        }
+        sectionTask?.cancel()
+        guard model.showAlwaysHidden else {
+            model.isAlwaysHiddenFading = false
+            withAnimation(FrostBarMetrics.sectionAnimation) { model.showAlwaysHidden = true }
             // Refresh the newly shown section right away (don't wait for the next cycle).
             restartLiveRefresh(immediately: true)
-        } else {
-            close()
+            return
+        }
+        // Fade the section out first, then shrink.
+        withAnimation(.easeIn(duration: Self.sectionFadeOut)) { model.isAlwaysHiddenFading = true }
+        sectionTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(Self.sectionFadeOut)) } catch { return }
+            guard let self, self.isOpen else { return }
+            withAnimation(FrostBarMetrics.sectionAnimation) { self.model.showAlwaysHidden = false }
+            self.model.isAlwaysHiddenFading = false
         }
     }
+
+    private var sectionTask: Task<Void, Never>?
+    private static let sectionFadeOut: TimeInterval = 0.1
 
     func open(showAlwaysHidden: Bool) {
         guard !isOpen, !app.presence.isAway else { return }
         isOpen = true
         hideTask?.cancel()
+        sectionTask?.cancel()
         model.showAlwaysHidden = showAlwaysHidden
+        model.isAlwaysHiddenFading = false
         model.beginSession()
         liveStats = LiveRefreshStats()
         #if DEBUG
@@ -238,15 +257,14 @@ final class FrostBarController {
                 self?.app.openSettings()
             })
         let hostingView = FrostBarHostingView(rootView: FrostBarView(model: model, actions: actions))
-        // Provide only the ideal size (`fittingSize` relies on it and is 0x0 without it); the controller sets the
-        // window frame (below the Frost icon).
+        // Provide only the ideal size; the controller sizes the hosting view and the window (below the Frost icon).
         hostingView.sizingOptions = [.intrinsicContentSize]
+        // The content's size changed (called while SwiftUI updates, before the new content is drawn): resize the
+        // window right away so frame and content change in the same frame. Never from a later run loop turn: the new
+        // content would be drawn into the old frame first.
         hostingView.onIntrinsicSizeChange = { [weak self] in
-            // Called during SwiftUI layout: change the window frame on the next turn to avoid re-entrant layout.
-            Task { @MainActor [weak self] in
-                guard let self, self.isOpen else { return }
-                self.reposition()
-            }
+            guard let self, self.isOpen || self.prerenderTask != nil else { return }
+            self.reposition(allowShrink: false)
         }
         panel.contentView = hostingView
         panel.onCancel = { [weak self] in self?.close() }
@@ -351,12 +369,18 @@ final class FrostBarController {
     /// least 8 pt from the visible area's sides), top edge 6 pt below the menu bar. The panel follows the system
     /// appearance; monochrome glyphs are tinted for the glass's actual brightness (see `FrostBarState.templates`).
     ///
+    /// Size changes while the panel is visible (`allowShrink == false`, called synchronously when SwiftUI reports a new
+    /// content size, before drawing it): growing is applied at once, with implicit animations disabled, so the window
+    /// frame and the content change in the same frame. Shrinking waits until the content has finished animating
+    /// (`shrinkDelay`): the content is pinned to the window's top-trailing corner (`TopTrailingPin`), so the leftover
+    /// margin is invisible, and a section that fades out keeps its room until it's gone.
+    ///
     /// Multiple displays: the icon window is the real window, always on the display with the active menu bar. Clicking
     /// the snowflake on a screen makes that screen's menu bar active (the real window has already moved there before
     /// the click is handled; if the click never reaches the button, `SectionController` replays it, see
     /// `ReplicaClickDetector`). So the panel opens below the clicked screen's snowflake, and forwarded menus open on
     /// that screen too.
-    private func reposition() {
+    private func reposition(allowShrink: Bool = true) {
         guard let panel, let hostingView else { return }
         let iconWindow = app.sections.iconWindow
         guard let screen = iconWindow?.screen ?? NSScreen.screens.first else { return }
@@ -368,29 +392,71 @@ final class FrostBarController {
                                                         menuBarHeight: menuBarHeight)
         if model.maxWidth != maxWidth { model.maxWidth = maxWidth }
         if model.maxHeight != maxHeight { model.maxHeight = maxHeight }
-        let size = hostingView.fittingSize
+        let content = Self.contentSize(of: hostingView)
+        var size = content
+        if allowShrink {
+            shrinkTask?.cancel()
+            shrinkTask = nil
+        } else if panel.isVisible {
+            size = CGSize(width: max(size.width, panel.frame.width), height: max(size.height, panel.frame.height))
+            if size != content { scheduleShrink() }
+        }
         let frame = PanelPlacement.frame(size: size, inset: FrostBarMetrics.inset, topInset: FrostBarMetrics.topInset,
                                          anchorMaxX: iconFrame?.maxX ?? screen.visibleFrame.maxX,
                                          screenFrame: screen.frame, visibleFrame: screen.visibleFrame,
                                          menuBarHeight: menuBarHeight)
-        if panel.frame != frame {
-            #if DEBUG
-            if panel.isVisible { FrameProbe.note("resize(\(Int(panel.frame.width))x\(Int(panel.frame.height))->\(Int(frame.width))x\(Int(frame.height)))") }
-            #endif
-            panel.setFrame(frame, display: true)
+        guard panel.frame != frame else { return }
+        #if DEBUG
+        if panel.isVisible { FrameProbe.note("resize(\(Int(panel.frame.width))x\(Int(panel.frame.height))->\(Int(frame.width))x\(Int(frame.height)))") }
+        #endif
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            // The resize can happen inside an animated SwiftUI update (⌥-click shows the Always Hidden section): keep
+            // the window's new bounds out of that animation.
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { panel.setFrame(frame, display: false) }
+        }
+        CATransaction.commit()
+    }
+
+    /// The SwiftUI content's size (its ideal size).
+    private static func contentSize(of hostingView: NSView) -> CGSize {
+        let size = hostingView.intrinsicContentSize
+        guard size.width != NSView.noIntrinsicMetric, size.height != NSView.noIntrinsicMetric else {
+            return hostingView.fittingSize
+        }
+        return size
+    }
+
+    /// Shrinks the window to the content once the content has stopped changing (see `reposition`).
+    private func scheduleShrink() {
+        shrinkTask?.cancel()
+        shrinkTask = Task { [weak self] in
+            do { try await Task.sleep(for: Self.shrinkDelay) } catch { return }
+            guard let self, self.isOpen else { return }
+            self.shrinkTask = nil
+            self.reposition(allowShrink: true)
         }
     }
 
+    private var shrinkTask: Task<Void, Never>?
+    /// Longer than the content's own animations (`FrostBarMetrics.sectionAnimation`, the appearance animation).
+    private static let shrinkDelay: Duration = .milliseconds(400)
+
     /// Repositions when the content (icons, screenshots, state) changes, even if the size doesn't (e.g. only the ⌥
-    /// state or a screenshot changed). Size changes are also signalled by `FrostBarHostingView.onIntrinsicSizeChange`,
-    /// when SwiftUI has finished layout and `fittingSize` is up to date.
+    /// state or a screenshot changed; also catches a screen change). Size changes themselves are applied right away
+    /// through `FrostBarHostingView.onIntrinsicSizeChange`.
     private func trackContentSize(_ presentation: Int) {
         withObservationTracking {
             _ = model.state
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.isOpen, self.presentation == presentation else { return }
-                self.reposition()
+                self.reposition(allowShrink: false)
                 self.trackContentSize(presentation)
             }
         }

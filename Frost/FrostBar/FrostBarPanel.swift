@@ -65,9 +65,10 @@ final class FrostBarPanel: NSPanel {
 }
 
 /// The panel's hosting view: when the SwiftUI content's ideal size changes (AppKit learns of it through
-/// `invalidateIntrinsicContentSize`), it tells the controller to recompute the panel's size and position. Requires
-/// `sizingOptions` to include `.intrinsicContentSize` (otherwise `fittingSize` is 0 and no notification arrives). The
-/// window doesn't resize itself; the controller calls `setFrame`.
+/// `invalidateIntrinsicContentSize`), it tells the controller. Requires `sizingOptions` to include
+/// `.intrinsicContentSize` (otherwise there is no intrinsic size and no notification arrives). The window doesn't
+/// resize itself; the controller calls `setFrame`. The content stays pinned to the top-trailing corner whatever the
+/// window's size (`TopTrailingPin`).
 final class FrostBarHostingView: NSHostingView<FrostBarView> {
     var onIntrinsicSizeChange: (() -> Void)?
 

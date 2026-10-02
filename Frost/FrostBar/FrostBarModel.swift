@@ -10,6 +10,8 @@ final class FrostBarModel {
     var showAlwaysHidden = false
     var isPresented = false
     var isRefreshing = false
+    /// The Always Hidden section is fading out before the panel shrinks (see `FrostBarController.toggle`).
+    var isAlwaysHiddenFading = false
     /// Maximum size of the panel's visible content (computed per screen by the controller).
     var maxWidth: CGFloat = 800
     var maxHeight: CGFloat = 800
@@ -69,7 +71,8 @@ final class FrostBarModel {
                              imageSizes: sizes, contentWidths: widths,
                              styles: app.capturer.styles, templates: app.capturer.templates, names: names,
                              appIcons: icons, maxWidth: maxWidth, maxHeight: maxHeight,
-                             isPresented: isPresented, isRefreshing: isRefreshing)
+                             isPresented: isPresented, isRefreshing: isRefreshing,
+                             isAlwaysHiddenFading: isAlwaysHiddenFading)
     }
 }
 
@@ -79,6 +82,29 @@ struct FrostBarView: View {
     let actions: FrostBarActions
 
     var body: some View {
-        FrostBarContent(state: model.state, actions: actions)
+        TopTrailingPin {
+            FrostBarContent(state: model.state, actions: actions)
+        }
+    }
+}
+
+/// Lays its content out at its ideal size, pinned to the top-trailing corner (where the panel hangs from the menu bar
+/// and the Frost icon), whatever size the hosting view has: when the content's size changes, it never moves. The
+/// panel window can be larger than the content (it shrinks after a section has faded out) or, for a frame, smaller (it
+/// grows as soon as AppKit learns the new size); a plain frame would center content larger than the view, drawing it
+/// shifted for a frame, or animate its position when the change is animated (⌥-click), sliding the whole panel.
+/// Its ideal size (the hosting view's intrinsic size, which sizes the window) is the content's.
+private struct TopTrailingPin: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let ideal = subviews.first?.sizeThatFits(.unspecified) ?? .zero
+        return CGSize(width: proposal.width ?? ideal.width, height: proposal.height ?? ideal.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            subview.place(at: CGPoint(x: bounds.maxX, y: bounds.minY), anchor: .topTrailing,
+                          proposal: ProposedViewSize(size))
+        }
     }
 }

@@ -47,6 +47,8 @@ struct FrostBarState {
     /// Target state of the show / hide animation.
     var isPresented: Bool
     var isRefreshing: Bool
+    /// The Always Hidden section is fading out (the panel shrinks once it's gone).
+    var isAlwaysHiddenFading = false
 
     var items: [MenuBarItem] { hidden + alwaysHidden }
 }
@@ -92,6 +94,9 @@ enum FrostBarMetrics {
     static let footerHeight: CGFloat = 30
     /// Content width of non-icon states (empty, no permissions, ...).
     static let statusWidth: CGFloat = 232
+    /// Showing / hiding the Always Hidden section (⌥-click while open): a short fade and height change. The window
+    /// grows at once and shrinks after it (see `FrostBarController.reposition`).
+    static let sectionAnimation: Animation = .snappy(duration: 0.24)
 
     static func rowWidth(columns: Int) -> CGFloat {
         CGFloat(columns) * standardTileWidth + CGFloat(columns - 1) * tileSpacing
@@ -237,9 +242,17 @@ struct FrostBarContent: View {
                 tiles(state.hidden)
             }
             if !state.alwaysHidden.isEmpty {
-                SectionHeader(title: "Always Hidden", showsDivider: !state.hidden.isEmpty)
-                    .frame(height: FrostBarMetrics.sectionHeaderHeight)
-                tiles(state.alwaysHidden)
+                VStack(alignment: .leading, spacing: 0) {
+                    SectionHeader(title: "Always Hidden", showsDivider: !state.hidden.isEmpty)
+                        .frame(height: FrostBarMetrics.sectionHeaderHeight)
+                    tiles(state.alwaysHidden)
+                }
+                .opacity(state.isAlwaysHiddenFading ? 0 : 1)
+                // The footer moves through the section's area while the panel's height changes: the section fades in
+                // once the footer has mostly passed, and fades out before the panel shrinks (`isAlwaysHiddenFading`),
+                // so they never overlap.
+                .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.14).delay(0.1)),
+                                        removal: .identity))
             }
         }
         .frame(width: width, alignment: .leading)
@@ -299,6 +312,9 @@ struct FrostBarContent: View {
                     Text(summary)
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                        // The count changes with the Always Hidden section while the footer moves: swap the text
+                        // as it moves (a cross-fade shows the new text at the end position early).
+                        .contentTransition(.identity)
                         .transition(.opacity)
                 }
             }
