@@ -12,3 +12,37 @@ public enum TileWidth {
         min(max(standard, (captureWidth ?? frameWidth).rounded(.up)), cap)
     }
 }
+
+/// Hysteresis for tile widths while the Frost Bar is open: each item's tile keeps the widest width seen during the
+/// session, so an item whose width keeps changing (network speed, timers) never makes the panel shrink and grow again,
+/// or a tile move back and forth between rows.
+///
+/// An item whose width never changes keeps its exact width. Once an item's width has changed, its held width is
+/// rounded up to a multiple of `step`: small increases then fit in the room already reserved, so the grid reflows at
+/// most a few times per item and session (in practice once, within the first seconds). The capture is drawn at its own
+/// size, centered in the (possibly wider) tile.
+public struct TileWidthMemory: Sendable, Equatable {
+    public static let step: CGFloat = 8
+
+    private var widest: [UInt32: CGFloat] = [:]
+
+    public init() {}
+
+    /// The width to lay `id` out with, given its current width (capture or frame width); remembers it.
+    public mutating func hold(_ id: UInt32, width: CGFloat) -> CGFloat {
+        guard let previous = widest[id] else {
+            widest[id] = width
+            return width
+        }
+        if width == previous { return previous }
+        guard width > previous else { return previous }
+        let held = (width / Self.step).rounded(.up) * Self.step
+        widest[id] = held
+        return held
+    }
+
+    /// Starts a new session (the panel opened).
+    public mutating func reset() {
+        widest.removeAll()
+    }
+}

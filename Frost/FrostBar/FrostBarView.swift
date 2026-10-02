@@ -27,6 +27,10 @@ struct FrostBarState {
     /// Size of each capture in points: captures and tile widths follow it rather than the item's current frame (see
     /// `ItemImageCapturer.sizes`).
     var imageSizes: [CGWindowID: CGSize] = [:]
+    /// Width each tile is laid out with, before the standard minimum and the grid cap: the widest width seen this
+    /// session (`TileWidthMemory`), so items whose width keeps changing don't make the panel resize repeatedly. Items
+    /// without an entry use their capture width (or frame width).
+    var contentWidths: [CGWindowID: CGFloat] = [:]
     /// Whether each capture is a monochrome glyph or a colored icon (see `GlyphStyle`).
     var styles: [CGWindowID: GlyphStyle]
     /// Template images of monochrome glyphs: tinted with the foreground color so they follow the glass's actual
@@ -103,7 +107,8 @@ enum FrostBarMetrics {
     static func tileWidths(_ items: [MenuBarItem], _ state: FrostBarState) -> [CGFloat] {
         let cap = gridCap(state)
         return items.map { item in
-            let captureWidth = state.images[item.windowID] == nil ? nil : state.imageSizes[item.windowID]?.width
+            let captureWidth = state.contentWidths[item.windowID]
+                ?? (state.images[item.windowID] == nil ? nil : state.imageSizes[item.windowID]?.width)
             return TileWidth.width(captureWidth: captureWidth, frameWidth: item.frame.width, standard: standardTileWidth,
                                    cap: cap)
         }

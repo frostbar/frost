@@ -18,9 +18,17 @@ final class FrostBarModel {
     var frozenLayout: MenuBarLayout?
 
     @ObservationIgnored private unowned let app: AppModel
+    /// Each tile's widest width this session (see `TileWidthMemory`). Updated while deriving `state`: holding a width
+    /// changes nothing on screen, so it needn't be observed.
+    @ObservationIgnored private var tileWidths = TileWidthMemory()
 
     init(app: AppModel) {
         self.app = app
+    }
+
+    /// The panel is opening: tile widths start over (items may have changed size while it was closed).
+    func beginSession() {
+        tileWidths.reset()
     }
 
     /// Layout to display: the frozen snapshot if any, otherwise the live layout (positions are reliable while collapsed).
@@ -45,16 +53,20 @@ final class FrostBarModel {
         let alwaysHidden = showAlwaysHidden ? layout[.alwaysHidden, default: []] : []
         let hidden = layout[.hidden, default: []]
         let images = app.capturer.images
+        let sizes = app.capturer.sizes
         var names: [CGWindowID: String] = [:]
         var icons: [CGWindowID: NSImage] = [:]
+        var widths: [CGWindowID: CGFloat] = [:]
         for item in hidden + alwaysHidden {
             names[item.windowID] = item.displayName
             if images[item.windowID] == nil, let icon = AppIconCache.shared.icon(for: item.bundleID) {
                 icons[item.windowID] = icon
             }
+            let current = (images[item.windowID] == nil ? nil : sizes[item.windowID]?.width) ?? item.frame.width
+            widths[item.windowID] = tileWidths.hold(item.windowID, width: current)
         }
         return FrostBarState(phase: phase, alwaysHidden: alwaysHidden, hidden: hidden, images: images,
-                             imageSizes: app.capturer.sizes,
+                             imageSizes: sizes, contentWidths: widths,
                              styles: app.capturer.styles, templates: app.capturer.templates, names: names,
                              appIcons: icons, maxWidth: maxWidth, maxHeight: maxHeight,
                              isPresented: isPresented, isRefreshing: isRefreshing)

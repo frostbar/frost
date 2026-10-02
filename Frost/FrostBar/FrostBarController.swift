@@ -129,6 +129,7 @@ final class FrostBarController {
         isOpen = true
         hideTask?.cancel()
         model.showAlwaysHidden = showAlwaysHidden
+        model.beginSession()
         liveStats = LiveRefreshStats()
         #if DEBUG
         openCount += 1
