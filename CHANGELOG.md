@@ -4,6 +4,24 @@ All notable changes to Frost are documented here. The format follows [Keep a Cha
 and versions follow [Semantic Versioning](https://semver.org/). Each version's section is used verbatim as the
 release notes on GitHub and in the in-app update window.
 
+## [0.1.2] - 2026-10-02
+
+### Added
+- **Keep icons in their sections**: when an app relaunches and macOS puts its icon in another section (usually
+  Always Hidden), Frost moves it back. Icons you move yourself stay where you put them. Turn it off in
+  Settings → Behavior.
+
+### Changed
+- Clicking an icon in the Frost Bar opens its menu about three times faster.
+- Settings is a little taller so every tab fits without scrolling.
+- About shows just the version.
+- Frost now runs with the Hardened Runtime.
+
+### Fixed
+- Dragging icons in the layout editor no longer fails with "Couldn't move…" or lands an icon one slot away from
+  where you dropped it.
+- Settings content no longer scrolls under the toolbar.
+
 ## [0.1.1] - 2026-10-02
 
 A polish release: smoother animations, fewer glitches on notched and multi-display setups, and safer icon moves.
