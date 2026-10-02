@@ -50,6 +50,9 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] With the Settings or onboarding window key: ⌘W closes the window; ⌘Q quits Frost; ⌘, opens Settings; ⌘M
   minimizes the Settings window.
 - [ ] In selectable text (the version number on the About tab), ⌘C copies and ⌘A selects all.
+- [ ] **Hide Frost (⌘H)** with the Layout tab open: the menu bar leaves editing state and collapses. Reopen Settings
+  (right-click the snowflake → "Settings…"): editing resumes once the window is key. Same for another app's "Hide
+  Others" followed by "Show All".
 - [ ] With the Frost Bar open, ⌘W closes the Frost Bar (same as Esc). **To be confirmed**: whether main menu shortcuts
   are delivered when the non-activating panel is key while Frost is not active.
 
@@ -81,6 +84,11 @@ For each item, record: environment (model / displays / macOS version) and result
   automatically (progress is shown only briefly while a retry runs), it retries about every 3 seconds, and the editor
   appears automatically once it recovers.
 - [ ] Leaving the Layout tab or closing the Settings window: the menu bar leaves editing state and collapses.
+- [ ] **Covered or away**: with the Layout tab open, cover the Settings window completely (e.g. move it to another
+  Space, or put a full-screen app over it): editing ends and the menu bar collapses; bring the window back and click
+  into it: editing resumes. Lock the screen (⌃⌘Q) or let the displays sleep: editing ends and the editor's periodic
+  refreshes stop (log `user away (screenLocked)` / `(displaysAsleep)`); after unlocking, editing resumes once the
+  window is key (log `user back`).
 - [ ] Revoke Accessibility or Screen Recording: the editor shows a permission-needed placeholder that updates as
   permissions change; its button opens the onboarding window.
 - [ ] **Known risk (b)**: when moving an item hidden under the notch, the menu bar briefly collapses and then
@@ -133,6 +141,12 @@ For each item, record: environment (model / displays / macOS version) and result
   right place, and the item moves back after it closes; reopening the panel continues refreshing as usual. Press Esc
   during a refresh: the freeze frame is removed right away, the menu bar is collapsed, and no Frost windows are left
   behind (`panel closed during a live refresh cycle; it will collapse and clean up`).
+- [ ] **Away**: with the panel open, lock the screen or let the displays sleep: the panel closes (log
+  `user away: closing the Frost Bar`) and no live refresh rounds run while away; clicking the snowflake on the lock
+  screen (if shown) doesn't open it; after unlocking it opens normally.
+- [ ] **Click while another move runs**: launch a new menu bar app (its item lands in Always Hidden and Frost moves it
+  to Hidden, see `vm-fake-items.sh`), and right away click an item in the Frost Bar: the click is forwarded once the
+  placement finishes (log `activation waits for another move to finish`), not dropped.
 - [ ] **Cache first after relaunch**: with an image cache present, relaunch Frost and open the Frost Bar: the panel
   shows cached images as soon as it appears (log `loaded N item image(s) from the disk cache`, written about a second
   after launch, before the first click), then starts refreshing every second.
@@ -160,6 +174,11 @@ For each item, record: environment (model / displays / macOS version) and result
   elsewhere to close the menu, the item moves back.
 - [ ] Popover items: move back after the popover closes; if the popover never closes, they are forced back after
   60 seconds.
+- [ ] **Outside-click fallback waits for the user**: forward a popover whose app only uses cooperative activation (in
+  the VM, the cooperative fake item) with the Settings window open, then press the mouse on the desktop and keep it
+  held (drag-select): no Esc and no toggle click while it is held (log `deferring the outside-click fallback`); the
+  popover closes right after release. Then forward it again and close it by opening another app's menu bar menu:
+  that menu stays open (it is not closed by the toggle click); the popover closes after that menu closes.
 - [ ] **Popover with cooperative activation** (the app only calls `NSApp.activate()`; in the VM,
   `scripts/vm/vm-fake-items.sh launch A 0 polite`): after opening it through the Frost Bar, the app becomes frontmost
   (activation hand-off: Frost activates itself on the Frost Bar click and, after detecting a non-menu popup, hands off
@@ -247,6 +266,11 @@ on-screen, windowID, title; real windows are titled with their autosave name, re
   anyway. It opens exactly once and doesn't open and immediately close (no `ignoring a late Frost icon action`
   followed by a close). Try each once: both directions (external → built-in, built-in → external), left click /
   right click (menu) / ⌥-click, and In Menu Bar mode, clicking by hand (not synthesized events).
+- [ ] **Snowflake click during a live refresh round** (Display mode Automatic: Frost Bar on the notched display, In Menu
+  Bar on the external one): with the Frost Bar open on the built-in display, click the snowflake on the external
+  display: its Hidden section expands and stays expanded (log `Frost icon clicked during a temporary expansion` /
+  `ending a temporary expansion in state 1` when the click lands during a round); repeat with ⌥: everything expands
+  and stays. The menu bar never visibly expands and collapses on the built-in display.
 - [ ] **No flicker on either display**: keep the panel open on the external display for 10 s (colorful wallpaper, clock
   showing seconds): no expansion left of the external snowflake, no once-per-second brightness change, and the
   external clock ticks as usual; the same for the built-in menu bar (its freeze frame covers only the area left of its
@@ -269,17 +293,27 @@ on-screen, windowID, title; real windows are titled with their autosave name, re
 - [ ] **Hot-plugging**: unplug the external display with the panel open → the panel closes; unplug it while it has the
   active menu bar → the log switches back to the built-in display, and the Frost Bar / In Menu Bar work normally;
   everything works again after reconnecting.
+- [ ] **First click after connecting a display**: connect the external display (in the VM: start
+  `guest-virtual-display`) and click its snowflake right away (within 2 s): the first click works (log `display
+  configuration changed`, then `mouse down on a Frost icon replica`).
 - [ ] **Mirroring** (Displays → Mirror): there is only one menu bar, and behavior is the same as with a single display.
 
 ## 8. Quit, relaunch and persistence
 
 - [ ] Quit Frost (right-click menu or ⌘Q): all hidden items become visible again (the system restores them once the
   separators are gone).
+- [ ] **Quit during moves**: in the layout editor drop several items quickly (moves queue up) and press ⌘Q right after
+  the drops: Frost quits within about 6 s, no item is left half-dragged, no queued drop starts after the quit began
+  (log `shutting down: no new move transactions`), the cursor is where it was, and no mouse button is left pressed
+  (click something afterwards). Same while the Frost Bar is forwarding a click (menu open): the item moves back first.
 - [ ] Relaunch Frost: the section layout is kept (every item is still in its section); onboarding doesn't appear again.
 - [ ] Force-quit Frost (`kill -9`) and relaunch: the layout is kept, with no leftover blank separators.
 - [ ] Open the Frost Bar after a relaunch / reinstall: images from the disk cache are shown directly and the menu bar
   doesn't expand. Force-quit Frost while it is recapturing (freeze frame showing): the freeze window disappears with
   the process and the menu bar returns to normal (collapsed after relaunch).
+- [ ] **Disk cache writes are throttled**: with a changing item (a clock with seconds) in Hidden and the Frost Bar open
+  for 2 minutes, its PNG in `~/Library/Caches/dev.frost.Frost/items/` is rewritten at most about once a minute
+  (`ls -lT`); after closing the panel the file holds the newest capture (and again after quitting).
 - [ ] Launch at login: turn on **Launch at login**, log out and back in: Frost starts automatically with the layout
   kept; after turning it off, it no longer starts automatically.
 
@@ -303,6 +337,15 @@ local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
 - [ ] When a new version is available, the update window appears (release notes come from CHANGELOG.md); install the
   update → download, verification, and after "Install and Relaunch" Frost relaunches with the new version (version
   number on the About tab), **Accessibility and Screen Recording grants are still valid**, and the layout is kept.
+- [ ] **Gentle reminder** (scheduled check while Frost is not in front): with a newer version on the local feed,
+  `defaults write dev.frost.Frost SUScheduledCheckInterval -int 3600` and
+  `defaults write dev.frost.Frost SULastCheckTime -date "$(date -u -v-55M '+%Y-%m-%d %H:%M:%S +0000')"`, launch Frost
+  and keep using the VM (an idle Mac makes Sparkle show the update in focus instead) until the check runs about
+  5 minutes later: no window is pushed to the front; a small accent-colored dot appears on the snowflake (log
+  `update … available (scheduled check); showing a reminder`), and its right-click menu shows "Update Available…"
+  instead of "Check for Updates…" (localized in Simplified Chinese too). Choosing it brings the update window to the
+  front; after dismissing ("Remind Me Later" / "Skip This Version") or installing, the dot and the menu item go away.
+  Reset with `defaults delete dev.frost.Frost SUScheduledCheckInterval`.
 - [ ] The updated app has no quarantine attribute (`xattr -p com.apple.quarantine /Applications/Frost.app` reports an
   error), and no Gatekeeper prompt appears at launch.
 
@@ -338,5 +381,7 @@ local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
   sent first, taking 1.5–2 s). Only when the target app is frontmost and the popover still doesn't close is Esc sent
   first (1 s grace + Esc, about 1.6 s). Popups the fallback can't close either (non-transient, ignoring Esc and a
   second click, or with a translucent window mistaken for one that is fading out) are moved back only when the
-  60-second limit is reached. Apple system items and items of unknown ownership get neither the hand-off nor the
-  fallback. Menus are unaffected: they have no time limit and move back as soon as they close.
+  60-second limit is reached. The fallback's Esc and second click wait while a mouse button is held or another menu
+  is open, so a popover may stay open until the user lets go or that menu closes. Apple system items and items of
+  unknown ownership get neither the hand-off nor the fallback. Menus are unaffected: they have no time limit and move
+  back as soon as they close.
