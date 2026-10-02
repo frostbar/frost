@@ -23,7 +23,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// Delay between showing the Layout tab and starting the editor (expanding the menu bar, rescans, captures), so the
     /// switch renders first. After a fade the editor starts once the fade has ended (plus a short margin) instead.
     private static let editorStartDelay: Duration = .milliseconds(150)
-    /// Margin between the end of the tab fade and the start of the editor.
+    /// Margin between the end of the tab fade and the start (or end) of the editor.
     private static let editorStartMarginAfterFade: Duration = .milliseconds(60)
 
     private let model: AppModel
@@ -40,6 +40,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var reportedTab: SettingsTab?
     /// Pending start of the editor after switching to the Layout tab (see `editorStartDelay`).
     private var editorStartTask: Task<Void, Never>?
+    /// Pending end of the editor after leaving the Layout tab: collapsing the menu bar (and the rescans that follow)
+    /// during the cross-fade makes it hitch, so it waits for the fade to finish.
+    private var editorStopTask: Task<Void, Never>?
     /// Why the editor is paused although the window is open (see `PauseReason`); empty = not paused.
     private var pauseReasons: Set<PauseReason> = []
     private var observers: [NSObjectProtocol] = []
@@ -134,8 +137,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         tabs.selectedTabViewItemIndex = index
     }
 
-    /// The selected tab changed (toolbar click or `select`): leaving Layout ends editing (collapsing the menu bar)
-    /// right away; showing Layout starts editing shortly after the switch has rendered.
+    /// The selected tab changed (toolbar click or `select`): leaving Layout ends editing (collapsing the menu bar) once
+    /// the cross-fade has finished; showing Layout starts editing shortly after the switch has rendered. Both wait
+    /// for the fade so it never competes with the menu bar's rearrangement and the editor's rescans.
     private func tabDidChange(_ tab: SettingsTab) {
         guard tab != reportedTab else { return }
         reportedTab = tab
@@ -145,8 +149,20 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         #endif
         editorStartTask?.cancel()
         editorStartTask = nil
+        editorStopTask?.cancel()
+        editorStopTask = nil
         guard tab == .layout else {
-            layoutEditor.setTabSelected(false)
+            guard tabs.lastTransitionDuration > 0 else {
+                layoutEditor.setTabSelected(false)
+                return
+            }
+            let delay = Duration.seconds(tabs.lastTransitionDuration) + Self.editorStartMarginAfterFade
+            editorStopTask = Task { [weak self] in
+                do { try await Task.sleep(for: delay) } catch { return }
+                guard let self, self.reportedTab != .layout else { return }
+                self.editorStopTask = nil
+                self.layoutEditor.setTabSelected(false)
+            }
             return
         }
         let delay = tabs.lastTransitionDuration > 0
