@@ -618,6 +618,33 @@ final class SectionController {
         iconItem.menu = nil
     }
 
+    /// While Frost posts a move's ⌘-drag (its mouse-down physically lands on the Frost icon, see `ItemMover`), the
+    /// icon must not show a pressed highlight: the user clicked a tile in the Frost Bar, not the snowflake. Restored a
+    /// little after the move, once the routed mouse-up has been handled too. The user's own clicks on the icon still
+    /// work meanwhile (only the highlight is off).
+    func suppressIconHighlight(_ suppressed: Bool) {
+        guard let button = iconItem?.button, let cell = button.cell as? NSButtonCell else { return }
+        highlightRestoreTask?.cancel()
+        highlightRestoreTask = nil
+        if suppressed {
+            if savedHighlightsBy == nil { savedHighlightsBy = cell.highlightsBy }
+            cell.highlightsBy = []
+            button.highlight(false)
+            return
+        }
+        highlightRestoreTask = Task { [weak self] in
+            do { try await Task.sleep(for: Self.highlightRestoreDelay) } catch { return }
+            guard let self, let saved = self.savedHighlightsBy else { return }
+            self.savedHighlightsBy = nil
+            self.highlightRestoreTask = nil
+            cell.highlightsBy = saved
+        }
+    }
+
+    @ObservationIgnored private var savedHighlightsBy: NSCell.StyleMask?
+    @ObservationIgnored private var highlightRestoreTask: Task<Void, Never>?
+    private static let highlightRestoreDelay: Duration = .milliseconds(300)
+
     @objc private func openSettings() { model?.openSettings() }
 
     @objc private func checkForUpdates() { model?.updates.checkForUpdates() }

@@ -41,6 +41,7 @@ final class AppModel {
         presence = UserPresenceMonitor()
         sections.model = self
         mover.controlWindows = { [weak sections] in sections?.controlWindows }
+        mover.syntheticDragActive = { [weak sections] active in sections?.suppressIconHighlight(active) }
         scanner.ownWindowIDs = { [weak sections] in sections?.controlWindows?.all ?? [] }
         scanner.controlFrames = { [weak sections] in sections?.controlFrames }
         capturer.menuBarDisplayID = { [weak scanner] in scanner?.menuBarDisplay?.id ?? CGMainDisplayID() }

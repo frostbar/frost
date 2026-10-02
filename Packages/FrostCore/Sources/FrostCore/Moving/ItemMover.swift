@@ -36,6 +36,11 @@ public final class ItemMover {
     /// icon as the mouse-down position.
     public var controlWindows: () -> FrostControlWindows? = { nil }
 
+    /// Called with true before a move posts its ⌘-drag (whose mouse-down physically lands on the Frost icon) and with
+    /// false once the move's frames have settled (the events have long been handled by then). The app layer keeps the
+    /// Frost icon from drawing a pressed highlight meanwhile.
+    public var syntheticDragActive: (Bool) -> Void = { _ in }
+
     public var maxAttempts = 3
     /// Delay after posting events before the first check; then poll every `pollInterval` until the order is
     /// correct and frames are stable, for at most `settleTimeout`.
@@ -131,6 +136,8 @@ public final class ItemMover {
 
             let down = CGPoint(x: icon.frame.midX, y: icon.frame.midY)
             let up = Self.dropPoint(for: destination, targetFrame: target.frame)
+            syntheticDragActive(true)
+            defer { syntheticDragActive(false) }
             await Task.detached { Self.postCommandDrag(windowID: itemID, mouseDown: down, mouseUp: up) }.value
 
             let known = Set(frames.keys)
