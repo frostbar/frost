@@ -48,5 +48,5 @@ case "$cmd" in
     done
     log "reset done" ;;
   log) vm_ssh "cat /tmp/fakeitems.log 2>/dev/null || echo '(empty)'" ;;
-  *) die "usage: $0 deploy|launch [A|B] [extra] [polite]|quit [A|B|all]|reset [A|B|all]|log" ;;
+  *) die "usage: $0 deploy|launch [A|B] [extra] [polite|net]|quit [A|B|all]|reset [A|B|all]|log" ;;
 esac

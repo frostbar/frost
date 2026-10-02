@@ -28,7 +28,9 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] First launch: the snowflake appears to the right of the third-party items and to the left of Control Center /
   the clock; all other third-party items are moved into the Hidden section.
 - [ ] The onboarding window opens automatically, centered, with a transparent title bar and blurred background; the
-  traffic lights don't cover content; text and cards are clear in both Light and Dark Mode.
+  traffic lights don't cover content; text and cards are clear in both Light and Dark Mode. The permission
+  descriptions read exactly like the About tab's (English and Simplified Chinese), and the prominent buttons have white
+  text on the accent color.
 - [ ] Click the grant button on the Accessibility card: the system prompt appears and Privacy & Security →
   Accessibility opens; after turning the switch on in System Settings, the card turns into a green checkmark within
   about 1 second (the checkmark bounces once), without switching back to Frost.
@@ -58,22 +60,29 @@ For each item, record: environment (model / displays / macOS version) and result
 
 ## 3. Sections and show / hide (no permissions needed)
 
-- [ ] Left-click the snowflake: the Hidden section expands / collapses with a spring animation on the icon; ⌥-click
+- [ ] Left-click the snowflake: the Hidden section expands / collapses (the snowflake itself doesn't animate); ⌥-click
   also expands the Always Hidden section.
 - [ ] Auto-hide: after expanding, items hide again after the configured delay; with **Automatically hide** off they
   stay expanded.
 - [ ] Clicking outside collapses immediately (In Menu Bar mode with **Automatically hide** on): clicking another app's
   window, **and also Frost's own Settings window** (Behavior tab), collapses immediately; clicking the menu bar (empty
   space, other items) does not, and clicking the snowflake toggles as usual.
-- [ ] Right-click the snowflake: the menu contains "Settings…", "Check for Updates…" and "Quit Frost".
+- [ ] Right-click the snowflake: the menu contains "Settings…", "Check for Updates…" and "Quit Frost", each with an
+  icon so the titles line up (also in Simplified Chinese).
 - [ ] Without any permissions, the display mode is forced to In Menu Bar, and hiding / showing works normally.
 
 ## 4. Layout editor
 
 - [ ] Open the **Layout** tab: the menu bar enters editing state (everything expanded, both divider lines visible);
-  the three glass section bands show live images.
+  the three glass section bands show live images. Right after relaunching Frost, every tile (Visible section
+  included) already shows its cached image when the tab appears: no "?" or blank placeholder tiles.
 - [ ] Drag items between sections and reorder within a section: after the drop the item shows an in-progress state,
-  and once the real menu bar has moved it the state matches; a toast appears on failure.
+  and once the real menu bar has moved it the state matches; any failure shows the error toast (the tile never just
+  jumps back without one, and never goes blank). The drag image disappears with AppKit's normal end-of-drag fade
+  (~0.3 s) and the move starts only after it (it no longer hangs over the drop spot for up to a second).
+- [ ] VoiceOver: each editor tile is an image labelled "App name — item description" (its own description or title,
+  when it has one), with its section and state ("Hidden, doesn't fit in the menu bar") as its value; Frost Bar tiles
+  use the same label.
 - [ ] While a move is in progress, quickly drag and drop another item: the second item immediately shows in its new
   position (in-progress state) and is queued, running automatically after the first move finishes; no "please wait"
   message appears, and both end up in the right place.
@@ -83,7 +92,8 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] When the menu bar can't be read / Frost's separator can't be found: the placeholder says it is retrying
   automatically (progress is shown only briefly while a retry runs), it retries about every 3 seconds, and the editor
   appears automatically once it recovers.
-- [ ] Leaving the Layout tab or closing the Settings window: the menu bar leaves editing state and collapses.
+- [ ] Leaving the Layout tab or closing the Settings window: the menu bar leaves editing state and collapses (when
+  switching tabs, only after the cross-fade has finished, so the fade doesn't stutter).
 - [ ] **Covered or away**: with the Layout tab open, cover the Settings window completely (e.g. move it to another
   Space, or put a full-screen app over it): editing ends and the menu bar collapses; bring the window back and click
   into it: editing resumes. Lock the screen (⌃⌘Q) or let the displays sleep: editing ends and the editor's periodic
@@ -113,8 +123,15 @@ For each item, record: environment (model / displays / macOS version) and result
   naturally; rows are left-aligned); hover highlights an item and the name bar at the bottom shows the app name (the
   item count when nothing is hovered); hovering doesn't resize the panel; with more items than fit the screen height,
   the panel scrolls vertically.
-- [ ] ⌥-click the snowflake (or press ⌥ and click while the panel is open): a thin divider and an "Always Hidden"
-  heading appear below the Hidden section, followed by the grid of Always Hidden items.
+- [ ] ⌥-click the snowflake: a thin divider and an "Always Hidden" heading appear below the Hidden section, followed
+  by the grid of Always Hidden items. While the panel is open, a plain click on the snowflake always closes it (one
+  click, whatever it was opened with), and a ⌥-click shows / hides the Always Hidden section: the panel's height
+  animates smoothly (about 0.25 s) while the section fades in after the footer has moved down, or fades out before the
+  panel shrinks; the panel's top edge and the tiles above never move, in any frame (record and check frame by frame).
+- [ ] **No one-frame jumps when the panel changes size** (user report: "the panel jumps"): with the panel open, quit
+  and relaunch an app whose item is in the Hidden section, switch Light / Dark Mode, and toggle ⌥: in a high-rate
+  recording the panel's top edge and right edge stay put in every frame (it grows and shrinks downward / leftward
+  only).
 - [ ] **No visible expansion in the menu bar (user report: "the hidden items expand, then disappear")**: delete the
   image cache (`rm -rf ~/Library/Caches/dev.frost.Frost/items`), relaunch Frost and click the snowflake: the menu bar
   always looks collapsed (hidden items never appear in it), and after about 0.3 s the app icons in the panel are
@@ -124,8 +141,10 @@ For each item, record: environment (model / displays / macOS version) and result
   "Verification techniques" in `docs/testing-vm.md`).
 - [ ] **Live refresh**: put a changing item in the Hidden section (temperature / network speed / timer; in the VM,
   FakeItems' `FIClock`, whose title increments every second), open the Frost Bar and keep it open for 10 s: its tile
-  updates once per second; other tiles don't jump, and an item changing width only reflows the grid once (no
-  continuous animation). No frame of the recording shows the menu bar left of the snowflake expanded, and the clock
+  updates once per second; other tiles don't jump. An item whose width keeps changing (in the VM, `vm-fake-items.sh
+  launch A 0 net`) keeps the widest width seen while the panel is open (its tile never shrinks back): the panel
+  resizes / reflows at most once per item and open, typically not at all after the first second, and never
+  oscillates. No frame of the recording shows the menu bar left of the snowflake expanded, and the clock
   (with seconds shown) ticks every second as usual. When the panel closes, the log has a one-line summary
   `live refresh: N cycle(s) … overlay up … ms` (with `FROST_LIVE_REFRESH_TRACE=1`, one timing line per cycle).
 - [ ] **Pause rules**: with the panel open, move the pointer onto the menu bar left of the snowflake, or hold the mouse
@@ -147,6 +166,10 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] **Click while another move runs**: launch a new menu bar app (its item lands in Always Hidden and Frost moves it
   to Hidden, see `vm-fake-items.sh`), and right away click an item in the Frost Bar: the click is forwarded once the
   placement finishes (log `activation waits for another move to finish`), not dropped.
+- [ ] **New items while the panel is open**: launch an app that adds several new items (in the VM, forget some
+  FakeItems extras and `vm-fake-items.sh launch A 6`) and open the Frost Bar while Frost places them: the panel stays
+  open (Frost's own ⌘-drag events don't count as outside clicks), placement stops after the current item (log
+  `stopped placing new items (the Frost Bar is open)`) and continues once the panel closes.
 - [ ] **Cache first after relaunch**: with an image cache present, relaunch Frost and open the Frost Bar: the panel
   shows cached images as soon as it appears (log `loaded N item image(s) from the disk cache`, written about a second
   after launch, before the first click), then starts refreshing every second.
@@ -165,6 +188,8 @@ For each item, record: environment (model / displays / macOS version) and result
   legible; check a light menu bar / Dark Mode as well. Color icons are shown as-is; only color icons whose outline is
   pure white / pure black get a faint backing plate.
 - [ ] Clicking outside the panel / Esc closes the panel.
+- [ ] Clicking a tile doesn't make the snowflake show a pressed (dark) highlight while the item is moved out and back
+  (the ⌘-drag's mouse-down lands on the snowflake; its highlight is suppressed during Frost's own moves).
 - [ ] **Known risk (a), click forwarding**: click a hidden item → the item is temporarily moved to the Visible section
   → its menu / popover opens in the right place → after the menu closes, the item moves back to its section. **Verify
   with real third-party items** (the first synthesized click after a ⌘-drag move has been observed to be ignored), and
@@ -221,11 +246,14 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] Switch the system between Light and Dark Mode: the Settings window, onboarding window and Frost Bar update
   immediately; images in the layout editor and Frost Bar refresh with the appearance (white / black glyphs never end
   up on a background of the same color; monochrome glyphs in the Frost Bar are tinted by the glass's actual
-  brightness).
+  brightness). Tiles keep showing their previous images until the new captures arrive (no blank tiles), and an open
+  Frost Bar doesn't resize unless an item's width really changed.
 - [ ] The snowflake in the menu bar matches the neighboring Wi‑Fi / Control Center / third-party icons in size and
-  weight, and is vertically centered in both light and dark menu bars; it still bounces once on expand / collapse.
+  weight, and is vertically centered in both light and dark menu bars; it doesn't animate on expand / collapse.
 - [ ] Behavior tab: **Hide after** (the auto-hide delay), the display mode and **Launch at login** work; an inline
-  error appears if enabling launch at login fails.
+  error appears if enabling launch at login fails. Switching the display mode changes its explanation instantly: the
+  card keeps its height (as tall as the longest explanation) and the Updates card below doesn't move; no overlapping
+  text.
 - [ ] App icon: the icon is crisp in Finder, the About tab, Login Items and the System Settings privacy lists; on
   macOS 26 it is not placed inside a gray rounded "container" (the asset catalog icon matches the system icon shape).
 
@@ -334,6 +362,11 @@ local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
   `defaults read dev.frost.Frost SUEnableAutomaticChecks` is 0, and it is still off after a relaunch.
 - [ ] Right-click the snowflake → "Check for Updates…" (or the check-now button on the Behavior tab): when already up
   to date, Sparkle says so; while a check is in progress, the menu item and the button are disabled.
+- [ ] **Errors**: with an unreachable feed (`defaults write dev.frost.Frost SUFeedURL http://127.0.0.1:9/appcast.xml`),
+  "Check for Updates…" shows Sparkle's "Update Error!" alert in front; clicking the snowflake while it is up brings it
+  to the front (log `Frost icon clicked while a Sparkle alert is up`) instead of doing nothing. A scheduled check with
+  the same feed (`SULastCheckTime` older than the interval, then relaunch) fails silently: no alert. Reset with
+  `defaults delete dev.frost.Frost SUFeedURL`.
 - [ ] When a new version is available, the update window appears (release notes come from CHANGELOG.md); install the
   update → download, verification, and after "Install and Relaunch" Frost relaunches with the new version (version
   number on the About tab), **Accessibility and Screen Recording grants are still valid**, and the layout is kept.
