@@ -579,7 +579,7 @@ private struct PermissionPlaceholder: View {
                     status("Screen Recording", granted: permissions.screenRecording)
                 }
                 Button("Grant Permissions", action: openOnboarding)
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent)
                     .controlSize(.large)
             }
         }

@@ -1030,32 +1030,12 @@
         }
       }
     },
-    "Used to move and click menu bar icons." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用于移动和点击菜单栏图标。"
-          }
-        }
-      }
-    },
     "Used to move icons between sections and to click icons in the Frost Bar." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "用于在分区之间移动图标，以及在 Frost Bar 中点击图标。"
-          }
-        }
-      }
-    },
-    "Used to show icons in the Frost Bar and the layout editor." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用于在 Frost Bar 和布局编辑器中显示图标。"
           }
         }
       }

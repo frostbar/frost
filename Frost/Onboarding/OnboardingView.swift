@@ -83,10 +83,10 @@ struct OnboardingView: View {
             GlassEffectContainer(spacing: 12) {
                 VStack(spacing: 12) {
                     PermissionCard(symbol: "accessibility", tint: .blue, title: "Accessibility",
-                                   detail: "Used to move and click menu bar icons.",
+                                   detail: "Used to move icons between sections and to click icons in the Frost Bar.",
                                    isGranted: state.accessibility, grant: actions.grantAccessibility)
                     PermissionCard(symbol: "rectangle.dashed.badge.record", tint: .pink, title: "Screen Recording",
-                                   detail: "Used to show icons in the Frost Bar and the layout editor.",
+                                   detail: "Used to show images of icons in the Frost Bar and the layout editor.",
                                    isGranted: state.screenRecording, grant: actions.grantScreenRecording)
                 }
             }
@@ -154,7 +154,7 @@ struct OnboardingView: View {
                     Label("Open Layout Editor", systemImage: "arrow.right")
                         .labelStyle(TrailingIconLabelStyle())
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
             } else {
@@ -196,7 +196,7 @@ private struct PermissionCard: View {
                         .transition(.scale(scale: 0.4).combined(with: .opacity))
                 } else {
                     Button("Grant", action: grant)
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                         .transition(.blurReplace)
                 }

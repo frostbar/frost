@@ -98,8 +98,7 @@ private struct PermissionRow: View {
                     .transition(.blurReplace)
             } else {
                 Button("Grant Access", action: grant)
-                    .buttonStyle(.glassProminent)
-                    .tint(.orange)
+                    .buttonStyle(.borderedProminent)
                     .transition(.blurReplace)
             }
         }
