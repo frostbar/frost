@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import FrostCore
 import Observation
 import Sparkle
@@ -13,6 +13,11 @@ import Sparkle
 /// launch) it does so itself; otherwise Frost records it in `pendingUpdateVersion` instead, which shows a badge on the
 /// Frost icon and an "Update Available…" item in its menu; choosing it calls `checkForUpdates()`, which brings the
 /// update window to the front. The reminder ends when the user attends to the update or the update session ends.
+///
+/// Modal alerts (e.g. "Update Error!" when a user-initiated check fails; Sparkle never shows errors of scheduled
+/// background checks) run an app-modal session that blocks every other Frost window, the Frost icon included. Frost
+/// brings the alert to the front when it appears and whenever the user clicks the Frost icon while it is up, so the
+/// click is never simply dead and the alert can't hide behind other apps' windows.
 ///
 /// For testing, `defaults write dev.frost.Frost SUFeedURL <url>` points it at a local feed (user defaults take
 /// precedence over Info.plist).
@@ -57,6 +62,31 @@ final class UpdateController {
             guard let self, self.pendingUpdateVersion != nil else { return }
             self.pendingUpdateVersion = nil
         }
+        userDriverDelegate.onModalAlert = { [weak self] shown in self?.modalAlertChanged(shown) }
+    }
+
+    @ObservationIgnored private var modalAlertMonitor: Any?
+
+    private func modalAlertChanged(_ shown: Bool) {
+        if let modalAlertMonitor {
+            NSEvent.removeMonitor(modalAlertMonitor)
+            self.modalAlertMonitor = nil
+        }
+        guard shown else { return }
+        FrostLog.app.notice("Sparkle is showing a modal alert")
+        NSApp.activate()
+        // Clicks on the Frost icon can't do anything while the alert's modal session runs: bring the alert forward.
+        // Local monitors still see events of a modal session (they run before dispatch).
+        modalAlertMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+            MainActor.assumeIsolated {
+                guard let alert = NSApp.modalWindow, event.window !== alert,
+                      event.window?.className.contains("StatusBar") == true else { return }
+                FrostLog.app.notice("Frost icon clicked while a Sparkle alert is up; bringing the alert to the front")
+                NSApp.activate()
+                alert.makeKeyAndOrderFront(nil)
+            }
+            return event
+        }
     }
 
     /// User-initiated check: shows Sparkle's update window if an update exists, otherwise reports that Frost is up to
@@ -75,6 +105,16 @@ private final class UserDriverDelegate: NSObject, SPUStandardUserDriverDelegate 
     var onReminder: ((String) -> Void)?
     /// The user attended to the update, or the update session ended.
     var onReminderEnded: (() -> Void)?
+    /// A modal alert is about to be shown (true) / was dismissed (false).
+    var onModalAlert: ((Bool) -> Void)?
+
+    nonisolated func standardUserDriverWillShowModalAlert() {
+        MainActor.assumeIsolated { self.onModalAlert?(true) }
+    }
+
+    nonisolated func standardUserDriverDidShowModalAlert() {
+        MainActor.assumeIsolated { self.onModalAlert?(false) }
+    }
 
     nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
 
