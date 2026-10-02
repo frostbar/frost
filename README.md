@@ -32,6 +32,8 @@ in the **Frost Bar**, a glass panel that drops down below the menu bar. It works
   **Settings → Behavior**.
 - **Layout editor**: live images of every menu bar item in three bands. Drag items between sections and Frost moves
   them in the real menu bar.
+- **Icons stay where you put them**: new apps' icons land in Hidden, and when an app relaunches and macOS re-adds its
+  icon in another section, Frost moves it back (can be turned off in **Settings → Behavior**).
 - Permission onboarding, launch at login, multiple displays, automatic updates.
 - Available in English and Simplified Chinese (follows your macOS language).
 

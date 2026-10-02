@@ -255,10 +255,10 @@ For each item, record: environment (model / displays / macOS version) and result
   Frost Bar doesn't resize unless an item's width really changed.
 - [ ] The snowflake in the menu bar matches the neighboring Wi‑Fi / Control Center / third-party icons in size and
   weight, and is vertically centered in both light and dark menu bars; it doesn't animate on expand / collapse.
-- [ ] Behavior tab: **Hide after** (the auto-hide delay), the display mode and **Launch at login** work; an inline
-  error appears if enabling launch at login fails. Switching the display mode changes its explanation instantly: the
-  card keeps its height (as tall as the longest explanation) and the Updates card below doesn't move; no overlapping
-  text.
+- [ ] Behavior tab: **Hide after** (the auto-hide delay), the display mode, **Keep icons in their sections** and
+  **Launch at login** work; an inline error appears if enabling launch at login fails. Switching the display mode
+  changes its explanation instantly: the card keeps its height (as tall as the longest explanation) and the cards
+  below don't move; no overlapping text.
 - [ ] App icon: the icon is crisp in Finder, the About tab, Login Items and the System Settings privacy lists; on
   macOS 26 it is not placed inside a gray rounded "container" (the asset catalog icon matches the system icon shape).
 
@@ -341,6 +341,15 @@ on-screen, windowID, title; real windows are titled with their autosave name, re
   (click something afterwards). Same while the Frost Bar is forwarding a click (menu open): the item moves back first.
 - [ ] Relaunch Frost: the section layout is kept (every item is still in its section); onboarding doesn't appear again.
 - [ ] Force-quit Frost (`kill -9`) and relaunch: the layout is kept, with no leftover blank separators.
+- [ ] **Icons keep their sections** (Settings → Behavior → **Keep icons in their sections**, on by default): put a
+  third-party item in Hidden, quit its app and make it come back in Always Hidden (in the VM: quit FakeItems,
+  `defaults delete dev.frost.FakeItems "NSStatusItem Preferred Position FIMenuA"`, relaunch it). Within a few seconds
+  Frost moves it back to Hidden (log `moved … back to hidden: its app re-added it elsewhere`); the same happens when
+  Frost itself is launched after the app. Then ⌘-drag the item into Visible yourself (expand first) and collapse: the
+  move is kept, not reverted (log `remembering … in visible: moved by the user from hidden`), and the next relaunch of
+  the app puts it back in Visible (right of the snowflake). A drop in the layout editor is remembered the same way
+  (`dropped in the layout editor`). Clicking an item in the Frost Bar (moved out and back) changes nothing. With the
+  setting off, a re-added item stays where the system put it.
 - [ ] Open the Frost Bar after a relaunch / reinstall: images from the disk cache are shown directly and the menu bar
   doesn't expand. Force-quit Frost while it is recapturing (freeze frame showing): the freeze window disappears with
   the process and the menu bar returns to normal (collapsed after relaunch).
@@ -423,3 +432,9 @@ local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
   is open, so a popover may stay open until the user lets go or that menu closes. Apple system items and items of
   unknown ownership get neither the hand-off nor the fallback. Menus are unaffected: they have no time limit and move
   back as soon as they close.
+- Keeping icons in their sections only remembers the section, not the position within it: a re-added icon goes to
+  the section's boundary (right end of Hidden / Always Hidden, right of the snowflake in Visible). Icons are recognized
+  by app and status item name; when several current items of an app share a name, Frost neither remembers nor
+  restores them. A ⌘-drag in the menu bar is noticed at the next scan (e.g. when the menu bar collapses); if Frost
+  quits before that, the next launch may move the icon back to its previous section. Moves made while Frost isn't
+  running are treated the same way.
