@@ -28,8 +28,8 @@ public enum ItemMoveError: Error, Equatable, Sendable {
 /// - The mouse-down physically lands on the center of the Frost icon: it is always visible and is Frost's own
 ///   item. Even if routing degrades to position-based, the worst case is dragging Frost's own icon, never a
 ///   third-party icon. This is also why off-screen items (pushed off / under the notch) can be moved.
-/// - No dragged events: down → 50 ms → up. The drop position is determined by the mouseUp's raw coordinates
-///   (which may be off screen).
+/// - No dragged events: down → (the item is lifted; see `DragRelease`) → up. The drop position is determined by the
+///   mouseUp's raw coordinates (which may be off screen) against the menu bar as it is while the item is lifted.
 @MainActor
 public final class ItemMover {
     private let scanner: MenuBarItemScanner
@@ -156,12 +156,24 @@ public final class ItemMover {
 
             let down = CGPoint(x: icon.frame.midX, y: icon.frame.midY)
             let up = Self.dropPoint(for: destination, targetFrame: target.frame)
+            let known = Set(frames.keys)
+            let release = DragRelease(
+                itemID: itemID, destination: destination, originalFrame: item.frame,
+                waitsForStillness: DragRelease.targetMaySlide(itemFrame: item.frame, destination: destination,
+                                                              targetFrame: target.frame, iconID: iconID,
+                                                              iconFrame: icon.frame))
             movedWindowIDs.insert(itemID)
             syntheticDragActive(true)
             defer { syntheticDragActive(false) }
-            await Task.detached { Self.postCommandDrag(windowID: itemID, mouseDown: down, mouseUp: up) }.value
+            let posted = await Task.detached {
+                Self.postCommandDrag(windowID: itemID, mouseDown: down, plannedMouseUp: up, release: release,
+                                     watching: known)
+            }.value
+            FrostLog.mover.info("""
+                ⌘-drag of \(itemID, privacy: .public) to \(String(describing: destination), privacy: .public) \
+                (attempt \(attempt, privacy: .public)): \(posted.description, privacy: .public)
+                """)
 
-            let known = Set(frames.keys)
             let result = try await Self.waitForSettle(
                 initialDelay: initialSettleDelay, interval: pollInterval, timeout: settleTimeout,
                 snapshot: { Self.frames(of: StatusWindowParser.windows(withIDs: known)) },
@@ -317,15 +329,50 @@ public final class ItemMover {
     /// spike).
     nonisolated static let windowIDField = CGEventField(rawValue: 0x33)!
 
-    /// Called on a background thread (it uses `usleep`) so Frost's own main thread can handle the events. The
-    /// cursor is restored afterwards.
-    nonisolated static func postCommandDrag(windowID: CGWindowID, mouseDown down: CGPoint, mouseUp up: CGPoint) {
+    /// What `postCommandDrag` did, for the log.
+    struct PostedDrag: Sendable, CustomStringConvertible {
+        /// Milliseconds from the mouse-down until the item was seen lifted (nil: never seen).
+        var liftedAfter: Int?
+        /// Milliseconds from the mouse-down until the mouse-up.
+        var releasedAfter: Int
+        /// Where the mouse-up was posted, and where it would have gone by the frames read before the drag.
+        var mouseUp: CGPoint
+        var plannedMouseUp: CGPoint
+        /// The user pressed a mouse button meanwhile, so the mouse-up was posted right away.
+        var interrupted = false
+
+        var description: String {
+            let lift = liftedAfter.map { "lifted after \($0) ms" } ?? "not seen lifted"
+            return "\(lift), released after \(releasedAfter) ms at x \(Int(mouseUp.x)) (planned \(Int(plannedMouseUp.x)))"
+                + (interrupted ? ", cut short by the user's mouse button" : "")
+        }
+    }
+
+    /// Polling while the synthetic mouse button is down (see `DragRelease`): how often, how long to wait for the item
+    /// to be lifted (measured: about 20 ms, but a mouse-up 50 ms after the mouse-down still came too early about one
+    /// time in four in the VM), and how long the whole drag may take before the mouse-up is posted anyway (the
+    /// on-screen slide takes about 0.4 s).
+    nonisolated static let dragPollMicroseconds: useconds_t = 10_000
+    nonisolated static let liftTimeout: Duration = .milliseconds(600)
+    nonisolated static let releaseTimeout: Duration = .milliseconds(1200)
+
+    /// Called on a background thread (it sleeps between events) so Frost's own main thread can handle the events.
+    /// Posts the mouse-down on the Frost icon, waits until `release` says the item has been lifted (and, if the target
+    /// may slide, that the menu bar has stopped moving), then posts the mouse-up at the target's position at that moment
+    /// (`plannedMouseUp`, computed from the frames before the drag, if the item was never seen lifted). Posts the mouse-up early if the user presses a
+    /// mouse button meanwhile, so a ⌘-drag never overlaps the user's own for long. The cursor is restored afterwards.
+    nonisolated static func postCommandDrag(windowID: CGWindowID, mouseDown down: CGPoint, plannedMouseUp: CGPoint,
+                                            release: DragRelease, watching known: Set<CGWindowID>) -> PostedDrag {
         // Tracked so quitting never exits between the mouse-down and the mouse-up / cursor restore.
-        SyntheticEventGate.posting { postCommandDragNow(windowID: windowID, mouseDown: down, mouseUp: up) }
+        SyntheticEventGate.posting {
+            postCommandDragNow(windowID: windowID, mouseDown: down, plannedMouseUp: plannedMouseUp, release: release,
+                               watching: known)
+        }
     }
 
     private nonisolated static func postCommandDragNow(windowID: CGWindowID, mouseDown down: CGPoint,
-                                                       mouseUp up: CGPoint) {
+                                                       plannedMouseUp: CGPoint, release: DragRelease,
+                                                       watching known: Set<CGWindowID>) -> PostedDrag {
         let source = CGEventSource(stateID: .hidSystemState)
         // Same as Ice: don't suppress local (the user's) mouse and keyboard events while posting synthetic ones.
         if let session = CGEventSource(stateID: .combinedSessionState) {
@@ -345,10 +392,30 @@ public final class ItemMover {
             e.setIntegerValueField(windowIDField, value: Int64(windowID))
             return e
         }
-        guard let downEvent = event(.leftMouseDown, down), let upEvent = event(.leftMouseUp, up) else { return }
+        var report = PostedDrag(releasedAfter: 0, mouseUp: plannedMouseUp, plannedMouseUp: plannedMouseUp)
+        guard let downEvent = event(.leftMouseDown, down) else { return report }
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        func elapsed() -> Int { Int((clock.now - start) / .milliseconds(1)) }
+        var release = release
+        var up = plannedMouseUp
         downEvent.post(tap: .cgSessionEventTap)
-        usleep(50_000)
-        upEvent.post(tap: .cgSessionEventTap)
+        while true {
+            usleep(dragPollMicroseconds)
+            let frames = frames(of: StatusWindowParser.windows(withIDs: known))
+            let ready = release.observe(frames)
+            if release.isLifted, report.liftedAfter == nil { report.liftedAfter = elapsed() }
+            if let point = release.dropPoint(in: frames), release.isLifted { up = point }
+            if ready { break }
+            if UserMouseButtons.isAnyHeld { report.interrupted = true; break }
+            let waited = clock.now - start
+            if waited >= releaseTimeout || (!release.isLifted && waited >= liftTimeout) { break }
+        }
+        report.releasedAfter = elapsed()
+        report.mouseUp = up
+        event(.leftMouseUp, up)?.post(tap: .cgSessionEventTap)
         usleep(20_000)
+        return report
     }
 }

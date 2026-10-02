@@ -168,6 +168,20 @@ Conclusions:
 change). About 1 s later two Control Center layer-500 windows (37×39, probably drag ghosts) were seen at that position;
 a retry a little later succeeded. **ItemMover must keep retries** and wait for frames to settle between attempts.
 
+**Later measurement (VM, macOS 26.6.2; supersedes the fixed 50 ms down → up interval)**: the mouse-down *lifts* the
+dragged item — its window jumps to the cursor (`y` = the menu bar's midY) 13–96 ms after the event, the layer-500 drag
+windows appear ~35 ms later — and the system reserves its slot **at the mouse-down position** (next to the Frost icon).
+The windows between the item's old slot and that slot then slide over by the item's width to close the gap (~0.4 s on
+screen; in the collapsed state the Frost icon itself slid). The mouse-up is placed against those current positions.
+Consequences with the old fixed timing: a mouse-up before the lift is ignored (no move at all; about 1 in 4 at 50 ms,
+2 in 30 at 150 ms, none at 200 ms), and when the target is one of the sliding windows the item lands one slot off
+(moving rightwards within Hidden / from Always Hidden into Hidden ended up right of the target, moving leftwards within
+Visible ended up left of the slot). `ItemMover` now polls the windows while the button is down (`DragRelease`): it
+posts the mouse-up once the item has been lifted, and when the target may slide (it lies between the item and the
+Frost icon) only after the windows have stopped moving, aimed at the target's frame at that moment. Measured over 40+
+layout editor drops: every one landed on the first attempt; moves whose target doesn't slide (the Frost Bar's move out
+and back) still release after 40–70 ms, the others after 300–500 ms.
+
 ## Off-screen moves (both directions): feasible or not, alternatives
 
 - **An off-screen mouse-down routed by position is neither feasible nor safe.** Warping the cursor to X's center

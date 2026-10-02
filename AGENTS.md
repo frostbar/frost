@@ -114,6 +114,11 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
 - AXPress blocks when it opens an NSMenu and returns `.cannotComplete`, but the menu is in fact open — don't add a
   click on top. `com.apple.*` items are always clicked directly with HID CGEvents.
 - After a ⌘-drag the dragged item may get stuck in the "pressed" state; post an extra mouse-up before clicking.
+- A ⌘-drag's mouse-down lifts the item to the cursor and the menu bar slides the windows between its old slot and the
+  mouse-down (the Frost icon) over to close the gap; the mouse-up is placed against those *current* positions. A
+  mouse-up posted at a fixed delay with frames read before the drag is either ignored (before the lift) or lands one
+  slot off (target among the sliding windows). `ItemMover` releases via `DragRelease` (`spike-findings.md`, "Later
+  measurement").
 - Views inside `.glassEffect` don't receive SwiftUI drops (put drop targets outside the glass layer).
 - Cooperative activation (macOS 14+): a forwarded click doesn't count as user intent, so the target app's polite
   `activate()` is refused, and transient popovers therefore don't close on outside clicks. After detecting a

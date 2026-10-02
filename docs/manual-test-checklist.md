@@ -81,6 +81,11 @@ For each item, record: environment (model / displays / macOS version) and result
   and once the real menu bar has moved it the state matches; any failure shows the error toast (the tile never just
   jumps back without one, and never goes blank). The drag image disappears with AppKit's normal end-of-drag fade
   (~0.3 s) and the move starts only after it (it no longer hangs over the drop spot for up to a second).
+- [ ] Drops land exactly where they were dropped on the first try (no error toast, the tile never ends up one slot off),
+  in particular: an item dragged **rightwards** within Hidden or within Always Hidden, an item dragged from Always Hidden
+  into the middle or end of Hidden, and a Visible item dragged **leftwards** past another Visible item. These are the
+  moves whose target slides while the menu bar lifts the item (`DragRelease`); they take about half a second longer
+  than other moves.
 - [ ] VoiceOver: each editor tile is an image labelled "App name — item description" (its own description or title,
   when it has one), with its section and state ("Hidden, doesn't fit in the menu bar") as its value; Frost Bar tiles
   use the same label.

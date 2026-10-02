@@ -1,6 +1,7 @@
 // Run inside the guest: reproduce Frost's "move out, then click" on one status item.
 //   /tmp/guest-moveclick <windowID> <downX> <downY> <dropX> <dropY> [clickX clickY waitMs [clicks]]
-// The move is ItemMover.postCommandDrag (Cmd, field 0x33 = windowID, down -> 50 ms -> up);
+// The move is the old fixed-timing ItemMover.postCommandDrag (Cmd, field 0x33 = windowID, down -> 50 ms -> up;
+// Frost now waits for the lift instead, see DragRelease);
 // the click is ItemClicker.postClick (HID tap, clickState 1, 0x33) after waitMs.
 import CoreGraphics
 import Foundation
