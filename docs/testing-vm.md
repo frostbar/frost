@@ -49,7 +49,9 @@ Environment overrides: `FROST_VM` (VM name, default `frost-test`), `FROST_VM_USE
 - **Image**: `ghcr.io/cirruslabs/macos-tahoe-base:latest` (macOS 26.6.2, build 25G83).
   About 27 GB to download, 50 GB sparse disk, about 33 GB real disk use. Auto-login
   as `admin`/`admin`, passwordless sudo, Remote Login on, tart guest agent installed,
-  **SIP disabled**.
+  **SIP disabled**. A side effect: the guest does not enforce library validation, so a hardened build that a Mac with
+  SIP enabled would refuse to launch (e.g. one missing the self-signed library validation exception, see
+  `docs/releasing.md`, "Hardened Runtime and entitlements") still runs in the VM.
 - **VM config**: 4 CPUs, 8 GB RAM, display 1728×1117 pt (tart config). The guest came
   up at a saved 1024×768@2x mode, so `vm-setup.sh` runs `set-display-mode.swift`
   in the guest to switch permanently to 1728×1117@2x (3456×2234 px framebuffer).

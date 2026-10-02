@@ -1,12 +1,15 @@
 # Releasing Frost
 
 Releases are DMGs on GitHub Releases, signed with the self-signed identity **"Frost Local Signing"** (no Apple
-Developer account, no notarization) and delivered to existing users by **Sparkle 2**.
+Developer account, no notarization) and delivered to existing users by **Sparkle 2**. Every build runs with the
+**Hardened Runtime**, so switching to Developer ID signing and notarization is a configuration change (see
+[Switching to Developer ID and notarization](#switching-to-developer-id-and-notarization)).
 
 ```
 CHANGELOG.md ──▶ scripts/release/release.sh <version> ──▶ build/release/<version>/
-                   bump version → Release build (universal) → codesign + verify
-                   → DMG (dmgbuild) → Sparkle EdDSA signature → appcast.xml
+                   bump version → Release build (universal) → codesign (Hardened Runtime) + verify
+                   → DMG (dmgbuild) → [developer-id: sign, notarize, staple the DMG]
+                   → Sparkle EdDSA signature → appcast.xml
                    → [--publish] commit, tag, push, gh release create
 ```
 
@@ -35,7 +38,8 @@ environment variable of the same name.
 
   This is the same as `git -c credential.helper= -c credential.helper='!gh auth git-credential' push <url> …`;
   the fetch and tag checks of `--publish` use the same URL.
-- **Signing**: `SIGNING_MODE=selfsigned` (default) or `developer-id` (see below).
+- **Signing**: `SIGNING_MODE=selfsigned` (default) or `developer-id` (with `DEVELOPER_ID_NAME`, `TEAM_ID` and
+  `NOTARY_PROFILE`; see [Switching to Developer ID and notarization](#switching-to-developer-id-and-notarization)).
 
 ## Keys and certificates
 
@@ -90,10 +94,49 @@ none). In practice:
 - keep `SUPublicEDKey` and the EdDSA key unchanged, and keep signing with "Frost Local Signing";
 - never ship an unsigned or ad-hoc-signed build (Sparkle refuses to replace a signed app with an unsigned one);
 - the Sparkle helpers inside the framework (Autoupdate, Updater.app, XPC services) are re-signed with the same
-  identity by `release.sh`.
+  identity and the Hardened Runtime by `release.sh`.
 
 Sparkle removes the quarantine attribute from the update it installs, so updated copies open without the
 Gatekeeper "Open Anyway" step.
+
+## Hardened Runtime and entitlements
+
+Notarization requires the Hardened Runtime on every executable, and Frost uses it everywhere already:
+`ENABLE_HARDENED_RUNTIME: YES` in `project.yml` for Debug and Release, and `codesign --options runtime` in
+`release.sh` for the app and each Sparkle helper (both signing modes). Check a build with
+`codesign -dvv Frost.app` (`flags=0x10000(runtime)`) and `codesign -d --entitlements - --xml Frost.app`.
+
+Frost needs **no** Hardened Runtime exception and no resource-access entitlement for what it does:
+
+| Capability | What gates it |
+| --- | --- |
+| Synthesized CGEvents (⌘-drag moves routed through field `0x33`, clicks posted to the HID or session tap) | TCC: Accessibility (and the PostEvent grant macOS records for it); no entitlement |
+| Accessibility API on other apps (`AXUIElement` reads, `AXPress`) | TCC: Accessibility |
+| ScreenCaptureKit captures, window titles from `CGWindowList` | TCC: Screen Recording |
+| Private window-list / CGS calls | none used |
+| Apple Events, JIT, `DYLD_*` variables | none used (the `FROST_TEST_*` hooks are plain environment variables) |
+| Sparkle updates (non-sandboxed host) | nothing in the host app; Downloader.xpc keeps its own (empty) entitlements via `--preserve-metadata=entitlements` |
+
+Two entitlements files, chosen by the signing identity (each documents itself in comments):
+
+- `Frost/Resources/Frost.entitlements` (Developer ID): `com.apple.security.app-sandbox = false` only.
+- `Frost/Resources/Frost-SelfSigned.entitlements` (every Xcode build, `SIGNING_MODE=selfsigned`): the same plus
+  `com.apple.security.cs.disable-library-validation`. Library validation only lets a hardened process load code
+  signed by Apple or by its own **Team ID**, and a self-signed certificate has no Team ID: even Sparkle.framework
+  signed with the very same certificate is rejected ("mapping process and mapped file (non-platform) have different
+  Team IDs") and Frost would not launch. With a Developer ID certificate the app and the framework share the Team ID,
+  so `release.sh` signs Developer ID releases with `Frost.entitlements` and the exception disappears.
+
+`release.sh` checks the result: every Mach-O file in the bundle is signed by the release identity with the runtime
+flag (for Developer ID also with the Team ID and a secure timestamp), the app has no `get-task-allow`, and its runtime
+exceptions are exactly those of the mode's entitlements file.
+
+Debug builds keep the Hardened Runtime too, so tests in the VM run under the same restrictions as releases; Xcode
+still injects `com.apple.security.get-task-allow` into Debug builds (lldb can attach), and the Debug-only
+`Frost.debug.dylib` is covered by the same library validation exception. **The test VM can't catch library
+validation problems**: it runs with SIP disabled, where library validation isn't enforced. That the exception is
+needed (and sufficient) was measured on a Mac with SIP enabled with a command-line probe that loads the release's
+Sparkle.framework, not by launching Frost.
 
 ## Making a release
 
@@ -155,25 +198,123 @@ Never test on the host desktop (see `AGENTS.md`).
 
 3. Launch Frost, choose **Check for Updates…** from the snowflake's right-click menu, install, relaunch, and check
    the version in Settings → About, that permissions are still granted, and that `xattr /Applications/Frost.app`
-   shows no quarantine.
+   shows no quarantine. `codesign -dvv /Applications/Frost.app` should still show `flags=0x10000(runtime)`.
 4. `defaults delete dev.frost.Frost SUFeedURL` afterwards.
 
-## Optional: Developer ID and notarization (untested)
+## Switching to Developer ID and notarization
 
-With an Apple Developer account, set in the environment (or `config.sh`):
+Everything is in place; once the Apple Developer Program membership is active, the switch is configuration only.
+Until a real certificate exists the path can't run end to end; it was exercised with stand-ins for the certificate,
+`notarytool`, `stapler` and `spctl` (signing order and flags, verification, notary rejection with its log, stapling
+before the EdDSA signature).
+
+### One-time setup
+
+1. **Create the certificate.** Xcode → Settings → Accounts → add the Apple ID of the developer account → select the
+   team → **Manage Certificates…** → **+** → **Developer ID Application** (only the account holder can create it). It
+   lands in the login keychain. Check it, and read the Team ID (the 10 characters in parentheses):
+
+   ```sh
+   security find-identity -v -p codesigning   # "Developer ID Application: <Name> (<TEAMID>)"
+   ```
+
+   Back it up like the self-signed one: Keychain Access → My Certificates → export it **with its private key** as a
+   password-protected `.p12`, stored outside the repository. Never commit it.
+2. **Store the notary credentials** in the keychain under the profile name `frost-notary`. Create an app-specific
+   password at account.apple.com → Sign-In and Security → App-Specific Passwords, then:
+
+   ```sh
+   xcrun notarytool store-credentials frost-notary --apple-id <apple id> --team-id <TEAMID>
+   # prompts for the app-specific password; an App Store Connect API key works too (--key, --key-id, --issuer)
+   ```
+
+3. **Configure** [`scripts/release/config.sh`](../scripts/release/config.sh) (or the environment): set
+   `SIGNING_MODE` to `developer-id`, `DEVELOPER_ID_NAME` to the name and `TEAM_ID` to the Team ID exactly as in the
+   certificate's name (both are public: they are part of every signed app). `DEVELOPER_ID_IDENTITY` is derived from
+   them; `NOTARY_PROFILE` defaults to `frost-notary`.
+4. **Validate** without building or submitting anything:
+
+   ```sh
+   scripts/release/release.sh --dry-run-notarize
+   ```
+
+   It checks that `TEAM_ID` looks right, the identity is valid in the keychain and belongs to `TEAM_ID`, `notarytool`
+   and `stapler` are available, and the notary credentials work (`notarytool history`), then prints the plan.
+5. Keep `SUPublicEDKey` and the Sparkle EdDSA key unchanged: they are what lets existing self-signed installs accept
+   the first Developer ID release (below). Local Xcode builds (`make build`, `make vm-deploy`) keep using
+   "Frost Local Signing"; that is fine.
+
+### What a Developer ID release does
+
+`scripts/release/release.sh <version>` in `developer-id` mode follows Apple's flow for apps distributed in a disk
+image:
+
+1. builds the Release app with the Developer ID identity, then re-signs inside-out (Sparkle's Installer.xpc,
+   Downloader.xpc with `--preserve-metadata=entitlements`, Autoupdate, Updater.app, Sparkle.framework, then Frost.app
+   with `Frost.entitlements`) with `--options runtime --timestamp`; no `--deep`;
+2. verifies with `codesign --verify --deep --strict` and checks every executable for the identity, Team ID, runtime
+   flag and secure timestamp, and the entitlements (no `get-task-allow`, no runtime exceptions);
+3. builds the DMG and signs it (`codesign --timestamp`);
+4. submits the **DMG** with `xcrun notarytool submit --keychain-profile frost-notary --wait`; the notary log is
+   always saved to `build/release/<version>/notarization/notary-log.json`, and a rejected submission stops the
+   release with the log printed (it lists every problem with its path);
+5. staples the ticket to the DMG (`xcrun stapler staple`), checks it with `stapler validate` and
+   `spctl -a -t open --context context:primary-signature` (must say `source=Notarized Developer ID`), mounts it and
+   checks the app inside with `spctl -a -t exec`;
+6. only then computes the Sparkle EdDSA signature: stapling modifies the DMG, so the appcast must describe the
+   stapled file. The stapled DMG is both the download and Sparkle's update archive.
+
+The app itself is not notarized or stapled separately: the notary service checks everything inside the DMG and the
+ticket covers all of its code. A copy dragged to /Applications passes Gatekeeper through the online ticket lookup,
+and offline as well once the stapled DMG has been opened on that Mac. Sparkle updates don't go through Gatekeeper at
+all (Sparkle removes the quarantine attribute).
+
+### The first notarized release
+
+1. `scripts/release/release.sh <version>` and look at the output (the notarization step takes a few minutes).
+2. Test the update in the VM from the last self-signed release to the new one (see
+   [Testing an update in the VM](#testing-an-update-in-the-vm)). The new signature has a different designated
+   requirement, so the VM's TCC rows no longer match: run `scripts/vm/vm-grant-tcc.sh` after the update (it reads
+   the requirement from the installed app). Before that, check that Frost reports the permissions as missing.
+3. Update `README.md`: the installation steps about "Open Anyway" and `xattr` no longer apply to notarized
+   releases; downloading, opening the DMG and dragging Frost to Applications is enough.
+4. Write the release notes with the permission note below, then publish with `--publish`.
+
+### Permissions after the switch (one time, for every user)
+
+macOS remembers Accessibility and Screen Recording grants by the app's **designated requirement**. A self-signed
+build's requirement pins the certificate (`certificate leaf = H"…"`); a Developer ID build's requirement is Apple's
+anchor plus the Team ID. Sparkle installs the first Developer ID release fine (its EdDSA signature verifies against
+the unchanged `SUPublicEDKey`), but after that update macOS treats Frost as a different app:
+
+- Frost relaunches without its permissions: hiding and showing keep working, the Frost Bar and the layout editor ask
+  for the permissions again (the About tab shows **Grant**).
+- System Settings → Privacy & Security still lists Frost under Accessibility and Screen & System Audio Recording,
+  possibly switched on, but those entries belong to the old signature. Remove Frost from both lists (select it,
+  **−**) and grant again through Frost, or switch the entry off and on. Screen Recording takes effect after
+  relaunching Frost. In Terminal: `tccutil reset Accessibility dev.frost.Frost` and
+  `tccutil reset ScreenCapture dev.frost.Frost`, then grant again.
+
+This happens exactly once. The Developer ID requirement names the Team ID rather than one certificate, so later
+releases, including ones signed with a renewed Developer ID certificate, keep the grants. Say so in the first
+notarized release's notes (they appear in Sparkle's update window).
+
+### Verifying a notarized DMG on a clean Mac
+
+On a Mac (or a fresh VM) that has never run Frost, download the DMG from the GitHub release with a browser (so it
+carries the quarantine attribute), then:
 
 ```sh
-SIGNING_MODE=developer-id
-DEVELOPER_ID_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-DEVELOPMENT_TEAM_ID=TEAMID
-NOTARY_PROFILE=frost-notary   # created once with: xcrun notarytool store-credentials frost-notary --apple-id … --team-id …
+spctl -a -t open --context context:primary-signature -v Frost-<version>.dmg   # accepted, source=Notarized Developer ID
+xcrun stapler validate Frost-<version>.dmg                                    # The validate action worked!
+hdiutil attach Frost-<version>.dmg
+spctl -a -t exec -vv /Volumes/Frost/Frost.app                                 # accepted, source=Notarized Developer ID
+codesign -dvv /Volumes/Frost/Frost.app     # flags=0x10000(runtime), TeamIdentifier=<TEAMID>, Timestamp=…
 ```
 
-`release.sh` then builds with the hardened runtime, signs with `--options runtime --timestamp`, signs the DMG,
-submits it with `notarytool --wait`, staples it and checks it with `spctl` before the EdDSA signature is made. This
-path has not been exercised yet. Switching identities is a one-time change for users: Sparkle accepts the update
-because the EdDSA key is unchanged, but macOS sees a new code signature, so Accessibility and Screen Recording must be
-granted again once.
+Then drag Frost to Applications and open it: macOS shows only the usual "downloaded from the Internet" confirmation,
+with no trip to Privacy & Security. For the stapled ticket, repeat with the network disconnected before opening the
+DMG. (`stapler validate` on the app inside reports no ticket; that is expected, only the DMG is stapled.)
 
 ## Repository protection
 

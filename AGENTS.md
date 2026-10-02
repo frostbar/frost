@@ -145,6 +145,11 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
 - Don't grab the VNC framebuffer while doing timing or frame-by-frame checks in the VM: it slows the guest down
   (the clock skips seconds, refreshes show 0.5–0.8 s outliers). `screencapture -v` only emits frames when the image
   changes, so it can't tell whether a clock is on time (use a probe that captures the clock window).
+- Every build runs with the Hardened Runtime. Builds signed with the self-signed certificate need
+  `com.apple.security.cs.disable-library-validation` (`Frost-SelfSigned.entitlements`): it has no Team ID, so library
+  validation would reject Sparkle.framework and Frost would not launch; Developer ID releases use `Frost.entitlements`
+  without it. The VM runs with SIP disabled and does **not** enforce library validation, so it can't catch this
+  (`docs/releasing.md`, "Hardened Runtime and entitlements").
 - Don't put continuously running animations (e.g. `.symbolEffect(.breathe)`) in Frost's windows; one once froze the
   main thread. Use one-shot effects only.
 
