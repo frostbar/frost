@@ -30,12 +30,6 @@ struct AboutView: View {
                 Text("Hiding and showing icons doesn’t require any permissions.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-
-                if let copyright = Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String {
-                    Text(copyright)
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
