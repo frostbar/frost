@@ -4,6 +4,7 @@ public struct AXItemInfo: Hashable, Sendable {
     public let bundleID: String
     public let pid: pid_t
     public let frame: CGRect
+    /// The item's AX description, or its AX title when it has no description (text items).
     public let description: String?
 
     public init(bundleID: String, pid: pid_t, frame: CGRect, description: String?) {

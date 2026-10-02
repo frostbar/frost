@@ -15,6 +15,16 @@ extension MenuBarItem {
         let appName = pid.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName }
         return appName ?? description ?? windowTitle
     }
+
+    /// VoiceOver label: the app name followed by the item's own description or title when it has one that says more
+    /// (several items of one app are otherwise indistinguishable), e.g. "Weather — Partly Cloudy".
+    @MainActor var accessibilityName: String {
+        let name = displayName
+        guard let detail = axDescription?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty,
+              detail != name else { return name }
+        return String(localized: "\(name) — \(detail)",
+                      comment: "VoiceOver label of a menu bar icon: the app name, then the icon's own description")
+    }
 }
 
 /// App icons cached by bundle ID, shown for items without a capture (hidden by the notch or not captured yet).

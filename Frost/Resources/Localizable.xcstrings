@@ -23,6 +23,28 @@
         }
       }
     },
+    "%@ — %@" : {
+      "comment" : "VoiceOver label of a menu bar icon: the app name, then the icon's own description",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ — %2$@"
+          }
+        }
+      }
+    },
+    "%@, %@" : {
+      "comment" : "VoiceOver value of an icon in the layout editor: its section, then its state",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@，%2$@"
+          }
+        }
+      }
+    },
     "%lld" : {
       "shouldTranslate" : false
     },
@@ -1107,6 +1129,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "一切就绪"
+          }
+        }
+      }
+    },
+    "doesn’t fit in the menu bar" : {
+      "comment" : "VoiceOver: state of an icon in the layout editor",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "菜单栏空间不足"
+          }
+        }
+      }
+    },
+    "fixed by the system" : {
+      "comment" : "VoiceOver: state of an icon in the layout editor",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由系统固定"
+          }
+        }
+      }
+    },
+    "moving" : {
+      "comment" : "VoiceOver: state of an icon in the layout editor",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在移动"
           }
         }
       }

@@ -48,7 +48,9 @@ public enum AXExtrasReader {
             for child in children {
                 AXUIElementSetMessagingTimeout(child, messagingTimeout)
                 guard let frame = frame(of: child) else { continue }
-                let description: String? = copy(child, kAXDescriptionAttribute)
+                // Icon items usually describe themselves; text items (no image) often have only a title.
+                var description: String? = copy(child, kAXDescriptionAttribute)
+                if description?.isEmpty ?? true { description = copy(child, kAXTitleAttribute) }
                 result.append(AXItemInfo(bundleID: app.bundleID, pid: app.pid, frame: frame, description: description))
             }
         }

@@ -57,10 +57,12 @@ final class FrostBarModel {
         let images = app.capturer.images
         let sizes = app.capturer.sizes
         var names: [CGWindowID: String] = [:]
+        var labels: [CGWindowID: String] = [:]
         var icons: [CGWindowID: NSImage] = [:]
         var widths: [CGWindowID: CGFloat] = [:]
         for item in hidden + alwaysHidden {
             names[item.windowID] = item.displayName
+            labels[item.windowID] = item.accessibilityName
             if images[item.windowID] == nil, let icon = AppIconCache.shared.icon(for: item.bundleID) {
                 icons[item.windowID] = icon
             }
@@ -68,7 +70,7 @@ final class FrostBarModel {
             widths[item.windowID] = tileWidths.hold(item.windowID, width: current)
         }
         return FrostBarState(phase: phase, alwaysHidden: alwaysHidden, hidden: hidden, images: images,
-                             imageSizes: sizes, contentWidths: widths,
+                             imageSizes: sizes, contentWidths: widths, accessibilityLabels: labels,
                              styles: app.capturer.styles, templates: app.capturer.templates, names: names,
                              appIcons: icons, maxWidth: maxWidth, maxHeight: maxHeight,
                              isPresented: isPresented, isRefreshing: isRefreshing,

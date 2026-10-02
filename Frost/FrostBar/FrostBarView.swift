@@ -31,6 +31,8 @@ struct FrostBarState {
     /// session (`TileWidthMemory`), so items whose width keeps changing don't make the panel resize repeatedly. Items
     /// without an entry use their capture width (or frame width).
     var contentWidths: [CGWindowID: CGFloat] = [:]
+    /// VoiceOver label of each tile: app name and the item's own description (`MenuBarItem.accessibilityName`).
+    var accessibilityLabels: [CGWindowID: String] = [:]
     /// Whether each capture is a monochrome glyph or a colored icon (see `GlyphStyle`).
     var styles: [CGWindowID: GlyphStyle]
     /// Template images of monochrome glyphs: tinted with the foreground color so they follow the glass's actual
@@ -278,7 +280,8 @@ struct FrostBarContent: View {
         return FrostBarTile(item: item, image: image, imageSize: state.imageSizes[item.windowID],
                             template: state.templates[item.windowID],
                             appIcon: state.appIcons[item.windowID], plate: plate?.outlinePlateColor, width: width,
-                            name: state.names[item.windowID] ?? item.windowTitle,
+                            accessibilityName: state.accessibilityLabels[item.windowID]
+                                ?? state.names[item.windowID] ?? item.windowTitle,
                             isHovered: hovered == item.windowID,
                             action: { actions.activate(item) })
             .onHover { inside in
@@ -415,7 +418,7 @@ private struct FrostBarTile: View {
     /// template image and need no plate).
     let plate: Color?
     let width: CGFloat
-    let name: String
+    let accessibilityName: String
     let isHovered: Bool
     let action: () -> Void
 
@@ -427,7 +430,7 @@ private struct FrostBarTile: View {
                 .clipped()
         }
         .buttonStyle(TileButtonStyle(isHovered: isHovered, plate: plate))
-        .accessibilityLabel(name)
+        .accessibilityLabel(accessibilityName)
         .accessibilityHint("Opens this icon’s menu")
     }
 }

@@ -221,7 +221,7 @@ private struct SectionBand: View {
         ScrollView(.horizontal) {
             HStack(spacing: Self.tileSpacing) {
                 ForEach(items) { item in
-                    ItemTile(item: item, state: state,
+                    ItemTile(item: item, section: section, state: state,
                              isDragSource: drag.draggingID == item.windowID && drag.targetSection != nil,
                              onDragStart: { drag = LayoutDragState(draggingID: item.windowID) })
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(section)) } action: {
@@ -377,6 +377,7 @@ private struct ItemTile: View {
     static let cornerRadius: CGFloat = 10
 
     let item: MenuBarItem
+    let section: MenuBarSection
     let state: LayoutEditorState
     let isDragSource: Bool
     let onDragStart: () -> Void
@@ -422,7 +423,9 @@ private struct ItemTile: View {
             .animation(.snappy(duration: 0.2), value: isDragSource)
             .help(helpText)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(name)
+            .accessibilityAddTraits(.isImage)
+            .accessibilityLabel(state.accessibilityLabels[item.windowID] ?? name)
+            .accessibilityValue(accessibilityValue)
             .accessibilityHint(item.isMovable ? String(localized: "Drag to move it to another position or section.") : "")
     }
 
@@ -454,6 +457,24 @@ private struct ItemTile: View {
         if isDragSource { return 0.3 }
         if isPending { return 0.6 }
         return 1
+    }
+
+    /// The tile's section and state for VoiceOver, e.g. "Hidden, doesn’t fit in the menu bar".
+    private var accessibilityValue: String {
+        let section = section.editorTitle
+        let detail: String? = if isPending {
+            String(localized: "moving", comment: "VoiceOver: state of an icon in the layout editor")
+        } else if !item.isMovable {
+            String(localized: "fixed by the system", comment: "VoiceOver: state of an icon in the layout editor")
+        } else if isObscured {
+            String(localized: "doesn’t fit in the menu bar",
+                   comment: "VoiceOver: state of an icon in the layout editor")
+        } else {
+            nil
+        }
+        guard let detail else { return section }
+        return String(localized: "\(section), \(detail)",
+                      comment: "VoiceOver value of an icon in the layout editor: its section, then its state")
     }
 
     private var helpText: String {

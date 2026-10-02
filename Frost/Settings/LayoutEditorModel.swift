@@ -229,9 +229,11 @@ final class LayoutEditorModel {
         let layout = layout
         let items = layout.values.flatMap { $0 }
         var names: [CGWindowID: String] = [:]
+        var labels: [CGWindowID: String] = [:]
         var icons: [CGWindowID: NSImage] = [:]
         for item in items {
             names[item.windowID] = item.displayName
+            labels[item.windowID] = item.accessibilityName
             if model.capturer.images[item.windowID] == nil, let icon = AppIconCache.shared.icon(for: item.bundleID) {
                 icons[item.windowID] = icon
             }
@@ -242,7 +244,8 @@ final class LayoutEditorModel {
             : []
         return LayoutEditorState(
             phase: phase, layout: layout, images: model.capturer.images, tones: model.capturer.tones,
-            names: names, appIcons: icons, pending: pending, obscured: obscured, errorMessage: errorMessage,
+            names: names, accessibilityLabels: labels, appIcons: icons, pending: pending, obscured: obscured,
+            errorMessage: errorMessage,
             isRetrying: isActive && fullRefreshSession == session,
             permissions: .init(accessibility: model.permissions.accessibility,
                                screenRecording: model.permissions.screenRecording))
@@ -425,6 +428,8 @@ struct LayoutEditorState {
     var images: [CGWindowID: CGImage]
     var tones: [CGWindowID: GlyphTone]
     var names: [CGWindowID: String]
+    /// VoiceOver labels (`MenuBarItem.accessibilityName`).
+    var accessibilityLabels: [CGWindowID: String] = [:]
     /// App icons for items without a captured image.
     var appIcons: [CGWindowID: NSImage]
     var pending: Set<CGWindowID>
