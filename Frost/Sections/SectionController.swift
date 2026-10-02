@@ -554,19 +554,32 @@ final class SectionController {
         }
         let isContextClick = event.type == .rightMouseUp
             || (event.type == .leftMouseUp && event.modifierFlags.contains(.control))
-        handleIconClick(context: isContextClick, option: event.modifierFlags.contains(.option))
+        handleIconClick(context: isContextClick, option: event.modifierFlags.contains(.option),
+                        screen: clickedScreen(for: event))
     }
 
-    /// Right-click / Control-click -> menu; click -> Frost Bar (per the effective display mode) or toggle
-    /// collapsed <-> expanded; with ⌥ -> expandedAll.
-    private func handleIconClick(context: Bool, option: Bool) {
+    /// The display a click on the Frost icon happened on. After a click on another display's replica, the system can
+    /// deliver the click to the button before it moves the real window to that display (seen in the VM during a
+    /// Frost Bar live refresh round), so the window's screen may still be the previous one; the pointer is where the
+    /// user clicked. Non-mouse actions (e.g. VoiceOver) use the window's screen.
+    private func clickedScreen(for event: NSEvent) -> NSScreen? {
+        let windowScreen = iconItem?.button?.window?.screen
+        guard [.leftMouseUp, .rightMouseUp, .leftMouseDown, .rightMouseDown].contains(event.type) else {
+            return windowScreen
+        }
+        let pointer = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? windowScreen
+    }
+
+    /// Right-click / Control-click -> menu; click -> Frost Bar (per the effective display mode of `screen`, the display
+    /// clicked on) or toggle collapsed <-> expanded; with ⌥ -> expandedAll.
+    private func handleIconClick(context: Bool, option: Bool, screen: NSScreen?) {
         if context {
             showMenu()
             return
         }
         guard !isEditing else { return }
-        let mode = preferences.effectiveDisplayMode(for: iconItem?.button?.window?.screen,
-                                                    permissionsGranted: permissions.allGranted)
+        let mode = preferences.effectiveDisplayMode(for: screen, permissionsGranted: permissions.allGranted)
         if mode == .frostBar {
             model?.toggleFrostBar(option)
             return
@@ -746,7 +759,8 @@ final class SectionController {
         let current = iconWindow?.screen.map(Self.displayID(of:)) ?? 0
         FrostLog.sections.notice(
             "click on the Frost icon replica on display \(click.displayID) did not reach the button; handling it (icon on display \(current))")
-        handleIconClick(context: click.isContextClick, option: click.option)
+        let screen = NSScreen.screens.first { Self.displayID(of: $0) == click.displayID } ?? iconWindow?.screen
+        handleIconClick(context: click.isContextClick, option: click.option, screen: screen)
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
