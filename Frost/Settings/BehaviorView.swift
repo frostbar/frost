@@ -2,7 +2,8 @@ import FrostCore
 import ServiceManagement
 import SwiftUI
 
-/// Behavior tab: launch at login, automatic rehide, display mode, automatic update checks.
+/// Behavior tab: launch at login, automatic rehide, display mode, keeping icons in their sections, automatic update
+/// checks.
 struct BehaviorView: View {
     @Environment(AppModel.self) private var model
 
@@ -45,6 +46,15 @@ struct BehaviorView: View {
                     if preferences.displayMode != .inline && !model.permissions.allGranted {
                         InlineNotice(text: String(localized: "The Frost Bar needs Accessibility and Screen Recording permissions. Until they’re granted, hidden icons expand in the menu bar."),
                                      symbol: "info.circle.fill", tint: .orange)
+                    }
+                }
+
+                GlassCard {
+                    SettingRow(symbol: "pin", tint: .orange, title: String(localized: "Keep icons in their sections"),
+                               subtitle: String(localized: "When an app relaunches and macOS puts its icon in another section, move it back.")) {
+                        Toggle("Keep icons in their sections", isOn: $preferences.keepItemSections)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
                     }
                 }
 

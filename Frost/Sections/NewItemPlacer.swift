@@ -2,28 +2,41 @@ import AppKit
 import FrostCore
 import Observation
 
-/// Moves new apps' icons from the Always Hidden section to the Hidden section (rules in `NewItemPlacement`).
+/// Places icons the system adds to the menu bar: moves new apps' icons from the Always Hidden section to the Hidden
+/// section (rules in `NewItemPlacement`), and moves an icon its app re-added in another section back into the section
+/// the user keeps it in (rules in `SectionKeeper`).
 ///
 /// A new icon has no Preferred Position, so the system places it leftmost of all status items, i.e. left of the AH
 /// separator, where the user can't see it in the menu bar or in the Frost Bar (without ⌥). Seen icons (`ItemIdentity`)
 /// are persisted in UserDefaults; the first successful scan marks every current icon as seen. On Frost's very first run,
 /// the icons already in Always Hidden are moved to Hidden instead (see `NewItemPlacement`).
 ///
-/// Decides and moves only when the layout is trustworthy and the user won't be disturbed: all permissions granted,
-/// collapsed, not editing, no move transaction, no mouse button held (`UserMouseButtons`).
+/// An app whose icon has no stable autosave name (or whose saved position is lost) gets it re-added the same way when it
+/// relaunches. The section of every icon is remembered (persisted, `SectionKeeper`): seeded from what Frost sees, and
+/// updated when the user moves an icon (a layout editor drop reports it through `recordDrop`; a ⌘-drag in the menu bar is
+/// seen as the same window changing section without Frost moving it). When a window Frost hasn't seen in this run shows
+/// up in another section, it is moved back, unless the user turned "Keep icons in their sections" off.
+///
+/// Observes only when the layout is trustworthy: all permissions granted, not editing, no move transaction, no mouse
+/// button held (`UserMouseButtons`), and neither separator under the notch (collapsed or expanded). Moves only when the
+/// user won't be disturbed: collapsed, user present, the Frost Bar closed and not forwarding a click (`isPaused`).
 /// Retries later when moving isn't convenient (checked again before each item of a batch); a failed move is only logged
-/// (the icon is then marked as seen, no retries).
+/// (no retries).
 @MainActor
 final class NewItemPlacer {
     private let scanner: MenuBarItemScanner
     private let mover: ItemMover
     private let sections: SectionController
     private let permissions: PermissionsService
+    private let preferences: Preferences
+    private let presence: UserPresenceMonitor
     private let defaults: UserDefaults
 
     private static let knownKey = "knownItemIdentities"
     /// Frost's first run (AH seed just written) with no decision made yet: move existing Always Hidden icons to Hidden.
     private static let firstRunKey = "firstRunPlacementPending"
+    /// The remembered section of each icon (`SectionKeeper.encode`); the suffix is the format version.
+    private static let sectionsKey = "itemSections.v1"
 
     /// Called by SectionController when it first writes the AH seed.
     static func markFirstRun(defaults: UserDefaults) {
@@ -38,11 +51,18 @@ final class NewItemPlacer {
     }
     private static let debounce: Duration = .milliseconds(500)
     private static let retryDelay: Duration = .seconds(2)
+    /// At most this many moves per move transaction; the rest follow after `retryDelay`, so a long batch (e.g. at login)
+    /// never holds the mover for long.
+    private static let maxMovesPerBatch = 5
 
     /// Icons seen so far; nil means the first scan hasn't happened yet (seeded on the next decision).
     private var known: Set<ItemIdentity>?
     /// Windows already handled during this run (see `NewItemPlacement.decide`).
     private var considered: Set<CGWindowID> = []
+    /// The remembered sections and this run's observations.
+    private var keeper: SectionKeeper
+    /// Identities already logged as ambiguous (logged once each).
+    private var loggedAmbiguous: Set<ItemIdentity> = []
     /// A full ownership read happened before seeding (otherwise most icons have no owner yet and seeding is incomplete).
     private var refreshedForSeeding = false
     private var evaluateTask: Task<Void, Never>?
@@ -51,14 +71,25 @@ final class NewItemPlacer {
     /// batch). Set by the app delegate.
     var isPaused: () -> Bool = { false }
 
-    init(scanner: MenuBarItemScanner, mover: ItemMover, sections: SectionController,
-         permissions: PermissionsService, defaults: UserDefaults = .standard) {
+    init(scanner: MenuBarItemScanner, mover: ItemMover, sections: SectionController, permissions: PermissionsService,
+         preferences: Preferences, presence: UserPresenceMonitor, defaults: UserDefaults = .standard) {
         self.scanner = scanner
         self.mover = mover
         self.sections = sections
         self.permissions = permissions
+        self.preferences = preferences
+        self.presence = presence
         self.defaults = defaults
         known = defaults.data(forKey: Self.knownKey).flatMap { try? NewItemPlacement.decode($0) }
+        var memory: [ItemIdentity: MenuBarSection] = [:]
+        if let data = defaults.data(forKey: Self.sectionsKey) {
+            do {
+                memory = try SectionKeeper.decode(data)
+            } catch {
+                FrostLog.newItems.error("failed to read the remembered sections: \(error, privacy: .public)")
+            }
+        }
+        keeper = SectionKeeper(memory: memory)
     }
 
     func start() {
@@ -66,13 +97,15 @@ final class NewItemPlacer {
         schedule(after: Self.debounce)
     }
 
-    /// Re-decides (debounced) when the scan results, section state, or permissions change.
+    /// Re-decides (debounced) when the scan results, section state, permissions, presence or the setting change.
     private func observe() {
         withObservationTracking {
             _ = scanner.items
             _ = sections.state
             _ = sections.isEditing
             _ = permissions.allGranted
+            _ = presence.isAway
+            _ = preferences.keepItemSections
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -90,10 +123,12 @@ final class NewItemPlacer {
         }
     }
 
-    /// Layout is trustworthy: all permissions granted (titles and owners readable), scan OK, collapsed, not editing.
-    /// `observe` re-triggers a decision when any of these change.
-    private var layoutIsTrustworthy: Bool {
-        permissions.allGranted && scanner.status == .ok && sections.state == .collapsed && !sections.isEditing
+    /// A move to make: a new icon to Hidden, or a re-added icon back to its remembered section.
+    private struct Placement {
+        enum Kind { case new, restore }
+        let item: MenuBarItem
+        let section: MenuBarSection
+        let kind: Kind
     }
 
     private func evaluate() async {
@@ -102,66 +137,148 @@ final class NewItemPlacer {
             await scanner.refreshOwnership()
             refreshedForSeeding = true
         }
-        guard layoutIsTrustworthy, let controls = sections.controlWindows else { return }
+        // All permissions granted (titles and owners readable), scan OK, not editing; `observe` re-triggers a decision
+        // when any of these change.
+        guard scanner.status == .ok, !sections.isEditing, !presence.isAway,
+              let controls = sections.controlWindows else { return }
         guard !mover.isBusy, !UserMouseButtons.isAnyHeld, !isPaused() else {
-            // Not a good time to move (another move transaction running, mouse held down, the Frost Bar open): check
-            // again later.
+            // Not a good time to look or move (another move transaction running, mouse held down, the Frost Bar open):
+            // check again later.
             schedule(after: Self.retryDelay)
             return
         }
         let layout = SectionAssigner.layout(of: scanner.items, controls: controls)
         guard !layout.isEmpty else { return }
-        let firstRun = known == nil && defaults.bool(forKey: Self.firstRunKey)
-        let decision = NewItemPlacement.decide(layout: layout, known: known, considered: considered,
-                                               firstRun: firstRun)
-        considered = decision.considered
-        remember(decision.learned, seeding: known == nil)
-        defaults.removeObject(forKey: Self.firstRunKey)
-        if firstRun, !decision.toMove.isEmpty {
-            FrostLog.newItems.notice("first run: moving \(decision.toMove.count) pre-existing items from Always Hidden to Hidden")
+        let collapsed = sections.state == .collapsed
+        var placements: [Placement] = []
+
+        // New icons: only collapsed (on a crowded notched display while expanded, items that don't fit get placed left
+        // of AH).
+        if collapsed {
+            let firstRun = known == nil && defaults.bool(forKey: Self.firstRunKey)
+            let decision = NewItemPlacement.decide(layout: layout, known: known, considered: considered,
+                                                   firstRun: firstRun)
+            considered = decision.considered
+            remember(decision.learned, seeding: known == nil)
+            defaults.removeObject(forKey: Self.firstRunKey)
+            if firstRun, !decision.toMove.isEmpty {
+                FrostLog.newItems.notice("first run: moving \(decision.toMove.count) pre-existing items from Always Hidden to Hidden")
+            }
+            placements += decision.toMove.map { Placement(item: $0, section: .hidden, kind: .new) }
         }
-        guard !decision.toMove.isEmpty else { return }
+
+        placements += observeSections(layout: layout, controls: controls, collapsed: collapsed,
+                                      skipping: Set(placements.map(\.item.windowID)))
+        guard !placements.isEmpty else { return }
         // Move in a task that doesn't inherit cancellation: the rescans during the move change `scanner.items`,
         // which triggers `observe` -> `schedule` and cancels `evaluateTask`. If the move were cancelled with it, these
         // items would be marked as seen and stay in Always Hidden forever.
         // Decisions triggered during the move retry later because of `mover.isBusy`.
-        let toMove = decision.toMove
-        await Task { @MainActor in await self.move(toMove, controls: controls) }.value
+        let batch = Array(placements.prefix(Self.maxMovesPerBatch))
+        await Task { @MainActor in await self.move(batch, controls: controls) }.value
+        if placements.count > batch.count, !mover.isShuttingDown { schedule(after: Self.retryDelay) }
     }
 
-    private func move(_ items: [MenuBarItem], controls: FrostControlWindows) async {
-        // Items a move was attempted for (moved or failed): only these are marked as seen. The rest of the batch is
-        // decided again later.
-        var attempted: [MenuBarItem] = []
+    /// Feeds a trustworthy layout to the `SectionKeeper` (records the user's moves, seeds unknown icons) and returns
+    /// the icons to move back into their remembered sections.
+    private func observeSections(layout: MenuBarLayout, controls: FrostControlWindows, collapsed: Bool,
+                                 skipping: Set<CGWindowID>) -> [Placement] {
+        let items = scanner.items
+        let displayBounds = scanner.menuBarDisplay?.frame ?? CGDisplayBounds(CGMainDisplayID())
+        // A separator under the notch (squeezed there while expanded) makes every section boundary unreliable.
+        let separatorsTrusted = [controls.hiddenSeparator, controls.alwaysHiddenSeparator].allSatisfy { id in
+            items.first { $0.windowID == id }
+                .map { SectionKeeper.separatorIsReliable($0, displayBounds: displayBounds) } ?? false
+        }
+        guard separatorsTrusted else { return [] }
+        let obscured = Set(items.filter { ItemMover.isObscured($0, displayBounds: displayBounds) }.map(\.windowID))
+        let outcome = keeper.observe(layout: layout, obscured: obscured, movedByFrost: mover.takeMovedWindowIDs(),
+                                     skipping: skipping, restoreEnabled: preferences.keepItemSections,
+                                     canMove: collapsed && !mover.isShuttingDown)
+        for move in outcome.userMoves {
+            FrostLog.newItems.notice("""
+                remembering \(move.identity.bundleID, privacy: .public) \
+                (\(move.identity.title, privacy: .private)) in \(move.to.rawValue, privacy: .public): \
+                moved by the user from \(move.from.rawValue, privacy: .public)
+                """)
+        }
+        if !outcome.seeded.isEmpty {
+            FrostLog.newItems.notice("remembering the sections of \(outcome.seeded.count) item(s) seen for the first time")
+        }
+        for identity in outcome.ambiguous.subtracting(loggedAmbiguous) {
+            FrostLog.newItems.notice("""
+                several items of \(identity.bundleID, privacy: .public) share the title \
+                \(identity.title, privacy: .private): not keeping their sections
+                """)
+        }
+        loggedAmbiguous = outcome.ambiguous
+        if outcome.memoryChanged { saveSections() }
+        return outcome.restores.map { Placement(item: $0.item, section: $0.to, kind: .restore) }
+    }
+
+    /// The user dropped `item` into `section` in the layout editor and the move succeeded: remember it.
+    func recordDrop(_ item: MenuBarItem, in section: MenuBarSection) {
+        guard keeper.record(item, in: section, among: scanner.items) else {
+            FrostLog.newItems.notice("""
+                not remembering the section of dropped item \(item.windowID): \
+                its identity is unknown or shared with another item
+                """)
+            return
+        }
+        FrostLog.newItems.notice("""
+            remembering \(item.identity.bundleID, privacy: .public) (\(item.windowTitle, privacy: .private)) \
+            in \(section.rawValue, privacy: .public): dropped in the layout editor
+            """)
+        saveSections()
+    }
+
+    private func move(_ placements: [Placement], controls: FrostControlWindows) async {
+        // Placements a move was attempted for (moved or failed): only these are marked as seen / checked. The rest of
+        // the batch is decided again later.
+        var attempted: [Placement] = []
+        var moved: [Placement] = []
         do {
             try await mover.transaction {
-                for item in items {
+                for placement in placements {
+                    let item = placement.item
                     // Re-checked before every item: a batch takes about a second per item, and a ⌘-drag must never
                     // start while the user holds a mouse button.
                     if let reason = Self.stopReason(isShuttingDown: mover.isShuttingDown,
                                                     isMouseButtonPressed: UserMouseButtons.isAnyHeld,
-                                                    isPaused: isPaused()) {
-                        FrostLog.newItems.notice("stopped placing new items (\(reason, privacy: .public)); the rest are retried later")
+                                                    isPaused: isPaused(), isAway: presence.isAway) {
+                        FrostLog.newItems.notice("stopped placing items (\(reason, privacy: .public)); the rest are retried later")
                         break
                     }
-                    attempted.append(item)
+                    attempted.append(placement)
                     do {
-                        try await mover.move(item.windowID, to: .leftOf(controls.hiddenSeparator))
-                        FrostLog.newItems.notice("moved new item \(item.identity.bundleID, privacy: .public) out of Always Hidden")
+                        try await mover.move(item.windowID,
+                                             to: SectionKeeper.destination(for: placement.section, controls: controls))
+                        moved.append(placement)
+                        switch placement.kind {
+                        case .new:
+                            FrostLog.newItems.notice("moved new item \(item.identity.bundleID, privacy: .public) out of Always Hidden")
+                        case .restore:
+                            FrostLog.newItems.notice("""
+                                moved \(item.identity.bundleID, privacy: .public) (\(item.windowTitle, privacy: .private)) \
+                                back to \(placement.section.rawValue, privacy: .public): its app re-added it elsewhere
+                                """)
+                        }
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch ItemMoveError.mouseButtonHeld {
                         // The user held a mouse button throughout: nothing was posted; retry this one later too.
                         attempted.removeLast()
-                        FrostLog.newItems.notice("stopped placing new items (a mouse button is held); the rest are retried later")
+                        FrostLog.newItems.notice("stopped placing items (a mouse button is held); the rest are retried later")
                         break
                     } catch ItemMoveError.controlsDisturbed {
                         // Frost's own icons were dragged (routing fell back to position): stop moving the rest.
-                        FrostLog.newItems.error("stopped placing new items: Frost's controls were disturbed")
+                        FrostLog.newItems.error("stopped placing items: Frost's controls were disturbed")
                         break
                     } catch {
-                        FrostLog.newItems.error(
-                            "failed to move new item \(item.identity.bundleID, privacy: .public) out of Always Hidden: \(error, privacy: .public)")
+                        FrostLog.newItems.error("""
+                            failed to move \(item.identity.bundleID, privacy: .public) to \
+                            \(placement.section.rawValue, privacy: .public): \(error, privacy: .public)
+                            """)
                     }
                 }
             }
@@ -177,18 +294,26 @@ final class NewItemPlacer {
             schedule(after: Self.retryDelay)
             return
         } catch {
-            FrostLog.newItems.error("placing new items failed: \(error, privacy: .public)")
+            FrostLog.newItems.error("placing items failed: \(error, privacy: .public)")
         }
-        considered.formUnion(attempted.map(\.windowID))
-        remember(Set(attempted.compactMap(NewItemPlacement.identity(of:))), seeding: false)
-        if attempted.count < items.count, !mover.isShuttingDown { schedule(after: Self.retryDelay) }
+        let newItems = attempted.filter { $0.kind == .new }.map(\.item)
+        considered.formUnion(newItems.map(\.windowID))
+        remember(Set(newItems.compactMap(NewItemPlacement.identity(of:))), seeding: false)
+        for placement in attempted where placement.kind == .restore { keeper.restoreAttempted(placement.item.windowID) }
+        // A new icon Frost placed in Hidden belongs there until the user moves it.
+        let placedNew = moved.filter { $0.kind == .new }
+        for placement in placedNew { keeper.record(placement.item, in: placement.section, among: scanner.items) }
+        if !placedNew.isEmpty { saveSections() }
+        if attempted.count < placements.count, !mover.isShuttingDown { schedule(after: Self.retryDelay) }
     }
 
     /// Why the rest of a batch must wait (nil = go on with the next item).
-    private static func stopReason(isShuttingDown: Bool, isMouseButtonPressed: Bool, isPaused: Bool) -> String? {
+    private static func stopReason(isShuttingDown: Bool, isMouseButtonPressed: Bool, isPaused: Bool,
+                                   isAway: Bool) -> String? {
         if isShuttingDown { return "Frost is quitting" }
         if isMouseButtonPressed { return "a mouse button is held" }
         if isPaused { return "the Frost Bar is open or forwarding a click" }
+        if isAway { return "the user is away" }
         return nil
     }
 
@@ -201,6 +326,14 @@ final class NewItemPlacer {
             defaults.set(try NewItemPlacement.encode(updated), forKey: Self.knownKey)
         } catch {
             FrostLog.newItems.error("failed to save known items: \(error, privacy: .public)")
+        }
+    }
+
+    private func saveSections() {
+        do {
+            defaults.set(try SectionKeeper.encode(keeper.memory), forKey: Self.sectionsKey)
+        } catch {
+            FrostLog.newItems.error("failed to save the remembered sections: \(error, privacy: .public)")
         }
     }
 }

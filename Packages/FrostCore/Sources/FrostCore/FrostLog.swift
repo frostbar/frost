@@ -31,6 +31,6 @@ public enum FrostLog {
     public static let activation = Logger(subsystem: subsystem, category: "activation")
     /// Layout editor.
     public static let layout = Logger(subsystem: subsystem, category: "layout")
-    /// New item placement.
+    /// New item placement and keeping icons in their sections.
     public static let newItems = Logger(subsystem: subsystem, category: "newitems")
 }

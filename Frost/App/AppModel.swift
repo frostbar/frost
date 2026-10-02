@@ -16,7 +16,8 @@ final class AppModel {
     let updates: UpdateController
     /// Whether the user is at the Mac (display sleep, screen lock, session switch).
     let presence: UserPresenceMonitor
-    /// Moves icons that new apps place in the Always Hidden section into the Hidden section.
+    /// Moves icons that new apps place in the Always Hidden section into the Hidden section, and icons re-added in
+    /// another section back into the section the user keeps them in.
     @ObservationIgnored let newItems: NewItemPlacer
 
     /// Opens the settings window on the given tab (nil keeps the current tab). Set by AppDelegate.
@@ -36,9 +37,10 @@ final class AppModel {
         capturer = ItemImageCapturer()
         mover = ItemMover(scanner: scanner)
         sections = SectionController(preferences: preferences, permissions: permissions, scanner: scanner)
-        newItems = NewItemPlacer(scanner: scanner, mover: mover, sections: sections, permissions: permissions)
-        updates = UpdateController()
         presence = UserPresenceMonitor()
+        newItems = NewItemPlacer(scanner: scanner, mover: mover, sections: sections, permissions: permissions,
+                                 preferences: preferences, presence: presence)
+        updates = UpdateController()
         sections.model = self
         mover.controlWindows = { [weak sections] in sections?.controlWindows }
         mover.syntheticDragActive = { [weak sections] active in sections?.suppressIconHighlight(active) }

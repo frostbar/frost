@@ -19,6 +19,7 @@ final class Preferences {
         static let autoRehideDelay = "autoRehideDelay"
         static let displayMode = "displayMode"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
+        static let keepItemSections = "keepItemSections"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -40,12 +41,19 @@ final class Preferences {
         didSet { defaults.set(hasCompletedOnboarding, forKey: Key.hasCompletedOnboarding) }
     }
 
+    /// Move an icon back into the section the user keeps it in when its app relaunches and the system re-adds it
+    /// elsewhere (`SectionKeeper`).
+    var keepItemSections: Bool {
+        didSet { defaults.set(keepItemSections, forKey: Key.keepItemSections) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         autoRehide = defaults.object(forKey: Key.autoRehide) as? Bool ?? true
         autoRehideDelay = defaults.object(forKey: Key.autoRehideDelay) as? Double ?? 15
         displayMode = defaults.string(forKey: Key.displayMode).flatMap(DisplayMode.init(rawValue:)) ?? .automatic
         hasCompletedOnboarding = defaults.object(forKey: Key.hasCompletedOnboarding) as? Bool ?? false
+        keepItemSections = defaults.object(forKey: Key.keepItemSections) as? Bool ?? true
     }
 
     /// The display mode in effect: always in place without permissions (basic hide/show needs none, the Frost Bar

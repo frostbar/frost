@@ -70,6 +70,16 @@ public final class ItemMover {
     /// Attempts per move once shutting down (instead of `maxAttempts`).
     public var shutdownMaxAttempts = 1
 
+    /// Windows this mover posted a ⌘-drag for since the last `takeMovedWindowIDs()`. Section changes of these windows
+    /// were Frost's doing, not the user's (see `SectionKeeper`).
+    public private(set) var movedWindowIDs: Set<CGWindowID> = []
+
+    /// Returns `movedWindowIDs` and starts over.
+    public func takeMovedWindowIDs() -> Set<CGWindowID> {
+        defer { movedWindowIDs = [] }
+        return movedWindowIDs
+    }
+
     public init(scanner: MenuBarItemScanner) { self.scanner = scanner }
 
     /// Runs a move transaction exclusively; throws `.busy` immediately if one is already in progress (the caller
@@ -146,6 +156,7 @@ public final class ItemMover {
 
             let down = CGPoint(x: icon.frame.midX, y: icon.frame.midY)
             let up = Self.dropPoint(for: destination, targetFrame: target.frame)
+            movedWindowIDs.insert(itemID)
             syntheticDragActive(true)
             defer { syntheticDragActive(false) }
             await Task.detached { Self.postCommandDrag(windowID: itemID, mouseDown: down, mouseUp: up) }.value
