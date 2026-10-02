@@ -10,7 +10,7 @@ import Observation
 /// the icons already in Always Hidden are moved to Hidden instead (see `NewItemPlacement`).
 ///
 /// Decides and moves only when the layout is trustworthy and the user won't be disturbed: all permissions granted,
-/// collapsed, not editing, no move transaction, no mouse button held.
+/// collapsed, not editing, no move transaction, no mouse button held (`UserMouseButtons`).
 /// Retries later when moving isn't convenient (checked again before each item of a batch); a failed move is only logged
 /// (the icon is then marked as seen, no retries).
 @MainActor
@@ -102,7 +102,7 @@ final class NewItemPlacer {
             refreshedForSeeding = true
         }
         guard layoutIsTrustworthy, let controls = sections.controlWindows else { return }
-        guard !mover.isBusy, NSEvent.pressedMouseButtons == 0, !isPaused() else {
+        guard !mover.isBusy, !UserMouseButtons.isAnyHeld, !isPaused() else {
             // Not a good time to move (another move transaction running, mouse held down, the Frost Bar open): check
             // again later.
             schedule(after: Self.retryDelay)
@@ -138,7 +138,7 @@ final class NewItemPlacer {
                     // Re-checked before every item: a batch takes about a second per item, and a ⌘-drag must never
                     // start while the user holds a mouse button.
                     if let reason = Self.stopReason(isShuttingDown: mover.isShuttingDown,
-                                                    isMouseButtonPressed: NSEvent.pressedMouseButtons != 0,
+                                                    isMouseButtonPressed: UserMouseButtons.isAnyHeld,
                                                     isPaused: isPaused()) {
                         FrostLog.newItems.notice("stopped placing new items (\(reason, privacy: .public)); the rest are retried later")
                         break

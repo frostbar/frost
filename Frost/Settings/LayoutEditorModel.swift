@@ -356,9 +356,10 @@ final class LayoutEditorModel {
         let mover = model.mover
         // The drop arrives while AppKit is still ending the drag session: start the ⌘-drag only once it has.
         await Self.waitForDragSessionToEnd()
-        // Another move transaction is running: wait for it (no suspension point between here and `transaction` below,
-        // so no new transaction can slip in).
-        while mover.isBusy, self.session == session, isActive {
+        // Another move transaction is running, or the user holds a mouse button (e.g. already dragging the next tile: a
+        // ⌘-drag must never start then): wait (no suspension point between here and `transaction` below, so no new
+        // transaction can slip in).
+        while mover.isBusy || UserMouseButtons.isAnyHeld, self.session == session, isActive {
             try? await Task.sleep(for: .milliseconds(50))
         }
         guard self.session == session, isActive else { return }
@@ -416,7 +417,7 @@ final class LayoutEditorModel {
     private static func waitForDragSessionToEnd() async {
         let clock = ContinuousClock()
         let deadline = clock.now + dragEndTimeout
-        while clock.now < deadline, NSEvent.pressedMouseButtons != 0 || isDragImageOnScreen() {
+        while clock.now < deadline, UserMouseButtons.isAnyHeld || isDragImageOnScreen() {
             try? await Task.sleep(for: .milliseconds(16))
         }
         try? await Task.sleep(for: dragEndGrace)
