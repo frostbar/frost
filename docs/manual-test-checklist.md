@@ -93,6 +93,10 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] When the menu bar can't be read / Frost's separator can't be found: the placeholder says it is retrying
   automatically (progress is shown only briefly while a retry runs), it retries about every 3 seconds, and the editor
   appears automatically once it recovers.
+- [ ] **Rapid drags**: drop an icon and start dragging the next one right away (within half a second), several times:
+  a pending move waits until the mouse button is released (log `waiting for the mouse button to be released`, or the
+  drop simply queues), no icon is ever carried along with your drag or dropped off the menu bar (no "Remove" badge),
+  and the mouse button is not left pressed afterwards.
 - [ ] Leaving the Layout tab or closing the Settings window: the menu bar leaves editing state and collapses (when
   switching tabs, only after the cross-fade has finished, so the fade doesn't stutter).
 - [ ] **Covered or away**: with the Layout tab open, cover the Settings window completely (e.g. move it to another
