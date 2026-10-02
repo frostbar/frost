@@ -589,6 +589,9 @@ final class SectionController {
             title: String(localized: "Settings…", comment: "Frost icon context menu item"),
             action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
+        // Every item gets its own symbol so the titles line up (the system adds one automatically only to some
+        // standard items, and only for some languages).
+        settings.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
         menu.addItem(settings)
         let update: NSMenuItem
         if model?.updates.pendingUpdateVersion != nil {
@@ -603,8 +606,6 @@ final class SectionController {
                 title: String(localized: "Check for Updates…", comment: "Frost icon context menu item"),
                 action: #selector(checkForUpdates), keyEquivalent: "")
             update.isEnabled = model?.updates.canCheckForUpdates ?? false
-            // The system adds icons automatically only to standard items like "Settings…"; give this one an icon too
-            // so the titles line up.
             update.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
         }
         update.target = self
@@ -614,6 +615,7 @@ final class SectionController {
             title: String(localized: "Quit Frost", comment: "Frost icon context menu item"),
             action: #selector(quit), keyEquivalent: "q")
         quit.target = self
+        quit.image = NSImage(systemSymbolName: "power", accessibilityDescription: nil)
         menu.addItem(quit)
         iconItem.menu = menu
         button.performClick(nil)
