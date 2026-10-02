@@ -24,8 +24,20 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         controller.show()
     }
 
-    /// Size of the tab content area below the toolbar (the same for every tab).
-    static let contentSize = NSSize(width: 640, height: 470)
+    /// Size of the tab content area below the toolbar (the same for every tab): tall enough for every tab's content
+    /// without scrolling at the default text size, in English and zh-Hans. The tallest is Behavior in English while
+    /// permissions are missing (its display mode card then adds a notice): 566 pt measured in the VM.
+    static let contentSize: NSSize = {
+        var size = NSSize(width: 640, height: 570)
+        #if DEBUG
+        // `FROST_TEST_SETTINGS_HEIGHT=<pt>` (VM testing only): another content height, e.g. small enough for the
+        // tabs to scroll, or tall enough to measure their full content.
+        if let value = ProcessInfo.processInfo.environment["FROST_TEST_SETTINGS_HEIGHT"], let height = Double(value) {
+            size.height = height
+        }
+        #endif
+        return size
+    }()
     /// Delay between showing the Layout tab and starting the editor (expanding the menu bar, rescans, captures), so the
     /// switch renders first. After a fade the editor starts once the fade has ended (plus a short margin) instead.
     private static let editorStartDelay: Duration = .milliseconds(150)
@@ -119,8 +131,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let controller: NSViewController
         switch tab {
         case .layout:
-            // Space below the toolbar (the scrolling tabs pad inside their scroll views).
-            controller = hosting(SettingsPane { LayoutEditorView().padding(.top, 12) }, model, layoutEditor)
+            controller = hosting(SettingsPane { LayoutEditorView() }, model, layoutEditor)
         case .behavior: controller = hosting(SettingsPane { BehaviorView() }, model, layoutEditor)
         case .about: controller = hosting(SettingsPane { AboutView() }, model, layoutEditor)
         }
@@ -134,8 +145,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let controller = NSHostingController(rootView: view.environment(model).environment(layoutEditor))
         // Fixed window size: the content's ideal size must not resize the window or animate it between tabs.
         controller.sizingOptions = []
-        controller.view.frame.size = contentSize
-        return controller
+        // The container already places the content below the toolbar; no further insets from SwiftUI.
+        controller.safeAreaRegions = []
+        let container = SettingsTabContainerController(content: controller)
+        container.view.frame.size = contentSize
+        return container
     }
 
     private func select(_ tab: SettingsTab) {
@@ -264,6 +278,41 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // The user switched back from another app: with the Layout tab active, the editor does one full refresh (icons
         // may have changed in the meantime).
         layoutEditor.windowDidBecomeKey()
+    }
+}
+
+/// One tab's content, kept below the toolbar.
+///
+/// The window has a full-size content view (the shared translucent background extends under the transparent toolbar),
+/// so a tab's view also spans the toolbar area. Left to SwiftUI, a tab's `ScrollView` would scroll its content up under
+/// the toolbar, where it shows through the toolbar's tab labels. The hosted content is therefore pinned to the safe area
+/// (the window's content layout rect) and clipped to it: nothing of a tab is ever drawn under the toolbar, and a tab
+/// that scrolls passes under the scroll edge effect of `SettingsPane`'s top bar.
+private final class SettingsTabContainerController: NSViewController {
+    private let content: NSViewController
+
+    init(content: NSViewController) {
+        self.content = content
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func loadView() {
+        let view = NSView(frame: NSRect(origin: .zero, size: SettingsWindowController.contentSize))
+        addChild(content)
+        let hosted = content.view
+        hosted.translatesAutoresizingMaskIntoConstraints = false
+        hosted.clipsToBounds = true
+        view.addSubview(hosted)
+        NSLayoutConstraint.activate([
+            hosted.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            hosted.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hosted.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            hosted.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        self.view = view
     }
 }
 

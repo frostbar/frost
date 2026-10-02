@@ -32,7 +32,6 @@ struct AboutView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 12)
             .padding(.bottom, 20)
             .animation(.snappy, value: permissions.accessibility)
             .animation(.snappy, value: permissions.screenRecording)

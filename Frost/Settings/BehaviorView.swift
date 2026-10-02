@@ -11,7 +11,7 @@ struct BehaviorView: View {
         @Bindable var preferences = model.preferences
 
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 GlassCard {
                     LaunchAtLoginRow()
                 }
@@ -63,8 +63,7 @@ struct BehaviorView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 20)
+            .padding(.bottom, 16)
             .animation(.snappy, value: preferences.displayMode)
             .animation(.snappy, value: preferences.autoRehide)
         }

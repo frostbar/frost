@@ -151,6 +151,10 @@ over the Frost Bar; close it via Notification Center's AX "Close" action.
   to Frost's button (a real Mac does not), but not a right click. `FROST_TEST_DROP_REPLICA_CLICKS=1`
   (`make vm-run FROST_ENV="FROST_TEST_DROP_REPLICA_CLICKS=1"`) makes Frost drop the redelivered click so the
   replica-click fallback (`ReplicaClickDetector`) can be tested with left clicks too.
+- Settings window height: the window has one fixed size for every tab, tall enough for the tallest tab without
+  scrolling. `FROST_TEST_SETTINGS_HEIGHT=<pt>` (Debug builds) overrides the content height below the toolbar: a small
+  value (e.g. 360) makes the Behavior tab scroll, to check that nothing is drawn under the toolbar; a tall one (e.g.
+  820) shows each tab's full content, whose extent can then be read from the window's accessibility tree.
 - Display mode Automatic: the VM has no notch, so Automatic expands in the menu bar on every display.
   `FROST_TEST_NOTCH_PRIMARY_DISPLAY=1` (Debug builds) makes Automatic treat the primary display as notched: the Frost
   Bar on the main display and In Menu Bar on the virtual one, like a notched Mac with an external display.
