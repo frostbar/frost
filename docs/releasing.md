@@ -192,10 +192,13 @@ demand (Actions → CI → Run workflow):
 
 - **FrostCore tests**: `swift test` in `Packages/FrostCore`.
 - **App build (unsigned)**: `xcodegen generate` + a Release build for `generic/platform=macOS` (universal) with code
-  signing disabled, the same command as `make ci-build`. CI has no "Frost Local Signing" identity, so this build is
+  signing disabled, the same command as `make ci-build`. Package versions come only from the committed
+  `Package.resolved` (`-onlyUsePackageVersionsFromResolvedFile`; Sparkle is pinned with `exactVersion` in
+  `project.yml`), as in `release.sh`. CI has no "Frost Local Signing" identity, so this build is
   only a compile check; the unsigned app is kept as a workflow artifact for 7 days and must never be published.
 - **Lint**: no CJK text outside `*.xcstrings`, `shellcheck` (warnings and errors) on all tracked `*.sh` files, and no
-  committed certificates or private keys.
+  committed certificates or private keys. The grep-based checks run in a UTF-8 locale and fail when `grep` itself
+  fails (exit status 2 or more), not only when it finds a match.
 
 The macOS jobs run on the `xcode-27` runner image (a GitHub public preview) with Xcode 27.0 selected through
 `DEVELOPER_DIR` in the workflow; when a newer Xcode is needed, change it there. The checks are **informational**: they

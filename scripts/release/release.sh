@@ -182,7 +182,7 @@ step "Build (Release, universal)"
 xcodegen generate --quiet
 xcodebuild -project Frost.xcodeproj -scheme Frost -configuration Release \
   -destination 'generic/platform=macOS' -derivedDataPath "$DERIVED_DATA" -quiet \
-  "${XCODE_SIGN_ARGS[@]}" build
+  -onlyUsePackageVersionsFromResolvedFile "${XCODE_SIGN_ARGS[@]}" build
 rm -rf "$OUT"
 mkdir -p "$OUT"
 ditto "$DERIVED_DATA/Build/Products/Release/Frost.app" "$APP"

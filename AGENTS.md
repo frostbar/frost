@@ -24,7 +24,10 @@ make vm-deploy && make vm-run      # deploy and run in the test VM (see below)
 scripts/release/release.sh 0.2.0   # package a release locally (DMG + appcast) without publishing; see docs/releasing.md
 ```
 
-`Frost.xcodeproj` is generated from `project.yml` and is gitignored: change project settings in `project.yml`.
+`Frost.xcodeproj` is generated from `project.yml` and is gitignored: change project settings in `project.yml`. The one
+exception is the SwiftPM pin file `Frost.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`, which
+XcodeGen preserves and which is committed (Sparkle is pinned with `exactVersion`; `make ci-build` and releases only use
+the committed pins). When changing a package version, commit the updated `Package.resolved` from `make build`.
 
 Before finishing any change, `make test-core` and `make build` must both pass without new warnings.
 

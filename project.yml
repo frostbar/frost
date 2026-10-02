@@ -11,7 +11,7 @@ packages:
     path: Packages/FrostCore
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: "2.10.0"
+    exactVersion: "2.10.0"
 settings:
   base:
     SWIFT_VERSION: "6.0"

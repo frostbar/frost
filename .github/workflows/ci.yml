@@ -92,7 +92,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: build/DerivedData-CI/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', 'Packages/FrostCore/Package.swift') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', 'Packages/FrostCore/Package.swift', 'Frost.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
 
       # Same command as `make ci-build` (Release, generic macOS destination, code signing disabled), with full
@@ -123,10 +123,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # git grep exits 0 on a match, 1 on no match and >= 2 on an error (e.g. a PCRE problem in a non-UTF-8 locale):
+      # an error must fail the check instead of passing as "no match".
       - name: No CJK text outside String Catalogs
+        env:
+          LC_ALL: C.UTF-8
         run: |
-          if git grep -I -n -P "[\x{3000}-\x{303f}\x{4e00}-\x{9fff}\x{ff00}-\x{ffef}]" -- . ':!*.xcstrings'; then
+          status=0
+          git grep -I -n -P "[\x{3000}-\x{303f}\x{4e00}-\x{9fff}\x{ff00}-\x{ffef}]" -- . ':!*.xcstrings' || status=$?
+          if [[ $status -eq 0 ]]; then
             echo "::error::CJK characters found outside *.xcstrings (the repository is English-only, see AGENTS.md)"
+            exit 1
+          elif [[ $status -ne 1 ]]; then
+            echo "::error::git grep failed with exit status $status"
             exit 1
           fi
 
@@ -143,13 +152,24 @@ jobs:
 
       - name: No private keys or certificates
         run: |
+          failed=0
+          # As above: exit status 1 means no match, anything above 1 is an error.
           status=0
-          if git ls-files | grep -E -i '\.(p12|pfx|pem|key)$'; then
+          git ls-files | grep -E -i '\.(p12|pfx|pem|key)$' || status=$?
+          if [[ $status -eq 0 ]]; then
             echo "::error::Certificate or key files are committed"
-            status=1
+            failed=1
+          elif [[ $status -ne 1 ]]; then
+            echo "::error::listing files failed with exit status $status"
+            failed=1
           fi
-          if git grep -I -n -E -e '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----'; then
+          status=0
+          git grep -I -n -E -e '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----' || status=$?
+          if [[ $status -eq 0 ]]; then
             echo "::error::A private key is committed"
-            status=1
+            failed=1
+          elif [[ $status -ne 1 ]]; then
+            echo "::error::git grep failed with exit status $status"
+            failed=1
           fi
-          exit $status
+          exit $failed

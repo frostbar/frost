@@ -18,12 +18,14 @@ release: gen
 
 # Unsigned Release build for the generic macOS destination (universal), the same command CI runs
 # (.github/workflows/ci.yml). Uses its own DerivedData so it doesn't replace the signed build of `make release`.
+# Package versions come only from the committed Package.resolved (fails if it is out of date with project.yml).
 CI_DERIVED := build/DerivedData-CI
 CI_BUILD_FLAGS ?= -quiet
 
 ci-build: gen
 	xcodebuild -project Frost.xcodeproj -scheme Frost -configuration Release \
 	  -destination 'generic/platform=macOS' -derivedDataPath $(CI_DERIVED) \
+	  -onlyUsePackageVersionsFromResolvedFile \
 	  CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" $(CI_BUILD_FLAGS) build
 
 # Install to /Applications and launch (runs Frost on this machine)
