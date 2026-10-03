@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/frost-bar.png" width="720" alt="The Frost Bar showing hidden menu bar items below the menu bar">
+  <img src="docs/images/demo.gif" width="720" alt="Demo: clicking the snowflake opens the Frost Bar with the hidden menu bar items; clicking an item opens its menu in the menu bar, and after Esc the item hides again">
 </p>
 
 ---
