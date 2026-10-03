@@ -1,0 +1,76 @@
+name: Bug report
+description: Something in Frost doesn't work or looks wrong.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Please check
+        [existing issues](https://github.com/frostbar/frost/issues) first.
+        Screenshots or a short screen recording help a lot — crop out anything personal.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: |
+        1. Click the snowflake
+        2. Click a hidden icon in the Frost Bar
+        3. Its menu opens in the wrong place
+    validations:
+      required: true
+  - type: input
+    id: frost-version
+    attributes:
+      label: Frost version
+      description: Settings → About.
+      placeholder: "0.1.2"
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: Apple menu → About This Mac.
+      placeholder: "macOS 26.6.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: mac
+    attributes:
+      label: Mac
+      options:
+        - MacBook with a notch
+        - MacBook without a notch
+        - Desktop Mac (iMac, Mac mini, Mac Studio, Mac Pro)
+    validations:
+      required: true
+  - type: textarea
+    id: displays
+    attributes:
+      label: Displays
+      description: Which displays are connected, and how are they arranged?
+      placeholder: "Built-in display + external display to the right"
+  - type: dropdown
+    id: display-mode
+    attributes:
+      label: Show hidden icons
+      description: Settings → Behavior.
+      options:
+        - Automatic
+        - In Menu Bar
+        - Frost Bar
+  - type: textarea
+    id: menu-bar
+    attributes:
+      label: Menu bar items involved
+      description: Which apps' menu bar icons are affected, if any? Roughly how many icons do you have?
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Optional. Run this in Terminal right after reproducing the problem and paste the output
+        (it contains window IDs and app bundle IDs, no personal content):
+        `/usr/bin/log show --last 5m --info --style compact --predicate 'subsystem == "dev.frost.Frost"'`
+      render: text
