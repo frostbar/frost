@@ -1177,7 +1177,9 @@ final class FrostBarController {
             if app.presence.isAway { continue }
             let presentation = ItemClicker.presentation(excluding: baseline, ownerPID: pid)
             let sample = ForwardLinger.Sample(
-                time: .now, isPointerOverItem: window.frame.contains(Self.cgPointer()),
+                time: .now, isPointerOverItem: Self.menuBarRow(of: window.frame,
+                                                                display: app.scanner.menuBarDisplay?.frame)
+                    .contains(Self.cgPointer()),
                 isMouseButtonHeld: UserMouseButtons.isAnyHeld, clickedItem: watcher.consumeClick(),
                 isPresentationOpen: !presentation.windows.isEmpty, isMenuOpen: presentation.containsMenu)
             if case .restore(let reason) = state.update(sample) {
@@ -1195,6 +1197,13 @@ final class FrostBarController {
     }
 
     private static let lingerPoll: Duration = .milliseconds(100)
+
+    /// The menu bar row an item sits in (CG coordinates): the display's full width at the item's height. While the
+    /// pointer is anywhere in it, a lingering item stays put — moving it back would shift the icons under the pointer.
+    private static func menuBarRow(of item: CGRect, display: CGRect?) -> CGRect {
+        guard let display else { return item }
+        return CGRect(x: display.minX, y: item.minY, width: display.width, height: item.height)
+    }
 
     /// The pointer in CG global coordinates (top-left origin).
     private static func cgPointer() -> CGPoint {

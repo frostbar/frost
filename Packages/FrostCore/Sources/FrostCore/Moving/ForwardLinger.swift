@@ -7,7 +7,9 @@ import Foundation
 /// close and moves the icon away, and the click lands on nothing. So after the presentation closes the item stays out
 /// while the user is still interacting with it:
 ///
-/// - The pointer is over the item's menu bar slot: keep it (up to `idleCap` without a click).
+/// - The pointer is over the item's menu bar slot, or anywhere else on that menu bar (moving the item back shifts the
+///   icons under the pointer, so the user's next click would land on the wrong one): keep it (up to `idleCap` without
+///   a click).
 /// - The user clicks the item (left or right, seen by a mouse-down monitor on its frame): wait up to `openTimeout` for a
 ///   new presentation and, if one opens, until it closes (a menu without limit, like the forwarded click; anything else
 ///   up to `presentationCap`), then start over.
@@ -34,13 +36,13 @@ public struct ForwardLinger: Sendable {
             self.presentationCap = presentationCap
         }
 
-        public static let standard = Timing(leaveDelay: .seconds(1), idleCap: .seconds(30), openTimeout: .seconds(1),
+        public static let standard = Timing(leaveDelay: .milliseconds(2500), idleCap: .seconds(30), openTimeout: .seconds(1),
                                             presentationCap: .seconds(60))
     }
 
     public struct Sample: Equatable, Sendable {
         public var time: ContinuousClock.Instant
-        /// The pointer is over the item's frame on the menu bar.
+        /// The pointer is over the item's frame, or anywhere on the menu bar row it sits in.
         public var isPointerOverItem: Bool
         /// Any mouse button is held (HID state, `UserMouseButtons`).
         public var isMouseButtonHeld: Bool

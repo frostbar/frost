@@ -299,11 +299,17 @@ struct FrostBarContent: View {
             }
     }
 
-    /// The click to forward for a tile's button action: ⌥ adds Option, ⌃ makes it a right click (keyboard / VoiceOver
-    /// presses have no modifiers and forward a plain click).
+    /// The click to forward for a tile's button action: the event's own mouse button (on a real Mac a right or
+    /// two-finger click can trigger the SwiftUI button action directly, so the button must come from the event, not be
+    /// assumed), ⌥ adds Option, ⌃ makes it a right click. Keyboard / VoiceOver presses forward a plain click.
     private static func forwardedClick(for event: NSEvent?) -> ForwardedClick {
         let flags = event?.modifierFlags ?? []
-        return ForwardedClick.kind(button: .left, control: flags.contains(.control), option: flags.contains(.option))
+        let button: ForwardedClick.Button = switch event?.type {
+        case .rightMouseDown, .rightMouseUp, .rightMouseDragged: .right
+        case .otherMouseDown, .otherMouseUp, .otherMouseDragged: .other
+        default: .left
+        }
+        return ForwardedClick.kind(button: button, control: flags.contains(.control), option: flags.contains(.option))
             ?? .primary
     }
 

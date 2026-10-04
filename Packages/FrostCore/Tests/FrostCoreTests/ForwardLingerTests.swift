@@ -2,6 +2,10 @@ import Testing
 @testable import FrostCore
 
 @Suite struct ForwardLingerTests {
+    /// Fixed timing (the scenarios below are written for a 1 s leave delay), independent of `Timing.standard`.
+    static let timing = ForwardLinger.Timing(leaveDelay: .seconds(1), idleCap: .seconds(30), openTimeout: .seconds(1),
+                                             presentationCap: .seconds(60))
+
     let t0 = ContinuousClock.now
     func ms(_ value: Int) -> ContinuousClock.Instant { t0 + .milliseconds(value) }
 
@@ -12,14 +16,14 @@ import Testing
     }
 
     @Test func pointerAwayRestoresAfterTheLeaveDelay() {
-        var linger = ForwardLinger(start: t0)
+        var linger = ForwardLinger(start: t0, timing: Self.timing)
         #expect(linger.update(sample(100)) == .keep)
         #expect(linger.update(sample(900)) == .keep)
         #expect(linger.update(sample(1000)) == .restore(.pointerLeft))
     }
 
     @Test func pointerOverTheItemKeepsItOutUntilItLeaves() {
-        var linger = ForwardLinger(start: t0)
+        var linger = ForwardLinger(start: t0, timing: Self.timing)
         #expect(linger.update(sample(500, over: true)) == .keep)
         #expect(linger.update(sample(5000, over: true)) == .keep)
         // Left at 5 s: one more second.
@@ -29,13 +33,13 @@ import Testing
     }
 
     @Test func restingOnTheItemWithoutClickingEndsAtTheIdleCap() {
-        var linger = ForwardLinger(start: t0)
+        var linger = ForwardLinger(start: t0, timing: Self.timing)
         #expect(linger.update(sample(29_900, over: true)) == .keep)
         #expect(linger.update(sample(30_000, over: true)) == .restore(.idle))
     }
 
     @Test func aClickOnTheItemWaitsForItsMenuToClose() {
-        var linger = ForwardLinger(start: t0)
+        var linger = ForwardLinger(start: t0, timing: Self.timing)
         #expect(linger.update(sample(300, over: true, held: true, clicked: true)) == .keep)
         #expect(!linger.acceptsNewBaseline)
         // The menu appears; the pointer moves down into it (away from the item) for a long time: menus have no cap.
@@ -49,7 +53,7 @@ import Testing
     }
 
     @Test func aClickThatOpensNothingFallsBackToTheUsualRules() {
-        var linger = ForwardLinger(start: t0)
+        var linger = ForwardLinger(start: t0, timing: Self.timing)
         #expect(linger.update(sample(200, over: true, clicked: true)) == .keep)
         // Pointer leaves right away, but the presentation may still come: keep until the open timeout.
         #expect(linger.update(sample(1100)) == .keep)
@@ -57,7 +61,7 @@ import Testing
     }
 
     @Test func aPopoverOpenedFromTheMenuBarIsCapped() {
-        var linger = ForwardLinger(start: t0)
+        var linger = ForwardLinger(start: t0, timing: Self.timing)
         _ = linger.update(sample(100, over: true, clicked: true))
         #expect(linger.update(sample(200, open: true)) == .keep)
         #expect(linger.update(sample(60_100, open: true)) == .keep)
@@ -65,20 +69,20 @@ import Testing
     }
 
     @Test func neverRestoresWhileAButtonIsHeld() {
-        var linger = ForwardLinger(start: t0)
+        var linger = ForwardLinger(start: t0, timing: Self.timing)
         #expect(linger.update(sample(5000, held: true)) == .keep)
         #expect(linger.update(sample(5100)) == .restore(.pointerLeft))
-        var resting = ForwardLinger(start: t0)
+        var resting = ForwardLinger(start: t0, timing: Self.timing)
         #expect(resting.update(sample(40_000, over: true, held: true)) == .keep)
         // A held button on the item is a click starting (the monitor reports it): it restarts the idle time.
-        var popover = ForwardLinger(start: t0)
+        var popover = ForwardLinger(start: t0, timing: Self.timing)
         _ = popover.update(sample(100, clicked: true))
         _ = popover.update(sample(200, open: true))
         #expect(popover.update(sample(70_000, held: true, open: true)) == .keep)
     }
 
     @Test func clickingAgainWhileOpenKeepsWaitingForTheClose() {
-        var linger = ForwardLinger(start: t0)
+        var linger = ForwardLinger(start: t0, timing: Self.timing)
         _ = linger.update(sample(100, over: true, clicked: true))
         #expect(linger.update(sample(200, over: true, open: true, menu: true)) == .keep)
         // The user clicks the item again: the menu closes.
