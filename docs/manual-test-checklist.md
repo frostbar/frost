@@ -145,6 +145,17 @@ For each item, record: environment (model / displays / macOS version) and result
   Reopening the Frost Bar moves it back at once (`ended early`); quitting during the linger restores it too (log
   `deferring termination`, then a ⌘-drag back to the original anchor; relaunch: the item is in its old section). It
   never moves while a mouse button is held.
+- [ ] **Snowflake click during a linger opens the Frost Bar in one click (user report: "after a right-click from the
+  Frost Bar, clicking the snowflake again seems to do nothing")**: right-click (and, separately, left-click) the
+  `FIDual` tile, close its menu with Esc (or leave it open), then click the snowflake once while the item still
+  lingers: the item moves back and the Frost Bar appears right away, already under the snowflake's final position
+  (the snowflake slides right by the item's width into place above it; log `Frost Bar opening: waiting for the click
+  forward in progress`, `linger … ended early`, `Frost Bar presented N ms after the click`: in the VM about 150–250 ms
+  with the menu already closed, about 400 ms when the click also closes the menu; it was 600–1000 ms before). A second click on the snowflake right after the first (before or just after the panel
+  appears) keeps it open (log `Frost icon clicked while the Frost Bar is opening; keeping it open`); a click once the
+  panel has been visible for a moment closes it as usual. Every close logs its reason (`Frost Bar closed (…); panel
+  shown for N ms`). After a forwarded right click whose menu was closed, the first left click on an app menu (e.g.
+  Finder's File) or another menu bar item works.
 - [ ] ⌥-click the snowflake: a thin divider and an "Always Hidden" heading appear below the Hidden section, followed
   by the grid of Always Hidden items. While the panel is open, a plain click on the snowflake always closes it (one
   click, whatever it was opened with), and a ⌥-click shows / hides the Always Hidden section: the panel's height

@@ -554,6 +554,7 @@ final class SectionController {
         }
         let isContextClick = event.type == .rightMouseUp
             || (event.type == .leftMouseUp && event.modifierFlags.contains(.control))
+        FrostLog.sections.debug("Frost icon action (event type \(event.type.rawValue, privacy: .public))")
         handleIconClick(context: isContextClick, option: event.modifierFlags.contains(.option),
                         screen: clickedScreen(for: event))
     }

@@ -93,14 +93,14 @@ final class FrostBarController {
         app.mover.milestone = { [weak self] label, instant in self?.forwardTrace?.mark(label, at: instant) }
         observers.append(workspace.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil,
                                                queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.close(animated: false) }
+            MainActor.assumeIsolated { self?.close(animated: false, reason: "active Space changed") }
         })
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.app.capturer.contentCache.invalidate()
-                self?.close(animated: false)
+                self?.close(animated: false, reason: "screen parameters changed")
             }
         })
         // Displays asleep, screen locked, another user's session: nobody can see the panel, so close it (which stops
@@ -110,8 +110,7 @@ final class FrostBarController {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.app.presence.isAway, self.isOpen else { return }
-                FrostLog.frostBar.notice("user away: closing the Frost Bar")
-                self.close(animated: false)
+                self.close(animated: false, reason: "user away")
             }
         })
     }
@@ -120,18 +119,34 @@ final class FrostBarController {
 
     /// The Frost icon was clicked (display mode is Frost Bar). While the panel is open, a plain click always closes
     /// it (one click, whatever the ⌥ state it was opened with); a ⌥-click shows / hides the Always Hidden section
-    /// instead (a short fade and height change, see `FrostBarContent`).
+    /// instead (a short fade and height change, see `FrostBarContent`). While the panel is still opening (waiting for a
+    /// lingering item to move back) or has only just appeared, a click doesn't close it (`FrostBarIconClick`).
     func toggle(showAlwaysHidden: Bool) {
-        guard isOpen else {
+        let phase: FrostBarIconClick.Phase = !isOpen ? .closed : shownAt.map { .presented(at: $0) } ?? .opening
+        switch FrostBarIconClick.decide(phase: phase, option: showAlwaysHidden,
+                                        showingAlwaysHidden: model.showAlwaysHidden, now: .now) {
+        case .open(let showAlwaysHidden):
             open(showAlwaysHidden: showAlwaysHidden)
-            return
+        case .close:
+            close(reason: "Frost icon clicked")
+        case .keepOpening(let showAlwaysHidden):
+            FrostLog.frostBar.notice("Frost icon clicked while the Frost Bar is opening; keeping it open")
+            guard showAlwaysHidden == true, !model.showAlwaysHidden else { return }
+            if shownAt == nil {
+                // Not on screen yet: present with the section (live refresh starts once presented).
+                model.showAlwaysHidden = true
+            } else {
+                setAlwaysHidden(true)
+            }
+        case .setAlwaysHidden(let show):
+            setAlwaysHidden(show)
         }
-        guard showAlwaysHidden else {
-            close()
-            return
-        }
+    }
+
+    /// Shows / hides the Always Hidden section of the open panel.
+    private func setAlwaysHidden(_ show: Bool) {
         sectionTask?.cancel()
-        guard model.showAlwaysHidden else {
+        if show {
             model.isAlwaysHiddenFading = false
             withAnimation(FrostBarMetrics.sectionAnimation) { model.showAlwaysHidden = true }
             // Refresh the newly shown section right away (don't wait for the next cycle).
@@ -149,6 +164,13 @@ final class FrostBarController {
     }
 
     private var sectionTask: Task<Void, Never>?
+    /// When the current `open` was requested (for the "presented after" log line).
+    private var openRequestedAt: ContinuousClock.Instant?
+    /// When the panel of the current open went on screen (nil: closed, or still opening).
+    private var shownAt: ContinuousClock.Instant?
+    /// The Frost icon's predicted right edge (x, the same in CG and AppKit) while it still slides into place after a
+    /// lingering item moved back for this open; the panel is anchored there until the slide is over.
+    private var returnAnchorMaxX: CGFloat?
     private static let sectionFadeOut: TimeInterval = 0.1
 
     func open(showAlwaysHidden: Bool) {
@@ -168,10 +190,14 @@ final class FrostBarController {
             FrameProbe.mark("frostbar-open-\(openCount)", on: screen, duration: .milliseconds(1500))
         }
         #endif
+        openRequestedAt = .now
         openTask = Task { [weak self] in
             // The previous click forward hasn't finished (e.g. its menu is still open, or it's moving back); wait for
             // it so the layout is final.
-            if let activation = self?.activationTask { await activation.value }
+            if let activation = self?.activationTask {
+                FrostLog.frostBar.notice("Frost Bar opening: waiting for the click forward in progress")
+                await activation.value
+            }
             await self?.flushRestoreRetry()
             guard let self, self.isOpen, !Task.isCancelled else { return }
             await self.prepareLayout()
@@ -183,15 +209,30 @@ final class FrostBarController {
             FrameProbe.note("cached(images=\(self.app.capturer.images.count))")
             #endif
             self.present()
+            if self.returnAnchorMaxX != nil {
+                // Presented while the icons still slide after the move back: wait for them to settle, then anchor to
+                // the icon's real frame, before live refresh may freeze the menu bar.
+                await self.app.sections.waitForSettle()
+                self.returnAnchorMaxX = nil
+                guard self.isOpen, !Task.isCancelled else { return }
+                self.reposition(allowShrink: false)
+            }
             // Show cached screenshots first, then start live refresh (the first round runs after the panel's
             // appearance animation, so the freeze frame captures the panel shadow in its final state).
             self.restartLiveRefresh(immediately: true)
         }
     }
 
-    func close(animated: Bool = true) {
+    /// `reason` is logged (diagnosing an unexpected close on a real Mac needs it).
+    func close(animated: Bool = true, reason: StaticString) {
         guard isOpen else { return }
+        let shown = shownAt.map { "shown for \(LiveRefreshStats.Timing.ms(.now - $0))" } ?? "not shown yet"
+        FrostLog.frostBar.notice("""
+            Frost Bar closed (\(String(describing: reason), privacy: .public)); panel \(shown, privacy: .public)
+            """)
         isOpen = false
+        shownAt = nil
+        returnAnchorMaxX = nil
         openTask?.cancel()
         stopLiveRefresh()
         // Live refresh held back disk cache writes of changing icons (at most one per item per minute): write the
@@ -236,9 +277,17 @@ final class FrostBarController {
         model.isPresented = false
         reposition()
         panel.makeKeyAndOrderFront(nil)
+        shownAt = .now
         #if DEBUG
         FrameProbe.note("ordered")
         #endif
+        if let requested = openRequestedAt {
+            let key = panel.isKeyWindow ? "key" : "not key"
+            FrostLog.frostBar.notice("""
+                Frost Bar presented \(LiveRefreshStats.Timing.ms(.now - requested), privacy: .public) after the \
+                click (\(key, privacy: .public))
+                """)
+        }
         presentedAt = .now
         installMonitors()
         presentation += 1
@@ -262,11 +311,11 @@ final class FrostBarController {
             hover: { [weak self] id in self?.hoveredTile = id },
             refresh: { [weak self] in self?.refresh() },
             openOnboarding: { [weak self] in
-                self?.close(animated: false)
+                self?.close(animated: false, reason: "onboarding opened")
                 self?.app.openOnboarding()
             },
             openSettings: { [weak self] in
-                self?.close(animated: false)
+                self?.close(animated: false, reason: "settings opened")
                 self?.app.openSettings()
             })
         let hostingView = FrostBarHostingView(rootView: FrostBarView(model: model, actions: actions))
@@ -280,17 +329,30 @@ final class FrostBarController {
             self.reposition(allowShrink: false)
         }
         panel.contentView = hostingView
-        panel.onCancel = { [weak self] in self?.close() }
+        panel.onCancel = { [weak self] in self?.close(reason: "Esc") }
         panel.onSecondaryClick = { [weak self] in
-            guard let self, self.isOpen, let id = self.hoveredTile,
-                  self.model.state.items.contains(where: { $0.windowID == id }) else { return false }
+            guard let self, self.isOpen else { return false }
+            guard let id = self.hoveredTile, self.model.state.items.contains(where: { $0.windowID == id }) else {
+                let hovered = self.hoveredTile.map(String.init) ?? "none"
+                FrostLog.frostBar.debug("right click in the Frost Bar but not on a tile (hovered: \(hovered, privacy: .public))")
+                return false
+            }
             self.activate(id, click: .secondary)
             return true
         }
         observers.append(NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.close() }
+            MainActor.assumeIsolated {
+                guard let self, self.isOpen else { return }
+                let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
+                let key = NSApp.keyWindow.map { String(describing: type(of: $0)) } ?? "none"
+                FrostLog.frostBar.notice("""
+                    Frost Bar resigned key (frontmost app \(front, privacy: .public), Frost key window \
+                    \(key, privacy: .public))
+                    """)
+                self.close(reason: "panel resigned key")
+            }
         })
         self.panel = panel
         self.hostingView = hostingView
@@ -460,7 +522,7 @@ final class FrostBarController {
             if size != content { scheduleShrink() }
         }
         let frame = PanelPlacement.frame(size: size, inset: FrostBarMetrics.inset, topInset: FrostBarMetrics.topInset,
-                                         anchorMaxX: iconFrame?.maxX ?? screen.visibleFrame.maxX,
+                                         anchorMaxX: returnAnchorMaxX ?? iconFrame?.maxX ?? screen.visibleFrame.maxX,
                                          screenFrame: screen.frame, visibleFrame: screen.visibleFrame,
                                          menuBarHeight: menuBarHeight)
         guard panel.frame != frame else { return }
@@ -531,7 +593,7 @@ final class FrostBarController {
                 FrostLog.frostBar.debug("ignoring Frost's own synthetic mouse event")
                 return
             }
-            MainActor.assumeIsolated { self?.close() }
+            MainActor.assumeIsolated { self?.close(reason: "click outside (other app)") }
         }) {
             monitors.append(global)
         }
@@ -552,7 +614,7 @@ final class FrostBarController {
            !event.modifierFlags.contains(.control) {
             return
         }
-        close()
+        close(reason: "click outside (Frost window)")
     }
 
     private func removeMonitors() {
@@ -852,7 +914,7 @@ final class FrostBarController {
         guard activationTask == nil else { return }
         endLingerRequested = false
         forwardTrace = ForwardTrace()
-        close()
+        close(reason: "click forward")
         let handOff = ActivationHandOff.begin(for: app.scanner.items.first { $0.windowID == id })
         forwardTrace?.mark("closed")
         activationTask = Task { [weak self] in
@@ -894,7 +956,7 @@ final class FrostBarController {
     /// cancellation; the menu wait has no limit, so this is the only way to end it), runs any pending move-back retry
     /// right away, and waits for both.
     func prepareForTermination() async {
-        close(animated: false)
+        close(animated: false, reason: "quitting")
         if let activation = activationTask {
             activation.cancel()
             await activation.value
@@ -984,9 +1046,15 @@ final class FrostBarController {
         // cancellation so it still happens when cancelled. If the move out never took effect, `move` finds the item
         // already in place and returns.
         let cancelled = failure is CancellationError
+        // The Frost Bar is opening (it ended the linger): place it under the Frost icon's final position and let it
+        // appear as soon as the item has been dropped, not after the ~0.4 s slide of the icons
+        // (`LingerReturnAnchor`).
+        let opening = endLingerRequested && isOpen && !cancelled
+        if opening { predictReturnAnchor(of: id, controls: controls) }
+        let completion: ItemMover.Completion = returnAnchorMaxX != nil ? .itemLanded : .settled
         let restoreError = await Task { @MainActor in
             if cancelled { await self.closePresentation(of: id, openedAfter: beforeMove) }
-            return await self.restore(plan, controls: controls)
+            return await self.restore(plan, controls: controls, until: completion)
         }.value
         if let restoreError {
             if case ItemMoveError.controlsDisturbed = restoreError {
@@ -1000,15 +1068,25 @@ final class FrostBarController {
         if let failure { throw failure }
     }
 
+    /// Records where the Frost icon will be once the lingering item `id` (its right-hand neighbor) has moved back, for
+    /// the opening Frost Bar's placement (`returnAnchorMaxX`); leaves it nil when that can't be predicted.
+    private func predictReturnAnchor(of id: CGWindowID, controls: FrostControlWindows) {
+        let windows = StatusWindowParser.windows(withIDs: [controls.icon, id])
+        guard let icon = windows.first(where: { $0.windowID == controls.icon }), icon.isOnScreen,
+              let item = windows.first(where: { $0.windowID == id }), item.isOnScreen else { return }
+        returnAnchorMaxX = LingerReturnAnchor.iconMaxX(icon: icon.frame, item: item.frame)
+    }
+
     /// Moves the item back to its original section. If the anchor destination fails (anchor gone, move didn't take
     /// effect, under the notch... any error except disturbed Frost control items), tries the section boundary once.
     /// A vanished item (its app quit) counts as success.
-    private func restore(_ plan: RestorePlan, controls: FrostControlWindows) async -> Error? {
+    private func restore(_ plan: RestorePlan, controls: FrostControlWindows,
+                         until completion: ItemMover.Completion = .settled) async -> Error? {
         let scanner = app.scanner, mover = app.mover
         scanner.rescan()
         let destination = plan.destination(in: SectionAssigner.layout(of: scanner.items, controls: controls))
         do {
-            try await mover.move(plan.itemID, to: destination)
+            try await mover.move(plan.itemID, to: destination, until: completion)
             return nil
         } catch ItemMoveError.itemNotFound {
             // The app quit: nothing to move back.
@@ -1142,8 +1220,9 @@ final class FrostBarController {
         // The presentation is over: hand activation back early (no need to wait for the move back).
         handOff?.finish()
         // Warm the screenshot cache while we're here: the item is in the Visible section with its menu closed (no
-        // pressed highlight); once back in the Hidden section it can't be captured.
-        if app.permissions.screenRecording {
+        // pressed highlight); once back in the Hidden section it can't be captured. Skipped when the Frost Bar is
+        // waiting to open (it ends the linger at once; its live refresh captures the item anyway).
+        if app.permissions.screenRecording, !endLingerRequested {
             app.scanner.rescan()
             if let fresh = app.scanner.items.first(where: { $0.windowID == id && $0.isOnScreen }) {
                 await app.capturer.capture([fresh])
