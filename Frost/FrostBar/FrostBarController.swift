@@ -15,7 +15,9 @@ enum FrostBarError: Error {
 
 /// Frost Bar: a glass panel dropping down from the Frost icon that shows the Hidden section's icons in a grid (plus the
 /// Always Hidden section below it with ⌥). Clicking an icon temporarily moves the original into the Visible section,
-/// clicks it, waits for its menu / popover to close, then moves it back.
+/// clicks it (a right / Control click forwards a right click, a ⌥-click a left click with Option), waits for its menu /
+/// popover to close, lingers while the user is still using the item in the menu bar (`ForwardLinger`), then moves it
+/// back.
 ///
 /// The panel is only used while the menu bar is collapsed: then the order of the pushed-out items is reliable (on a
 /// crowded notched display, expanded items that don't fit are stuffed under the notch, where positions are unreliable
@@ -74,6 +76,11 @@ final class FrostBarController {
     private var lingeringPresentation: Set<CGWindowID> = []
     /// Milestones of the click forward in progress, logged once the item has been clicked.
     private var forwardTrace: ForwardTrace?
+    /// The tile under the pointer (right clicks go to it, see `FrostBarPanel.onSecondaryClick`).
+    private var hoveredTile: CGWindowID?
+    /// Set when the item of a finished click forward must stop lingering in the Visible section (the Frost Bar
+    /// reopens); quitting cancels the forward instead.
+    private var endLingerRequested = false
     /// Environment variable `FROST_LIVE_REFRESH_TRACE=1`: log timings for every round (for measurements in the VM).
     private static let traceCycles = ProcessInfo.processInfo.environment["FROST_LIVE_REFRESH_TRACE"] == "1"
 
@@ -147,6 +154,8 @@ final class FrostBarController {
     func open(showAlwaysHidden: Bool) {
         guard !isOpen, !app.presence.isAway else { return }
         isOpen = true
+        // A previous forward's item may be lingering in the Visible section: move it back now.
+        endLingerRequested = true
         hideTask?.cancel()
         sectionTask?.cancel()
         model.showAlwaysHidden = showAlwaysHidden
@@ -249,7 +258,8 @@ final class FrostBarController {
     private func makePanel() -> FrostBarPanel {
         let panel = FrostBarPanel()
         let actions = FrostBarActions(
-            activate: { [weak self] item in self?.activate(item.windowID) },
+            activate: { [weak self] item, click in self?.activate(item.windowID, click: click) },
+            hover: { [weak self] id in self?.hoveredTile = id },
             refresh: { [weak self] in self?.refresh() },
             openOnboarding: { [weak self] in
                 self?.close(animated: false)
@@ -271,6 +281,12 @@ final class FrostBarController {
         }
         panel.contentView = hostingView
         panel.onCancel = { [weak self] in self?.close() }
+        panel.onSecondaryClick = { [weak self] in
+            guard let self, self.isOpen, let id = self.hoveredTile,
+                  self.model.state.items.contains(where: { $0.windowID == id }) else { return false }
+            self.activate(id, click: .secondary)
+            return true
+        }
         observers.append(NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
         ) { [weak self] _ in
@@ -832,8 +848,9 @@ final class FrostBarController {
     ///
     /// The activation hand-off (`ActivationHandOff`) begins synchronously while handling the user's click event: only
     /// then does Frost's cooperative activation count as user intent.
-    func activate(_ id: CGWindowID) {
+    func activate(_ id: CGWindowID, click: ForwardedClick = .primary) {
         guard activationTask == nil else { return }
+        endLingerRequested = false
         forwardTrace = ForwardTrace()
         close()
         let handOff = ActivationHandOff.begin(for: app.scanner.items.first { $0.windowID == id })
@@ -855,7 +872,7 @@ final class FrostBarController {
             // The previous move-back failed and awaits a retry: retry now, or it would stay in the Visible section
             // after this move.
             await self.flushRestoreRetry()
-            await self.forward(id, handOff: handOff)
+            await self.forward(id, click: click, handOff: handOff)
             // On error (e.g. the move out failed) `clickAndWait` may not have run: make sure activation is handed back.
             handOff?.finish()
             self.forwardTrace = nil
@@ -893,7 +910,7 @@ final class FrostBarController {
         await retry.value
     }
 
-    private func forward(_ id: CGWindowID, handOff: ActivationHandOff?) async {
+    private func forward(_ id: CGWindowID, click: ForwardedClick, handOff: ActivationHandOff?) async {
         let mover = app.mover
         // Another transaction (an editor drop, a new-item placement) holds the mover: wait for it (bounded) instead of
         // silently dropping the user's click. No suspension point between the wait and `transaction`, so nothing can
@@ -906,7 +923,7 @@ final class FrostBarController {
             }
         }
         do {
-            try await mover.transaction { try await self.moveOutClickAndRestore(id, handOff: handOff) }
+            try await mover.transaction { try await self.moveOutClickAndRestore(id, click: click, handOff: handOff) }
         } catch ItemMoveError.busy {
             FrostLog.frostBar.notice("activate ignored: another move is in progress")
         } catch ItemMoveError.shuttingDown {
@@ -919,7 +936,8 @@ final class FrostBarController {
         }
     }
 
-    private func moveOutClickAndRestore(_ id: CGWindowID, handOff: ActivationHandOff?) async throws {
+    private func moveOutClickAndRestore(_ id: CGWindowID, click: ForwardedClick,
+                                        handOff: ActivationHandOff?) async throws {
         let sections = app.sections, scanner = app.scanner, mover = app.mover
         forwardTrace?.mark("transaction")
         guard !sections.isEditing else { throw FrostBarError.editing }
@@ -943,7 +961,7 @@ final class FrostBarController {
             guard layout[.visible, default: []].contains(where: { $0.windowID == id }) else {
                 throw FrostBarError.itemNotFound
             }
-            try await clickAndWait(id, strayBaseline: nil, handOff: handOff)
+            try await clickAndWait(id, click: click, strayBaseline: nil, handOff: handOff)
             return
         }
 
@@ -956,7 +974,9 @@ final class FrostBarController {
             // doesn't move it or its menu; see `LandingDetector`).
             try await mover.move(id, to: .rightOf(controls.icon), until: .itemLanded)
             forwardTrace?.mark("moved")
-            try await clickAndWait(id, strayBaseline: beforeMove, handOff: handOff)
+            let outcome = try await clickAndWait(id, click: click, strayBaseline: beforeMove, handOff: handOff)
+            // A presentation still on screen (timed out / abandoned) isn't the user's to keep using: move back now.
+            if outcome == .closed || outcome == .notPresented { try await linger(id) }
         } catch {
             failure = error
         }
@@ -1079,8 +1099,9 @@ final class FrostBarController {
     /// click normally. Skipped when the owner is unknown. `strayBaseline` holds only the on-screen windows before the
     /// move; `ItemClicker.newWindows` excludes all status bar windows (the moved item's own window was off screen
     /// before the move; Control Center's own items are owned by Control Center) and drag remnants at layer >= 500.
-    private func clickAndWait(_ id: CGWindowID, strayBaseline: Set<CGWindowID>?,
-                              handOff: ActivationHandOff?) async throws {
+    @discardableResult
+    private func clickAndWait(_ id: CGWindowID, click: ForwardedClick, strayBaseline: Set<CGWindowID>?,
+                              handOff: ActivationHandOff?) async throws -> PresentationOutcome {
         defer { handOff?.finish() }
         let item = try await settledOnScreenItem(id)
         forwardTrace?.mark("onScreen")
@@ -1095,10 +1116,13 @@ final class FrostBarController {
         // Every exit path (closed, abandoned, timed out, cancelled, error) removes the mouse monitors.
         defer { fallback?.stop() }
         forwardTrace?.mark("click")
-        try await ItemClicker.click(item)
+        try await ItemClicker.click(item, kind: click)
         forwardTrace?.mark("clicked")
         if let trace = forwardTrace {
-            FrostLog.frostBar.notice("click forward of \(id, privacy: .public): \(trace.description, privacy: .public)")
+            FrostLog.frostBar.notice("""
+                click forward (\(click.logName, privacy: .public)) of \(id, privacy: .public): \
+                \(trace.description, privacy: .public)
+                """)
             forwardTrace = nil
         }
         lingeringPresentation = []
@@ -1125,6 +1149,57 @@ final class FrostBarController {
                 await app.capturer.capture([fresh])
             }
         }
+        return outcome
+    }
+
+    // MARK: - Linger
+
+    /// After the forwarded click's presentation closed, keeps the item in the Visible section while the user is still
+    /// using it there (pointer on its slot, clicking it again for its other menu), so a follow-up click doesn't hit an
+    /// empty slot. Decisions: `ForwardLinger`; this polls every 100 ms. Ends at once when the Frost Bar reopens or the
+    /// layout editor opens; while the user is away it pauses (no moves). Quitting cancels the task (the sleep throws),
+    /// and the caller closes any open presentation and moves the item back as usual.
+    private func linger(_ id: CGWindowID) async throws {
+        let pid = app.scanner.items.first { $0.windowID == id }?.pid
+        var state = ForwardLinger(start: .now)
+        var baseline = ItemClicker.onscreenWindowIDs()
+        let watcher = ItemClickWatcher()
+        defer { watcher.stop() }
+        while true {
+            if endLingerRequested || app.sections.isEditing {
+                FrostLog.frostBar.notice("linger of item \(id, privacy: .public) ended early; moving it back")
+                return
+            }
+            try await Task.sleep(for: Self.lingerPoll)
+            // The app quit (item gone): nothing to keep out.
+            guard let window = StatusWindowParser.windows(withIDs: [id]).first, window.isOnScreen else { return }
+            watcher.frame = window.frame
+            if app.presence.isAway { continue }
+            let presentation = ItemClicker.presentation(excluding: baseline, ownerPID: pid)
+            let sample = ForwardLinger.Sample(
+                time: .now, isPointerOverItem: window.frame.contains(Self.cgPointer()),
+                isMouseButtonHeld: UserMouseButtons.isAnyHeld, clickedItem: watcher.consumeClick(),
+                isPresentationOpen: !presentation.windows.isEmpty, isMenuOpen: presentation.containsMenu)
+            if case .restore(let reason) = state.update(sample) {
+                FrostLog.frostBar.debug("""
+                    linger end: pointer \(String(describing: Self.cgPointer()), privacy: .public), \
+                    item \(String(describing: window.frame), privacy: .public)
+                    """)
+                FrostLog.frostBar.notice("""
+                    linger of item \(id, privacy: .public) over (\(reason.rawValue, privacy: .public)); moving it back
+                    """)
+                return
+            }
+            if state.acceptsNewBaseline, presentation.windows.isEmpty { baseline = ItemClicker.onscreenWindowIDs() }
+        }
+    }
+
+    private static let lingerPoll: Duration = .milliseconds(100)
+
+    /// The pointer in CG global coordinates (top-left origin).
+    private static func cgPointer() -> CGPoint {
+        OutsideClickDismissal.cgPoint(fromAppKit: NSEvent.mouseLocation,
+                                      primaryScreenMaxY: NSScreen.screens.first?.frame.maxY ?? 0)
     }
 
     private func recordPresentation(_ windows: Set<CGWindowID>) {
@@ -1192,5 +1267,50 @@ final class FrostBarController {
         guard let item = app.scanner.items.first(where: { $0.windowID == id }) else { throw FrostBarError.itemNotFound }
         guard item.isOnScreen else { throw FrostBarError.notOnScreen }
         return item
+    }
+}
+
+/// Watches for the user's mouse-downs (left or right) on a lingering item's frame (global monitor: the item belongs to
+/// another app; local monitor: in case Frost is frontmost). Frost's own synthetic events are ignored.
+@MainActor
+private final class ItemClickWatcher {
+    /// The item's current frame (CG global coordinates); nil = not known yet.
+    var frame: CGRect?
+    private var clicked = false
+    private var monitors: [Any] = []
+
+    init() {
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.mouseDown(event) }
+        }) {
+            monitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.mouseDown(event) }
+            return event
+        }) {
+            monitors.append(local)
+        }
+    }
+
+    /// Whether the item was clicked since the last call.
+    func consumeClick() -> Bool {
+        defer { clicked = false }
+        return clicked
+    }
+
+    func stop() {
+        for monitor in monitors { NSEvent.removeMonitor(monitor) }
+        monitors.removeAll()
+    }
+
+    private func mouseDown(_ event: NSEvent) {
+        guard !SyntheticEvents.isPostedByFrost(event), let frame else { return }
+        // The event's own location (the pointer may have moved on by now); a global event's is in screen coordinates.
+        let screenPoint = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? event.locationInWindow
+        let point = OutsideClickDismissal.cgPoint(fromAppKit: screenPoint,
+                                                  primaryScreenMaxY: NSScreen.screens.first?.frame.maxY ?? 0)
+        if frame.contains(point) { clicked = true }
     }
 }

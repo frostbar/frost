@@ -2,7 +2,7 @@
 // It creates several status items with distinct autosave names and different
 // widths / behaviours (NSMenu, NSPopover, no-op). The item set is chosen by the
 // bundle identifier, so the same source builds two apps with different owners:
-//   dev.frost.FakeItems   9 items (menus, 2 popovers, 1 no-op, 1 ticking clock)
+//   dev.frost.FakeItems   10 items (menus, 2 popovers, 1 no-op, 1 ticking clock, 1 with separate left / right menus)
 //   dev.frost.FakeItemsB  2 items (menus)
 // FIClock is dynamic: its title is the number of seconds since launch ("0s", "1s", ...), updated every
 // second, so its width changes at 10 s and 100 s. It exercises Frost Bar's live refresh of hidden items.
@@ -13,12 +13,14 @@
 // (NSApp.activate(), macOS 14+ cooperative activation) instead of forcing it with
 // activate(ignoringOtherApps:). That is what many real menu bar apps do; without an
 // activation hand-off from Frost the transient popover then ignores outside clicks.
+// FIDual (gear) shows a "primary" menu on a left click (with an extra entry when the click carries Option) and a
+// different "secondary" menu on a right click / Control-click, like many real status items.
 // Every interaction is appended to /tmp/fakeitems.log so tests can verify that a
 // click forwarded by Frost really reached the item.
 // Build + deploy: scripts/vm/vm-fake-items.sh. Never run it on the host desktop.
 import AppKit
 
-enum Behaviour { case menu, popover, noop }
+enum Behaviour { case menu, popover, noop, dual }
 
 struct Spec {
     let autosave: String
@@ -39,6 +41,7 @@ let specsA: [Spec] = [
     Spec(autosave: "FIBolt", title: nil, symbol: "bolt.fill", behaviour: .menu),
     Spec(autosave: "FIBeta", title: "Beta ◆", symbol: nil, behaviour: .popover),
     Spec(autosave: "FIClock", title: "0s", symbol: nil, behaviour: .menu, ticking: true),
+    Spec(autosave: "FIDual", title: nil, symbol: "gearshape.fill", behaviour: .dual),
 ]
 
 let specsB: [Spec] = [
@@ -111,6 +114,11 @@ final class Controller: NSObject, NSMenuDelegate, NSPopoverDelegate {
             case .noop:
                 button.target = self
                 button.action = #selector(noop(_:))
+            case .dual:
+                dualItems[ObjectIdentifier(button)] = item
+                button.target = self
+                button.action = #selector(dualClick(_:))
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             }
             items.append(item)
             if spec.ticking { startTicking(button) }
@@ -134,6 +142,35 @@ final class Controller: NSObject, NSMenuDelegate, NSPopoverDelegate {
                 button.title = netStyle ? netTitles[seconds % netTitles.count] : "\(seconds)s"
             }
         }
+    }
+
+    var dualItems: [ObjectIdentifier: NSStatusItem] = [:]
+
+    /// FIDual: left click → primary menu (an extra entry with Option), right / Control click → secondary menu.
+    @objc func dualClick(_ sender: NSStatusBarButton) {
+        guard let item = dualItems[ObjectIdentifier(sender)] else { return }
+        // AXPress runs the action without a mouse event (the current event may be nil or unrelated): a left click.
+        let event = NSApp.currentEvent
+        let isMouse = [.leftMouseUp, .rightMouseUp].contains(event?.type)
+        let flags = isMouse ? event?.modifierFlags ?? [] : []
+        let secondary = event?.type == .rightMouseUp || (isMouse && flags.contains(.control))
+        let option = flags.contains(.option)
+        log("dual click \(secondary ? "right" : "left") option=\(option)")
+        let name = secondary ? "FIDualSecondary" : "FIDualPrimary"
+        let menu = NSMenu(title: name)
+        menu.delegate = self
+        names[ObjectIdentifier(menu)] = name
+        var titles = (1...3).map { "\(name) option \($0)" }
+        if !secondary, option { titles.append("FIDualPrimary hidden option") }
+        for title in titles {
+            let entry = NSMenuItem(title: title, action: #selector(pick(_:)), keyEquivalent: "")
+            entry.target = self
+            menu.addItem(entry)
+        }
+        // The usual pattern: attach the menu for this click only, then detach it so the next click reaches the action.
+        item.menu = menu
+        sender.performClick(nil)
+        item.menu = nil
     }
 
     @objc func pick(_ sender: NSMenuItem) { log("picked \(sender.title)") }

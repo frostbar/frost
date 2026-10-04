@@ -73,10 +73,15 @@ public enum ItemClicker {
     /// `forceEvent: true` skips AXPress and posts a CGEvent click directly: used to close a menu that is
     /// already open (AX messages are stuck during menu tracking so AXPress has no effect; a mouse click ends
     /// tracking).
+    ///
+    /// `kind`: a secondary (right) click or an Option click is always a HID CGEvent (AXPress has no button or
+    /// modifiers; AXShowMenu carries no mouse event either, while apps that show a separate right-click menu decide
+    /// by the current event's type / flags).
     @concurrent
-    public static func click(_ item: MenuBarItem, forceEvent: Bool = false) async throws {
+    public static func click(_ item: MenuBarItem, kind: ForwardedClick = .primary,
+                             forceEvent: Bool = false) async throws {
         guard item.isOnScreen else { throw ItemClickError.notOnScreen }
-        if !forceEvent, acceptsAXPress(bundleID: item.bundleID), let pid = item.pid, pid != getpid() {
+        if !forceEvent, !kind.requiresEvent, acceptsAXPress(bundleID: item.bundleID), let pid = item.pid, pid != getpid() {
             let frame = item.frame
             let error: AXError? = await Task.detached {
                 guard let element = AXExtrasReader.element(pid: pid, matching: frame) else { return nil }
@@ -93,7 +98,7 @@ public enum ItemClicker {
         }
         let point = CGPoint(x: item.frame.midX, y: item.frame.midY)
         let windowID = item.windowID
-        await Task.detached { postClick(at: point, windowID: windowID) }.value
+        await Task.detached { postClick(at: point, windowID: windowID, kind: kind) }.value
     }
 
     /// Call before clicking to record the IDs of all current on-screen windows as the baseline.
@@ -115,6 +120,16 @@ public enum ItemClicker {
     public static func newWindows(ownedBy ownerPID: pid_t, excluding baseline: Set<CGWindowID>) -> Set<CGWindowID> {
         newWindows(in: currentOnscreenWindows(), ownedBy: ownerPID, excluding: baseline,
                    statusWindows: currentStatusWindowIDs())
+    }
+
+    /// Presentation windows on screen outside `baseline` (same rule as `waitForPresentationToClose`: menus of any
+    /// app, or windows of `ownerPID`), and whether they include a menu.
+    public static func presentation(excluding baseline: Set<CGWindowID>,
+                                    ownerPID: pid_t?) -> (windows: Set<CGWindowID>, containsMenu: Bool) {
+        let windows = currentOnscreenWindows()
+        let ids = presentationWindowIDs(in: windows, baseline: baseline, statusWindows: currentStatusWindowIDs(),
+                                        ownerPID: ownerPID)
+        return (ids, containsMenu(windows.filter { ids.contains($0.windowID) }))
     }
 
     /// Whether any menu is open on screen (layer 101, any app, including Frost's own). Auto-collapse is deferred
@@ -384,7 +399,7 @@ public enum ItemClicker {
         return ids.prefix(Int(count)).map(CGDisplayBounds)
     }
 
-    /// A left click with no modifiers (clickState = 1, HID tap) at the center of the item's on-screen frame.
+    /// A click (`kind`: left with no modifiers, right, or left with Option; clickState = 1, HID tap) at the center of the item's on-screen frame.
     /// Posted to the HID tap rather than the session tap: Spotlight's status item ignores synthetic clicks from
     /// the session tap (and AXPress) and only responds to HID-level events (measured in a VM on macOS 26.6;
     /// other apps' menus / popovers open either way).
@@ -392,11 +407,11 @@ public enum ItemClicker {
     /// position-only routing, the click is swallowed if the point is covered by a higher-level window (e.g. the
     /// lock screen's Shield window); with 0x33 it still reaches the target item.
     /// Called on a background thread; the cursor is restored afterwards.
-    static func postClick(at point: CGPoint, windowID: CGWindowID) {
-        SyntheticEventGate.posting { postClickNow(at: point, windowID: windowID) }
+    static func postClick(at point: CGPoint, windowID: CGWindowID, kind: ForwardedClick = .primary) {
+        SyntheticEventGate.posting { postClickNow(at: point, windowID: windowID, kind: kind) }
     }
 
-    private static func postClickNow(at point: CGPoint, windowID: CGWindowID) {
+    private static func postClickNow(at point: CGPoint, windowID: CGWindowID, kind: ForwardedClick) {
         let source = CGEventSource(stateID: .hidSystemState)
         let savedCursor = CGEvent(source: nil)?.location
         defer { if let savedCursor { CGWarpMouseCursorPosition(savedCursor) } }
@@ -404,14 +419,19 @@ public enum ItemClicker {
         // in a "pressed" state, and the first synthetic click after that only ends the state without triggering
         // the action (known risk (a); measured in a VM: after a move, Spotlight swallows the first synthetic click
         // no matter how long we wait, but opens once a mouse-up is sent first). Items that aren't stuck ignore
-        // this mouse-up.
-        let events = [CGEventType.leftMouseUp, .leftMouseDown, .leftMouseUp].compactMap {
-            CGEvent(mouseEventSource: source, mouseType: $0, mouseCursorPosition: point, mouseButton: .left)
-        }
+        // this mouse-up. (The stuck state is the left button's, so a right click starts with a left mouse-up too.)
+        let (down, up) = kind.eventTypes
+        let events = [(CGEventType.leftMouseUp, CGMouseButton.left, CGEventFlags()),
+                      (down, kind.mouseButton, kind.flags), (up, kind.mouseButton, kind.flags)]
+            .compactMap { type, button, flags -> CGEvent? in
+                let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point,
+                                    mouseButton: button)
+                event?.flags = flags
+                return event
+            }
         // Post only if all were created, so we never send a lone mouse-down.
         guard events.count == 3 else { return }
         for e in events {
-            e.flags = []
             e.setIntegerValueField(.mouseEventClickState, value: 1)
             e.setIntegerValueField(ItemMover.windowIDField, value: Int64(windowID))
             e.post(tap: .cghidEventTap)

@@ -133,6 +133,18 @@ For each item, record: environment (model / displays / macOS version) and result
   naturally; rows are left-aligned); hover highlights an item and the name bar at the bottom shows the app name (the
   item count when nothing is hovered); hovering doesn't resize the panel; with more items than fit the screen height,
   the panel scrolls vertically.
+- [ ] **Right click / ⌥-click on a tile** (VM: FakeItems' gear `FIDual` shows a different menu per button): right-click
+  (or Control-click) the tile: the item's *secondary* menu opens at the item (FakeItems log `dual click right`);
+  ⌥-click the tile: its primary menu with the extra "hidden option" entry (`dual click left option=true`); a plain
+  click is unchanged. VoiceOver offers "Show menu" on a tile (forwards a right click). Log: `click forward (right)`.
+- [ ] **The item lingers after its menu closes (user report: "after clicking a hidden icon via the Frost Bar, I can't
+  right-click it in the menu bar")**: click a tile, then right-click the item in the menu bar: the item stays where it
+  is and (on a second right click if the first one only closed the menu) its right-click menu opens there. With the
+  pointer resting on the item it stays out (up to 30 s without a click, log `linger ... over (idle)`); picking a menu
+  entry or moving the pointer away moves it back to its original slot about 1 s later (`over (pointer left)`).
+  Reopening the Frost Bar moves it back at once (`ended early`); quitting during the linger restores it too (log
+  `deferring termination`, then a ⌘-drag back to the original anchor; relaunch: the item is in its old section). It
+  never moves while a mouse button is held.
 - [ ] ⌥-click the snowflake: a thin divider and an "Always Hidden" heading appear below the Hidden section, followed
   by the grid of Always Hidden items. While the panel is open, a plain click on the snowflake always closes it (one
   click, whatever it was opened with), and a ⌥-click shows / hides the Always Hidden section: the panel's height

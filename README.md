@@ -28,7 +28,8 @@ in the **Frost Bar**, a glass panel that drops down below the menu bar. It works
   show the always-hidden ones too. Items can hide again automatically after a delay.
 - **Frost Bar**: hidden items in a grid below the menu bar. Hover for the app name; click an item and its menu opens
   as soon as the item is in place. Item images refresh live (every second) while the panel is open, so clocks,
-  temperature or network-speed items stay current.
+  temperature or network-speed items stay current. Right-click (or Control-click) an item to open its secondary
+  menu; ⌥-click forwards an Option click.
 - **Show hidden icons** (**Settings → Behavior**): **Automatic** (the Frost Bar on displays with a notch, in the menu
   bar elsewhere), **In Menu Bar** or **Frost Bar**.
 - **Layout editor** (**Settings → Layout**): live images of every menu bar item in three bands. Drag items between

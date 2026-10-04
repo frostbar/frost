@@ -247,6 +247,19 @@ follows a round's collapse closely: the lift itself, or the drop after the mouse
 - **Conclusion**: both methods work for visible items. **Hidden items must be moved on screen before clicking**:
   AXPress does fire, but the popup appears at the wrong position or off screen.
 
+### Later measurement (VM, macOS 26.6.2): right clicks, Option clicks, and clicking a forwarded item again
+
+- Status items with a separate right-click menu usually take `sendAction(on: [.leftMouseUp, .rightMouseUp])` and
+  branch on `NSApp.currentEvent`. A HID `rightMouseDown` / `rightMouseUp` pair (clickState 1, field `0x33`, after the
+  usual lone left mouse-up) at the item's final position opens the secondary menu at the item (FakeItems `FIDual`).
+  AXPress / AXShowMenu deliver no mouse event (`currentEvent` is nil or unrelated), so they can't select that menu.
+- A HID left click with `.maskAlternate` flags reaches the app as an Option click (the extra entry appears).
+- After a real left click opens an item's menu, a right click on the item only closes it (nothing else). After a menu
+  opened by **AXPress**, the right click closes it *and* the right mouse-up reaches the button: the secondary menu
+  flashes open and closes again ~0.3 s later; a second right click opens it normally. Either way the user needs the
+  item to stay in place for a follow-up click: the Frost Bar keeps it out until the pointer has left it for 1 s
+  (`ForwardLinger`).
+
 ## Dismissal detection: layer/owner of new windows, is the baseline approach viable?
 
 | | NSMenu | NSPopover |

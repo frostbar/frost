@@ -57,13 +57,17 @@ struct FrostBarState {
 
 /// Actions emitted by the Frost Bar.
 struct FrostBarActions {
-    var activate: @MainActor (_ item: MenuBarItem) -> Void
+    /// A tile was clicked: forward `click` to its item.
+    var activate: @MainActor (_ item: MenuBarItem, _ click: ForwardedClick) -> Void
+    /// The pointer entered a tile (nil: left every tile). Right clicks on the panel go to the hovered tile
+    /// (`FrostBarPanel.onSecondaryClick`): SwiftUI buttons don't report them.
+    var hover: @MainActor (_ windowID: CGWindowID?) -> Void = { _ in }
     var refresh: @MainActor () -> Void
     var openOnboarding: @MainActor () -> Void
     var openSettings: @MainActor () -> Void
 
     /// No-op actions (for offscreen rendering / previews).
-    static let none = FrostBarActions(activate: { _ in }, refresh: {}, openOnboarding: {}, openSettings: {})
+    static let none = FrostBarActions(activate: { _, _ in }, refresh: {}, openOnboarding: {}, openSettings: {})
 }
 
 /// Size constants and panel size calculations. All sizes are determined here (independent of the text's ideal
@@ -173,6 +177,7 @@ struct FrostBarContent: View {
             .onChange(of: state.isPresented) { _, presented in
                 if !presented { hovered = nil }
             }
+            .onChange(of: hovered) { _, id in actions.hover(id) }
     }
 
     // MARK: Panel
@@ -283,7 +288,8 @@ struct FrostBarContent: View {
                             accessibilityName: state.accessibilityLabels[item.windowID]
                                 ?? state.names[item.windowID] ?? item.windowTitle,
                             isHovered: hovered == item.windowID,
-                            action: { actions.activate(item) })
+                            action: { actions.activate(item, Self.forwardedClick(for: NSApp.currentEvent)) },
+                            showMenu: { actions.activate(item, .secondary) })
             .onHover { inside in
                 if inside {
                     hovered = item.windowID
@@ -291,6 +297,14 @@ struct FrostBarContent: View {
                     hovered = nil
                 }
             }
+    }
+
+    /// The click to forward for a tile's button action: ⌥ adds Option, ⌃ makes it a right click (keyboard / VoiceOver
+    /// presses have no modifiers and forward a plain click).
+    private static func forwardedClick(for event: NSEvent?) -> ForwardedClick {
+        let flags = event?.modifierFlags ?? []
+        return ForwardedClick.kind(button: .left, control: flags.contains(.control), option: flags.contains(.option))
+            ?? .primary
     }
 
     // MARK: Footer
@@ -421,6 +435,8 @@ private struct FrostBarTile: View {
     let accessibilityName: String
     let isHovered: Bool
     let action: () -> Void
+    /// Forwards a right click (the item's secondary menu); offered to assistive technologies as "show menu".
+    let showMenu: () -> Void
 
     var body: some View {
         Button(action: action) {
@@ -432,6 +448,7 @@ private struct FrostBarTile: View {
         .buttonStyle(TileButtonStyle(isHovered: isHovered, plate: plate))
         .accessibilityLabel(accessibilityName)
         .accessibilityHint("Opens this icon’s menu")
+        .accessibilityAction(.showMenu, showMenu)
     }
 }
 

@@ -9,6 +9,9 @@ import SwiftUI
 final class FrostBarPanel: NSPanel {
     /// Called on Esc (`cancelOperation`).
     var onCancel: (() -> Void)?
+    /// Called on a right click or Control-click in the panel; returns whether it was handled (a tile is under the
+    /// pointer), in which case the event is consumed.
+    var onSecondaryClick: (() -> Bool)?
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 200, height: 80),
@@ -60,6 +63,9 @@ final class FrostBarPanel: NSPanel {
             onCancel?()
             return
         }
+        let isSecondary = event.type == .rightMouseDown
+            || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+        if isSecondary, onSecondaryClick?() == true { return }
         super.sendEvent(event)
     }
 }

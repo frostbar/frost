@@ -147,6 +147,9 @@ over the Frost Bar; close it via Notification Center's AX "Close" action.
   from inside the guest as HID-level `CGEvent`s posted to `.cghidEventTap` without the 0x33 window field. VNC input
   behaves differently in places: e.g. choosing "Settings…" from the snowflake menu through VNC activated Frost even
   before the activation fix, while a HID click reproduced the real Mac's "Settings opens behind the front app".
+- Every `vm-vnc.sh` call is a new VNC session whose pointer starts at (0, 0): a `click` without a `move` in the same
+  call lands in the top-left corner (the Apple menu). Put `move x y` before every click, or chain the steps in one
+  call with `pause`.
 - Multi-display: the guest's virtual display redelivers a *left* click on the inactive display's snowflake replica
   to Frost's button (a real Mac does not), but not a right click. `FROST_TEST_DROP_REPLICA_CLICKS=1`
   (`make vm-run FROST_ENV="FROST_TEST_DROP_REPLICA_CLICKS=1"`) makes Frost drop the redelivered click so the
