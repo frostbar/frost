@@ -117,7 +117,7 @@ import CoreGraphics
     let icon = CGRect(x: 1490, y: 1087, width: 30, height: 30)
 
     @Test func onlyTheLeftOfTheFrostIconChanges() {
-        #expect(Policy.changingRegion(of: strip, iconFrame: icon) == CGRect(x: 0, y: 1087, width: 1490, height: 30))
+        #expect(Policy.changingRegion(of: strip, iconFrames: [icon]) == CGRect(x: 0, y: 1087, width: 1490, height: 30))
     }
 
     @Test func freezeFrameIsSnappedToDevicePixels() {
@@ -135,18 +135,18 @@ import CoreGraphics
 
     @Test func stripsWithoutTheIconAreCoveredEntirely() {
         let other = CGRect(x: 1728, y: 1057, width: 1920, height: 24)
-        #expect(Policy.changingRegion(of: other, iconFrame: icon) == other)
-        #expect(Policy.changingRegion(of: strip, iconFrame: nil) == strip)
+        #expect(Policy.changingRegion(of: other, iconFrames: [icon]) == other)
+        #expect(Policy.changingRegion(of: strip, iconFrames: []) == strip)
     }
 
     @Test func pointerOverTheChangingPartPauses() {
         let strips = [strip]
-        #expect(Policy.isPointerInChangingRegion(CGPoint(x: 800, y: 1100), strips: strips, iconFrame: icon))
+        #expect(Policy.isPointerInChangingRegion(CGPoint(x: 800, y: 1100), strips: strips, iconFrames: [icon]))
         // On the snowflake (just clicked to open the panel) or to its right (clock): no pause.
-        #expect(!Policy.isPointerInChangingRegion(CGPoint(x: 1500, y: 1100), strips: strips, iconFrame: icon))
-        #expect(!Policy.isPointerInChangingRegion(CGPoint(x: 1650, y: 1110), strips: strips, iconFrame: icon))
+        #expect(!Policy.isPointerInChangingRegion(CGPoint(x: 1500, y: 1100), strips: strips, iconFrames: [icon]))
+        #expect(!Policy.isPointerInChangingRegion(CGPoint(x: 1650, y: 1110), strips: strips, iconFrames: [icon]))
         // Below the menu bar (in the panel).
-        #expect(!Policy.isPointerInChangingRegion(CGPoint(x: 800, y: 1000), strips: strips, iconFrame: icon))
+        #expect(!Policy.isPointerInChangingRegion(CGPoint(x: 800, y: 1000), strips: strips, iconFrames: [icon]))
     }
 
     @Test func eachDisplayKeepsTheRightOfItsOwnFrostIconLive() {

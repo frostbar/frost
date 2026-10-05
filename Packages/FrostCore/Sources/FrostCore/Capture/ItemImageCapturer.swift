@@ -89,19 +89,6 @@ public final class ItemImageCapturer {
         diskMisses.removeAll()
     }
 
-    /// Clears all in-memory caches (the disk cache is stored per appearance and is unaffected).
-    public func invalidate() {
-        generation += 1
-        images.removeAll()
-        tones.removeAll()
-        styles.removeAll()
-        templates.removeAll()
-        sizes.removeAll()
-        pixels.removeAll()
-        diskMisses.removeAll()
-        stale.removeAll()
-    }
-
     /// Returns the items in `images` that have no current capture (none yet, or a stale one from the previous
     /// appearance), for the caller to capture. Fills from the disk cache first (see `loadCached(_:)`).
     public func missing(_ items: [MenuBarItem]) -> [MenuBarItem] {

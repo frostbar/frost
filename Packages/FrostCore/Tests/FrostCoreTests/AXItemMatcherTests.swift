@@ -12,33 +12,36 @@ import CoreGraphics
         AXItemInfo(bundleID: bundle, pid: pid, frame: CGRect(x: x, y: 0, width: w, height: 24), description: nil)
     }
 
-    @Test func matchesByMidXWithinTolerance() {
-        // Measured: window x=1139 w=31 (mid 1154.5), AX x=1138 w=33 (mid 1154.5)
-        let r = AXItemMatcher.merge(windows: [win(1, x: 1139, w: 31)], axItems: [ax("com.example.status-item", x: 1138, w: 33)])
-        #expect(r[0].bundleID == "com.example.status-item")
-        #expect(r[0].pid == 1)
+    /// Ownership when nothing moved during the read (both snapshots identical).
+    func owners(_ windows: [RawStatusWindow], _ axItems: [AXItemInfo]) -> [CGWindowID: AXItemInfo] {
+        AXItemMatcher.consensusOwnership(before: windows, after: windows, axItems: axItems)
     }
 
-    @Test func leavesUnmatchedWindowsWithNilBundle() {
-        let r = AXItemMatcher.merge(windows: [win(1, x: 100, w: 30)], axItems: [ax("a", x: 400, w: 30)])
-        #expect(r[0].bundleID == nil)
+    @Test func matchesByMidXWithinTolerance() {
+        // Measured: window x=1139 w=31 (mid 1154.5), AX x=1138 w=33 (mid 1154.5)
+        let r = owners([win(1, x: 1139, w: 31)], [ax("com.example.status-item", x: 1138, w: 33)])
+        #expect(r[1]?.bundleID == "com.example.status-item")
+        #expect(r[1]?.pid == 1)
+    }
+
+    @Test func leavesUnmatchedWindowsWithoutOwner() {
+        let r = owners([win(1, x: 100, w: 30)], [ax("a", x: 400, w: 30)])
+        #expect(r[1] == nil)
     }
 
     @Test func eachAXItemMatchesAtMostOnce() {
-        let r = AXItemMatcher.merge(windows: [win(1, x: 100, w: 30), win(2, x: 101, w: 30)],
-                                    axItems: [ax("a", x: 100, w: 30)])
-        #expect(r.compactMap(\.bundleID) == ["a"])
+        let r = owners([win(1, x: 100, w: 30), win(2, x: 101, w: 30)], [ax("a", x: 100, w: 30)])
+        #expect(r.values.map(\.bundleID) == ["a"])
     }
 
     @Test func picksClosestCandidate() {
-        let r = AXItemMatcher.merge(windows: [win(1, x: 100, w: 30)],
-                                    axItems: [ax("far", x: 103, w: 30), ax("near", x: 101, w: 30)])
-        #expect(r[0].bundleID == "near")
+        let r = owners([win(1, x: 100, w: 30)], [ax("far", x: 103, w: 30), ax("near", x: 101, w: 30)])
+        #expect(r[1]?.bundleID == "near")
     }
 
     @Test func ignoresZeroSizedAXItems() {
-        let r = AXItemMatcher.merge(windows: [win(1, x: 0, w: 0)], axItems: [ax("cc", x: 0, w: 0)])
-        #expect(r[0].bundleID == nil)
+        let r = owners([win(1, x: 0, w: 0)], [ax("cc", x: 0, w: 0)])
+        #expect(r[1] == nil)
     }
 
     @Test func bestMatchRejectsDistantZeroSizedAndMissing() {
@@ -49,18 +52,6 @@ import CoreGraphics
         #expect(AXItemMatcher.bestMatch(for: target, among: [
             CGRect(x: 103, y: 0, width: 30, height: 24), CGRect(x: 101, y: 0, width: 30, height: 24),
         ]) == 1)
-    }
-
-    @Test func preservesWindowOrderAndFields() {
-        let r = AXItemMatcher.merge(windows: [win(5, x: 10, w: 30, title: "Clock")], axItems: [])
-        #expect(r.map(\.windowID) == [5])
-        #expect(r[0].windowTitle == "Clock")
-    }
-
-    @Test func carriesOnScreenFlag() {
-        let r = AXItemMatcher.merge(windows: [win(1, x: -3487, w: 29, onScreen: false), win(2, x: 1558, w: 29)],
-                                    axItems: [])
-        #expect(r.map(\.isOnScreen) == [false, true])
     }
 
     // MARK: - Windows moving during the async read (consensusOwnership)

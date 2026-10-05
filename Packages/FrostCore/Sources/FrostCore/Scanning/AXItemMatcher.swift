@@ -19,7 +19,7 @@ public enum AXItemMatcher {
     public static let tolerance: CGFloat = 4
 
     /// Finds the index of the non-zero-size candidate in `frames` whose midX is closest to `frame`'s and within
-    /// tolerance. Ownership merging (merge) and click lookup (AXExtrasReader.element) share this rule.
+    /// tolerance. Ownership matching (`consensusOwnership`) and click lookup (AXExtrasReader.element) share this rule.
     public static func bestMatch(for frame: CGRect, among frames: [CGRect]) -> Int? {
         frames.indices
             .filter { frames[$0].width > 0 && frames[$0].height > 0 }
@@ -27,17 +27,6 @@ public enum AXItemMatcher {
             .filter { $0.distance <= tolerance }
             .min { $0.distance < $1.distance }?
             .index
-    }
-
-    /// Attaches AX items (the real owners) to windows by nearest midX; each AX item is used at most once.
-    public static func merge(windows: [RawStatusWindow], axItems: [AXItemInfo]) -> [MenuBarItem] {
-        var available = axItems
-        return windows.map { window in
-            let info = bestMatch(for: window.frame, among: available.map(\.frame)).map { available.remove(at: $0) }
-            return MenuBarItem(windowID: window.windowID, frame: window.frame, isOnScreen: window.isOnScreen,
-                               windowTitle: window.title,
-                               bundleID: info?.bundleID, pid: info?.pid, axDescription: info?.description)
-        }
     }
 
     /// The full AX read runs in the background (about 300 ms), during which windows may move (moving, expanding /

@@ -134,11 +134,6 @@ public enum LiveRefreshPolicy {
         return region
     }
 
-    /// `changingRegion(of:iconFrames:)` when only one icon is known (usually the real window).
-    public static func changingRegion(of strip: CGRect, iconFrame: CGRect?) -> CGRect {
-        changingRegion(of: strip, iconFrames: iconFrame.map { [$0] } ?? [])
-    }
-
     /// Rounds the four edges of a freeze frame region (points) to the nearest device pixel (`scale` is the screen's
     /// backingScaleFactor): the window's and the capture's pixel sizes then match exactly and the capture is shown
     /// 1:1, unscaled (scaling blurs glyphs, which is noticeable when the freeze frame appears / disappears).
@@ -157,9 +152,5 @@ public enum LiveRefreshPolicy {
             return pointer.x >= region.minX && pointer.x < region.maxX
                 && pointer.y >= region.minY && pointer.y <= region.maxY
         }
-    }
-
-    public static func isPointerInChangingRegion(_ pointer: CGPoint, strips: [CGRect], iconFrame: CGRect?) -> Bool {
-        isPointerInChangingRegion(pointer, strips: strips, iconFrames: iconFrame.map { [$0] } ?? [])
     }
 }
