@@ -102,12 +102,6 @@ public struct OutsideClickDismissal: Sendable {
         return !presentationFrames.contains { $0.contains(point) }
     }
 
-    /// AppKit global coordinates (bottom-left origin) → CG global coordinates (top-left origin):
-    /// `y = primary display frame.maxY − y`.
-    public static func cgPoint(fromAppKit point: CGPoint, primaryScreenMaxY: CGFloat) -> CGPoint {
-        CGPoint(x: point.x, y: primaryScreenMaxY - point.y)
-    }
-
     /// Records a mouse down (any button).
     /// - Parameters:
     ///   - point: CG global coordinates.

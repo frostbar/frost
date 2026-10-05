@@ -74,8 +74,7 @@ final class OutsideClickFallback {
         // Global monitor events have no window, so `locationInWindow` is in screen coordinates (AppKit, bottom-left
         // origin).
         let screenPoint = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? event.locationInWindow
-        let point = OutsideClickDismissal.cgPoint(fromAppKit: screenPoint,
-                                                  primaryScreenMaxY: NSScreen.screens.first?.frame.maxY ?? 0)
+        let point = ScreenCoordinates.cgPoint(fromAppKit: screenPoint)
         let frames = ItemClicker.ownerWindowFrames(ownerPID: pid, baseline: baseline)
         dismissal.mouseDown(at: point, time: .now, presentationFrames: frames.presentation,
                             itemFrame: currentItem().frame, ownerWindowFrames: frames.other,

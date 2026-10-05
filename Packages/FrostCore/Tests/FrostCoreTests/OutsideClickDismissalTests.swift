@@ -36,17 +36,6 @@ import CoreGraphics
                                                 itemFrame: nil))
     }
 
-    @Test func convertsAppKitPointsToCGCoordinates() {
-        // Main display is 1117 tall: AppKit y = 1117 (top edge) → CG y = 0; AppKit y = 0 (bottom edge) → CG y = 1117.
-        #expect(OutsideClickDismissal.cgPoint(fromAppKit: CGPoint(x: 5, y: 1117), primaryScreenMaxY: 1117)
-            == CGPoint(x: 5, y: 0))
-        #expect(OutsideClickDismissal.cgPoint(fromAppKit: CGPoint(x: 5, y: 0), primaryScreenMaxY: 1117)
-            == CGPoint(x: 5, y: 1117))
-        // A secondary display below the main one: negative AppKit y → CG y beyond the main display's height.
-        #expect(OutsideClickDismissal.cgPoint(fromAppKit: CGPoint(x: 5, y: -100), primaryScreenMaxY: 1117)
-            == CGPoint(x: 5, y: 1217))
-    }
-
     @Test func appliesOnlyToKnownThirdPartyOwners() {
         #expect(OutsideClickDismissal.applies(ownerPID: 500, bundleID: "dev.frost.FakeItems"))
         #expect(OutsideClickDismissal.applies(ownerPID: 500, bundleID: nil))

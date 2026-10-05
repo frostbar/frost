@@ -717,7 +717,7 @@ final class FrostBarController {
     /// The Frost icon's frame on each display (AppKit coordinates): the real window (on the active menu bar) plus
     /// replicas on other displays.
     private var frostIconFrames: [CGRect] {
-        let replicas = app.scanner.replicaIconFrames.values.map(SectionController.appKitFrame(ofCG:))
+        let replicas = app.scanner.replicaIconFrames.values.map(ScreenCoordinates.appKitRect(fromCG:))
         return (app.sections.iconWindow.map { [$0.frame] } ?? []) + replicas
     }
 
@@ -1285,8 +1285,7 @@ final class FrostBarController {
 
     /// The pointer in CG global coordinates (top-left origin).
     private static func cgPointer() -> CGPoint {
-        OutsideClickDismissal.cgPoint(fromAppKit: NSEvent.mouseLocation,
-                                      primaryScreenMaxY: NSScreen.screens.first?.frame.maxY ?? 0)
+        ScreenCoordinates.cgPoint(fromAppKit: NSEvent.mouseLocation)
     }
 
     private func recordPresentation(_ windows: Set<CGWindowID>) {
@@ -1396,8 +1395,7 @@ private final class ItemClickWatcher {
         guard !SyntheticEvents.isPostedByFrost(event), let frame else { return }
         // The event's own location (the pointer may have moved on by now); a global event's is in screen coordinates.
         let screenPoint = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? event.locationInWindow
-        let point = OutsideClickDismissal.cgPoint(fromAppKit: screenPoint,
-                                                  primaryScreenMaxY: NSScreen.screens.first?.frame.maxY ?? 0)
+        let point = ScreenCoordinates.cgPoint(fromAppKit: screenPoint)
         if frame.contains(point) { clicked = true }
     }
 }

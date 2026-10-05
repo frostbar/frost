@@ -211,7 +211,7 @@ final class SectionController {
         }
         let located = FrostControlLocator.locate(
             in: items,
-            iconFrame: iconItem?.button?.window.map { Self.cgFrame(of: $0.frame) },
+            iconFrame: iconItem?.button?.window.map { ScreenCoordinates.cgRect(fromAppKit: $0.frame) },
             hiddenFrame: hidden?.cgFrame,
             alwaysHiddenFrame: alwaysHidden?.cgFrame)
         locatedControls = located
@@ -222,7 +222,7 @@ final class SectionController {
     /// active menu bar and to tell replicas on other displays apart).
     var controlFrames: FrostControlFrames? {
         guard iconItem != nil else { return nil }
-        return FrostControlFrames(icon: iconItem?.button?.window.map { Self.cgFrame(of: $0.frame) },
+        return FrostControlFrames(icon: iconItem?.button?.window.map { ScreenCoordinates.cgRect(fromAppKit: $0.frame) },
                                   hidden: hidden?.cgFrame, alwaysHidden: alwaysHidden?.cgFrame)
     }
 
@@ -236,17 +236,6 @@ final class SectionController {
     /// may not reach the button (first click does nothing); `ReplicaClickDetector` detects and replays it
     /// (`replicaClickMonitors`).
     var iconWindow: NSWindow? { iconItem?.button?.window }
-
-    /// AppKit (bottom-left origin) -> CG (top-left origin): `y = primary display frame.maxY - frame.maxY`. The same
-    /// formula converts back.
-    static func cgFrame(of appKitFrame: CGRect) -> CGRect {
-        let primaryMaxY = NSScreen.screens.first?.frame.maxY ?? 0
-        return CGRect(x: appKitFrame.minX, y: primaryMaxY - appKitFrame.maxY,
-                      width: appKitFrame.width, height: appKitFrame.height)
-    }
-
-    /// CG -> AppKit (inverse of `cgFrame(of:)`, same formula).
-    static func appKitFrame(ofCG cgFrame: CGRect) -> CGRect { self.cgFrame(of: cgFrame) }
 
     // MARK: - State
 
@@ -723,8 +712,7 @@ final class SectionController {
                 return
             }
             // Global monitor events have no window, so `locationInWindow` is in screen coordinates (AppKit, bottom-left origin).
-            let point = OutsideClickDismissal.cgPoint(fromAppKit: event.locationInWindow,
-                                                      primaryScreenMaxY: NSScreen.screens.first?.frame.maxY ?? 0)
+            let point = ScreenCoordinates.cgPoint(fromAppKit: event.locationInWindow)
             let control = event.modifierFlags.contains(.control), option = event.modifierFlags.contains(.option)
             var hit = replicaClicks.globalMouseDown(at: point, time: event.timestamp, button: button, control: control,
                                                     option: option, replicaIcons: scanner.replicaIconFrames)
@@ -823,7 +811,7 @@ private final class SeparatorItem {
 
     /// The button window's frame in CG coordinates.
     var cgFrame: CGRect? {
-        item.button?.window.map { SectionController.cgFrame(of: $0.frame) }
+        item.button?.window.map { ScreenCoordinates.cgRect(fromAppKit: $0.frame) }
     }
 
     private func apply() {

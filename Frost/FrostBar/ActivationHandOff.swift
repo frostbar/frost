@@ -118,12 +118,11 @@ final class ActivationHandOff {
     /// frontmost, so it needs no check).
     private func mouseDown(_ event: NSEvent) {
         guard !finished, !userChoseOtherApp else { return }
-        let primaryMaxY = NSScreen.screens.first?.frame.maxY ?? 0
-        let point = OutsideClickDismissal.cgPoint(fromAppKit: event.locationInWindow, primaryScreenMaxY: primaryMaxY)
+        let point = ScreenCoordinates.cgPoint(fromAppKit: event.locationInWindow)
         let menuBars = NSScreen.screens.map { screen in
             let height = PanelPlacement.menuBarHeight(screenFrame: screen.frame, visibleFrame: screen.visibleFrame,
                                                       fallback: Self.fallbackMenuBarHeight)
-            let frame = SectionController.cgFrame(of: screen.frame)
+            let frame = ScreenCoordinates.cgRect(fromAppKit: screen.frame)
             return CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: height)
         }
         let owner = topWindowOwner(at: point)
