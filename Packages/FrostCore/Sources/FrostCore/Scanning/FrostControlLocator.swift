@@ -5,7 +5,7 @@ import CoreGraphics
 /// `button.window.windowNumber` is not a CG windowID (it is `k << 32`; converting it overflows and crashes), so
 /// items are matched by frame: the app layer converts `button.window.frame` from AppKit to CG coordinates
 /// (`y = primaryScreenMaxY - frame.maxY`) and passes it in. If no frame matches, falls back to window title ==
-/// autosaveName (titles require Screen Recording permission).
+/// autosaveName, an optional extra: titles are empty without Screen Recording, and the frame match needs none.
 public enum FrostControlLocator {
     public static let iconTitle = "FrostIcon"
     public static let hiddenSeparatorTitle = "FrostHiddenSeparator"

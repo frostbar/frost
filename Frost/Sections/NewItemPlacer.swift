@@ -17,7 +17,11 @@ import Observation
 /// seen as the same window changing section without Frost moving it). When a window Frost hasn't seen in this run shows
 /// up in another section, it is moved back, unless the user turned "Keep icons in their sections" off.
 ///
-/// Observes only when the layout is trustworthy: all permissions granted, not editing, no move transaction, no mouse
+/// Identities are derived from Accessibility attributes (`ItemIdentityKey`), so all of this works with Accessibility
+/// alone. Data persisted by versions that keyed items by window title (Screen Recording) is migrated as items are seen
+/// (`IdentityMigration`); the window title last seen with each identity is kept as an extra signal for that.
+///
+/// Observes only when the layout is trustworthy: Accessibility granted, not editing, no move transaction, no mouse
 /// button held (`UserMouseButtons`), and neither separator under the notch (collapsed or expanded). Moves only when the
 /// user won't be disturbed: collapsed, user present, the Frost Bar closed and not forwarding a click (`isPaused`).
 /// Retries later when moving isn't convenient (checked again before each item of a batch); a failed move is only logged
@@ -32,20 +36,27 @@ final class NewItemPlacer {
     private let presence: UserPresenceMonitor
     private let defaults: UserDefaults
 
-    private static let knownKey = "knownItemIdentities"
+    /// Seen icons (`NewItemPlacement.encode`, version 2: AX-derived identities). Version 1 (`knownItemIdentities`,
+    /// keyed by window title) is read once as legacy identities and left in place.
+    private static let knownKey = "knownItemIdentities.v2"
+    private static let knownKeyV1 = "knownItemIdentities"
     /// Frost's first run (AH seed just written) with no decision made yet: move existing Always Hidden icons to Hidden.
     private static let firstRunKey = "firstRunPlacementPending"
-    /// The remembered section of each icon (`SectionKeeper.encode`); the suffix is the format version.
-    private static let sectionsKey = "itemSections.v1"
+    /// The remembered section of each icon (`SectionKeeper.encode`); the suffix is the format version. Version 1 (keyed
+    /// by window title) is read once as legacy identities and left in place.
+    private static let sectionsKey = "itemSections.v2"
+    private static let sectionsKeyV1 = "itemSections.v1"
+    /// The window title last seen with each identity (`IdentityMigration.encodeTitles`).
+    private static let titlesKey = "itemTitles.v1"
 
     /// Called by SectionController when it first writes the AH seed.
     static func markFirstRun(defaults: UserDefaults) {
         defaults.set(true, forKey: firstRunKey)
     }
 
-    /// First run: existing icons are still in Always Hidden and will move to Hidden once all permissions are granted
+    /// First run: existing icons are still in Always Hidden and will move to Hidden once Accessibility is granted
     /// (onboarding shows a note based on this). Not observable: onboarding re-reads it when permissions change
-    /// (the first decision only happens once all permissions are granted).
+    /// (the first decision only happens once Accessibility is granted).
     var isFirstRunPlacementPending: Bool {
         known == nil && defaults.bool(forKey: Self.firstRunKey)
     }
@@ -61,6 +72,9 @@ final class NewItemPlacer {
     private var considered: Set<CGWindowID> = []
     /// The remembered sections and this run's observations.
     private var keeper: SectionKeeper
+    /// The window title last seen with each identity (only readable with Screen Recording): lets remembered state
+    /// follow an item whose AX description changed (`IdentityMigration`).
+    private var titles: [ItemIdentity: String] = [:]
     /// Identities already logged as ambiguous (logged once each).
     private var loggedAmbiguous: Set<ItemIdentity> = []
     /// A full ownership read happened before seeding (otherwise most icons have no owner yet and seeding is incomplete).
@@ -81,15 +95,23 @@ final class NewItemPlacer {
         self.presence = presence
         self.defaults = defaults
         known = defaults.data(forKey: Self.knownKey).flatMap { try? NewItemPlacement.decode($0) }
+            ?? defaults.data(forKey: Self.knownKeyV1).flatMap { try? NewItemPlacement.decodeLegacy($0) }
         var memory: [ItemIdentity: MenuBarSection] = [:]
-        if let data = defaults.data(forKey: Self.sectionsKey) {
-            do {
+        do {
+            if let data = defaults.data(forKey: Self.sectionsKey) {
                 memory = try SectionKeeper.decode(data)
-            } catch {
-                FrostLog.newItems.error("failed to read the remembered sections: \(error, privacy: .public)")
+            } else if let data = defaults.data(forKey: Self.sectionsKeyV1) {
+                memory = try SectionKeeper.decodeLegacy(data)
+                FrostLog.newItems.notice("""
+                    read \(memory.count) remembered section(s) keyed by window title; they move to Accessibility-based \
+                    identities as the items are seen
+                    """)
             }
+        } catch {
+            FrostLog.newItems.error("failed to read the remembered sections: \(error, privacy: .public)")
         }
         keeper = SectionKeeper(memory: memory)
+        titles = defaults.data(forKey: Self.titlesKey).flatMap { try? IdentityMigration.decodeTitles($0) } ?? [:]
     }
 
     func start() {
@@ -103,7 +125,7 @@ final class NewItemPlacer {
             _ = scanner.items
             _ = sections.state
             _ = sections.isEditing
-            _ = permissions.allGranted
+            _ = permissions.canManageItems
             _ = presence.isAway
             _ = preferences.keepItemSections
         } onChange: { [weak self] in
@@ -132,13 +154,13 @@ final class NewItemPlacer {
     }
 
     private func evaluate() async {
-        guard permissions.allGranted else { return }
+        guard permissions.canManageItems else { return }
         if known == nil, !refreshedForSeeding {
             await scanner.refreshOwnership()
             refreshedForSeeding = true
         }
-        // All permissions granted (titles and owners readable), scan OK, not editing; `observe` re-triggers a decision
-        // when any of these change.
+        // Accessibility granted (owners and identities readable), scan OK, not editing; `observe` re-triggers a
+        // decision when any of these change.
         guard scanner.status == .ok, !sections.isEditing, !presence.isAway,
               let controls = sections.controlWindows else { return }
         guard !mover.isBusy, !UserMouseButtons.isAnyHeld, !isPaused() else {
@@ -149,6 +171,7 @@ final class NewItemPlacer {
         }
         let layout = SectionAssigner.layout(of: scanner.items, controls: controls)
         guard !layout.isEmpty else { return }
+        migrateIdentities(scanner.items)
         let collapsed = sections.state == .collapsed
         var placements: [Placement] = []
 
@@ -156,8 +179,11 @@ final class NewItemPlacer {
         // of AH).
         if collapsed {
             let firstRun = known == nil && defaults.bool(forKey: Self.firstRunKey)
-            let decision = NewItemPlacement.decide(layout: layout, known: known, considered: considered,
-                                                   firstRun: firstRun)
+            // Items whose app still has title-keyed identities that couldn't be mapped (no Screen Recording) count as
+            // seen: whether one of them is new can't be told.
+            let presumed = known.map { IdentityMigration.presumedKnown(known: $0, items: scanner.items) } ?? []
+            let decision = NewItemPlacement.decide(layout: layout, known: known.map { $0.union(presumed) },
+                                                   considered: considered, firstRun: firstRun)
             considered = decision.considered
             remember(decision.learned, seeding: known == nil)
             defaults.removeObject(forKey: Self.firstRunKey)
@@ -198,7 +224,7 @@ final class NewItemPlacer {
         for move in outcome.userMoves {
             FrostLog.newItems.notice("""
                 remembering \(move.identity.bundleID, privacy: .public) \
-                (\(move.identity.title, privacy: .private)) in \(move.to.rawValue, privacy: .public): \
+                (\(move.identity.key, privacy: .private)) in \(move.to.rawValue, privacy: .public): \
                 moved by the user from \(move.from.rawValue, privacy: .public)
                 """)
         }
@@ -207,8 +233,8 @@ final class NewItemPlacer {
         }
         for identity in outcome.ambiguous.subtracting(loggedAmbiguous) {
             FrostLog.newItems.notice("""
-                several items of \(identity.bundleID, privacy: .public) share the title \
-                \(identity.title, privacy: .private): not keeping their sections
+                several items of \(identity.bundleID, privacy: .public) share the identity \
+                \(identity.key, privacy: .private): not keeping their sections
                 """)
         }
         loggedAmbiguous = outcome.ambiguous
@@ -226,7 +252,7 @@ final class NewItemPlacer {
             return
         }
         FrostLog.newItems.notice("""
-            remembering \(item.identity.bundleID, privacy: .public) (\(item.windowTitle, privacy: .private)) \
+            remembering \(item.bundleID ?? "?", privacy: .public) (\(item.identityKey ?? "?", privacy: .private)) \
             in \(section.rawValue, privacy: .public): dropped in the layout editor
             """)
         saveSections()
@@ -256,10 +282,10 @@ final class NewItemPlacer {
                         moved.append(placement)
                         switch placement.kind {
                         case .new:
-                            FrostLog.newItems.notice("moved new item \(item.identity.bundleID, privacy: .public) out of Always Hidden")
+                            FrostLog.newItems.notice("moved new item \(item.bundleID ?? "?", privacy: .public) out of Always Hidden")
                         case .restore:
                             FrostLog.newItems.notice("""
-                                moved \(item.identity.bundleID, privacy: .public) (\(item.windowTitle, privacy: .private)) \
+                                moved \(item.bundleID ?? "?", privacy: .public) (\(item.identityKey ?? "?", privacy: .private)) \
                                 back to \(placement.section.rawValue, privacy: .public): its app re-added it elsewhere
                                 """)
                         }
@@ -276,7 +302,7 @@ final class NewItemPlacer {
                         break
                     } catch {
                         FrostLog.newItems.error("""
-                            failed to move \(item.identity.bundleID, privacy: .public) to \
+                            failed to move \(item.bundleID ?? "?", privacy: .public) to \
                             \(placement.section.rawValue, privacy: .public): \(error, privacy: .public)
                             """)
                     }
@@ -322,8 +348,46 @@ final class NewItemPlacer {
         let updated = (known ?? []).union(identities)
         guard updated != known else { return }
         known = updated
+        saveKnown(updated)
+    }
+
+    /// Moves remembered sections and seen icons stored under an older identity (keyed by window title, or an AX
+    /// description that has since changed) to the identities the current items have, and records the items' window
+    /// titles for the next time (`IdentityMigration`).
+    private func migrateIdentities(_ items: [MenuBarItem]) {
+        let memoryPlan = IdentityMigration.plan(stored: Set(keeper.memory.keys), titles: titles, items: items)
+        if keeper.rekey(memoryPlan) {
+            FrostLog.newItems.notice("moved \(memoryPlan.count) remembered section(s) to the items' current identities")
+            saveSections()
+        }
+        if let known {
+            let knownPlan = IdentityMigration.plan(stored: known, titles: titles, items: items)
+            let migrated = IdentityMigration.apply(knownPlan, to: known)
+            if migrated != known {
+                self.known = migrated
+                saveKnown(migrated)
+            }
+        }
+        let renamed = IdentityMigration.apply(memoryPlan, to: titles)
+        if let updated = IdentityMigration.updatedTitles(renamed, items: items) {
+            saveTitles(updated)
+        } else if renamed != titles {
+            saveTitles(renamed)
+        }
+    }
+
+    private func saveTitles(_ updated: [ItemIdentity: String]) {
+        titles = updated
         do {
-            defaults.set(try NewItemPlacement.encode(updated), forKey: Self.knownKey)
+            defaults.set(try IdentityMigration.encodeTitles(updated), forKey: Self.titlesKey)
+        } catch {
+            FrostLog.newItems.error("failed to save item titles: \(error, privacy: .public)")
+        }
+    }
+
+    private func saveKnown(_ identities: Set<ItemIdentity>) {
+        do {
+            defaults.set(try NewItemPlacement.encode(identities), forKey: Self.knownKey)
         } catch {
             FrostLog.newItems.error("failed to save known items: \(error, privacy: .public)")
         }

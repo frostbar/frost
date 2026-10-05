@@ -8,7 +8,7 @@ import SwiftUI
 struct FrostBarState {
     enum Phase: Equatable {
         case loading
-        /// Permissions were revoked while the panel was open.
+        /// Accessibility isn't granted (or was revoked while the panel was open).
         case needsPermission
         /// `scanner.status == .noWindows` or Frost's separator is missing: say so explicitly instead of silently
         /// showing an empty panel.
@@ -33,6 +33,8 @@ struct FrostBarState {
     var contentWidths: [CGWindowID: CGFloat] = [:]
     /// VoiceOver label of each tile: app name and the item's own description (`MenuBarItem.accessibilityName`).
     var accessibilityLabels: [CGWindowID: String] = [:]
+    /// Short labels for tiles without a capture (`ItemFallbackAppearance.labels`).
+    var fallbackLabels: [CGWindowID: String] = [:]
     /// Whether each capture is a monochrome glyph or a colored icon (see `GlyphStyle`).
     var styles: [CGWindowID: GlyphStyle]
     /// Template images of monochrome glyphs: tinted with the foreground color so they follow the glass's actual
@@ -51,6 +53,9 @@ struct FrostBarState {
     var isRefreshing: Bool
     /// The Always Hidden section is fading out (the panel shrinks once it's gone).
     var isAlwaysHiddenFading = false
+    /// Accessibility is granted but Screen Recording isn't, and the user hasn't closed the hint: suggest granting it
+    /// for real icon images.
+    var showsScreenRecordingHint = false
 
     var items: [MenuBarItem] { hidden + alwaysHidden }
 }
@@ -65,6 +70,8 @@ struct FrostBarActions {
     var refresh: @MainActor () -> Void
     var openOnboarding: @MainActor () -> Void
     var openSettings: @MainActor () -> Void
+    /// The user closed the Screen Recording hint.
+    var dismissScreenRecordingHint: @MainActor () -> Void = {}
 }
 
 /// Size constants and panel size calculations. All sizes are determined here (independent of the text's ideal
@@ -95,6 +102,8 @@ enum FrostBarMetrics {
     static let sectionHeaderHeight: CGFloat = 28
     /// Height of the footer (the hovered app's name).
     static let footerHeight: CGFloat = 30
+    /// Height of the Screen Recording hint row above the footer (when shown).
+    static let hintHeight: CGFloat = 40
     /// Content width of non-icon states (empty, no permissions, ...).
     static let statusWidth: CGFloat = 232
     /// Showing / hiding the Always Hidden section (⌥-click while open): a short fade and height change. The window
@@ -145,7 +154,8 @@ enum FrostBarMetrics {
 
     /// Visible height of the grids: scrolls when taller than the usable screen height.
     static func gridsViewportHeight(_ state: FrostBarState) -> CGFloat {
-        min(gridsHeight(state), max(tileHeight + 2 * padding, state.maxHeight - footerHeight))
+        let chrome = footerHeight + (state.showsScreenRecordingHint ? hintHeight : 0)
+        return min(gridsHeight(state), max(tileHeight + 2 * padding, state.maxHeight - chrome))
     }
 }
 
@@ -198,9 +208,9 @@ struct FrostBarContent: View {
                                action: actions.refresh)
                 }
             case .needsPermission:
-                StatusMessage(symbol: "lock.fill", tint: .orange, title: "Permissions Required",
-                              detail: "Frost needs Accessibility and Screen Recording permissions.") {
-                    PillButton(title: "Grant Permissions", symbol: "arrow.up.forward", action: actions.openOnboarding)
+                StatusMessage(symbol: "lock.fill", tint: .orange, title: "Accessibility Required",
+                              detail: "The Frost Bar needs the Accessibility permission.") {
+                    PillButton(title: "Grant Access", symbol: "arrow.up.forward", action: actions.openOnboarding)
                 }
             case .loading:
                 HStack(spacing: 10) {
@@ -233,6 +243,11 @@ struct FrostBarContent: View {
                 } else {
                     sections(width: width)
                 }
+            }
+            if state.showsScreenRecordingHint {
+                ScreenRecordingHint(grant: actions.openOnboarding, dismiss: actions.dismissScreenRecordingHint)
+                    .frame(width: width + 2 * FrostBarMetrics.padding, height: FrostBarMetrics.hintHeight)
+                    .transition(.opacity)
             }
             footer
                 .frame(width: width + 2 * FrostBarMetrics.padding)
@@ -281,7 +296,8 @@ struct FrostBarContent: View {
         if image != nil, case .colored(let needed) = state.styles[item.windowID] { plate = needed }
         return FrostBarTile(item: item, image: image, imageSize: state.imageSizes[item.windowID],
                             template: state.templates[item.windowID],
-                            appIcon: state.appIcons[item.windowID], plate: plate?.outlinePlateColor, width: width,
+                            appIcon: state.appIcons[item.windowID], label: state.fallbackLabels[item.windowID],
+                            plate: plate?.outlinePlateColor, width: width,
                             accessibilityName: state.accessibilityLabels[item.windowID]
                                 ?? state.names[item.windowID] ?? item.windowTitle,
                             isHovered: hovered == item.windowID,
@@ -431,6 +447,8 @@ private struct FrostBarTile: View {
     let imageSize: CGSize?
     let template: CGImage?
     let appIcon: NSImage?
+    /// Short label for a tile without a capture (`ItemFallbackAppearance`).
+    let label: String?
     /// Plate color for colored icons with large pure white / black areas (monochrome glyphs are tinted via their
     /// template image and need no plate).
     let plate: Color?
@@ -444,7 +462,7 @@ private struct FrostBarTile: View {
     var body: some View {
         Button(action: action) {
             ItemGlyph(item: item, image: image, template: template, appIcon: appIcon, appIconSize: 20,
-                      imageSize: imageSize)
+                      imageSize: imageSize, label: image == nil ? label : nil)
                 .frame(width: width, height: FrostBarMetrics.tileHeight)
                 .clipped()
         }
@@ -502,6 +520,48 @@ private struct SectionHeader: View {
                 .padding(.bottom, 4)
         }
         .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Screen Recording isn't granted: tiles show app icons. A subtle row offering real images (opens onboarding), with a
+/// close button that hides it for good.
+private struct ScreenRecordingHint: View {
+    let grant: () -> Void
+    let dismiss: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: grant) {
+                Label {
+                    Text("Grant Screen Recording to see real icons")
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "rectangle.dashed.badge.record")
+                }
+                .font(.caption)
+                .foregroundStyle(isHovered ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
+            .accessibilityHint("Opens the permissions window")
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, height: 18)
+                    .background(Color.primary.opacity(0.08), in: .circle)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Don’t show again")
+        }
+        .padding(.horizontal, FrostBarMetrics.padding + 6)
+        .animation(.snappy(duration: 0.16), value: isHovered)
     }
 }
 

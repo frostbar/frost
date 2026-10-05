@@ -43,8 +43,8 @@ struct BehaviorView: View {
                     }
                     DisplayModeExplanation(mode: preferences.displayMode)
                         .padding(.leading, SettingRow<EmptyView>.textInset)
-                    if preferences.displayMode != .inline && !model.permissions.allGranted {
-                        InlineNotice(text: String(localized: "The Frost Bar needs Accessibility and Screen Recording permissions. Until they’re granted, hidden icons expand in the menu bar."),
+                    if preferences.displayMode != .inline && !model.permissions.canManageItems {
+                        InlineNotice(text: String(localized: "The Frost Bar needs the Accessibility permission. Until it’s granted, hidden icons expand in the menu bar."),
                                      symbol: "info.circle.fill", tint: .orange)
                     }
                 }

@@ -10,7 +10,8 @@ struct LayoutEditorView: View {
     var body: some View {
         LayoutEditorContent(state: editor.state, actions: LayoutEditorActions(
             drop: { id, section, index in Task { await editor.drop(id, into: section, at: index) } },
-            openOnboarding: { editor.openOnboarding() }))
+            openOnboarding: { editor.openOnboarding() },
+            dismissScreenRecordingHint: { editor.dismissScreenRecordingHint() }))
     }
 }
 
@@ -101,10 +102,15 @@ struct LayoutEditorContent: View {
         .padding(.bottom, 18)
     }
 
-    /// Footer hint: explains the badge when some items are off-screen, otherwise shows a tip.
+    /// Footer: offers Screen Recording while tiles show app icons (until the user closes that), then explains the badge
+    /// when some items are off-screen, otherwise shows a tip.
     @ViewBuilder private var footer: some View {
         let offscreen = state.obscured.count
-        Group {
+        VStack(spacing: 8) {
+            if state.showsScreenRecordingHint {
+                ScreenRecordingNotice(grant: actions.openOnboarding, dismiss: actions.dismissScreenRecordingHint)
+                    .transition(.opacity)
+            }
             if offscreen > 0 {
                 Label {
                     Text("\(offscreen) icons are off-screen (e.g. behind the notch) and have no preview, but can still be dragged.")
@@ -128,6 +134,7 @@ struct LayoutEditorContent: View {
         // The error toast floats in the same spot: make room while it is shown.
         .opacity(state.errorMessage == nil ? 1 : 0)
         .animation(.snappy, value: offscreen)
+        .animation(.snappy, value: state.showsScreenRecordingHint)
     }
 }
 
@@ -436,7 +443,7 @@ private struct ItemTile: View {
         // stay in the hierarchy, only their opacity animates); later captures of the same item update in place.
         return ZStack {
             ItemGlyph(item: item, image: nil, appIcon: state.appIcons[item.windowID],
-                      imageSize: state.imageSizes[item.windowID])
+                      imageSize: state.imageSizes[item.windowID], label: state.fallbackLabels[item.windowID])
                 .opacity(image == nil ? 1 : 0)
             ItemGlyph(item: item, image: image, appIcon: nil, imageSize: state.imageSizes[item.windowID])
                 .opacity(image == nil ? 0 : 1)
@@ -579,14 +586,14 @@ private struct PermissionPlaceholder: View {
     let openOnboarding: () -> Void
 
     var body: some View {
-        EditorPlaceholder(symbol: "lock.shield", tint: .orange, title: "Permissions Required",
-                          message: "Frost needs Accessibility and Screen Recording permissions to show and move icons.") {
+        EditorPlaceholder(symbol: "lock.shield", tint: .orange, title: "Accessibility Required",
+                          message: "Frost needs the Accessibility permission to read and move icons. Screen Recording is optional: it shows real images of the icons.") {
             VStack(spacing: 16) {
                 HStack(spacing: 18) {
                     status("Accessibility", granted: permissions.accessibility)
-                    status("Screen Recording", granted: permissions.screenRecording)
+                    status("Screen Recording (optional)", granted: permissions.screenRecording)
                 }
-                Button("Grant Permissions", action: openOnboarding)
+                Button("Grant Access", action: openOnboarding)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
             }
@@ -603,6 +610,37 @@ private struct PermissionPlaceholder: View {
                 .contentTransition(.symbolEffect(.replace))
         }
         .font(.callout.weight(.medium))
+    }
+}
+
+/// Screen Recording isn't granted: tiles show app icons. A footer line offering real images (opens onboarding), with
+/// a close button that hides it for good.
+private struct ScreenRecordingNotice: View {
+    let grant: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: grant) {
+                Label {
+                    Text("Grant Screen Recording to see real icons")
+                } icon: {
+                    Image(systemName: "rectangle.dashed.badge.record")
+                        .foregroundStyle(.pink)
+                }
+            }
+            .buttonStyle(.link)
+            .accessibilityHint("Opens the permissions window")
+            Button(action: dismiss) {
+                Image(systemName: "xmark.circle.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .help(String(localized: "Don’t show again"))
+            .accessibilityLabel("Don’t show again")
+        }
     }
 }
 

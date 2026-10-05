@@ -151,11 +151,14 @@ public final class MenuBarItemScanner {
     /// Builds `items` from the ownership cache (dropping leftover windows of apps that quit) and discards
     /// cache entries for windows that are gone.
     private func publish(_ windows: [RawStatusWindow]) {
+        let systemSlots = SystemItemRules.trailingSlots(windows, excluding: ownWindowIDs())
         items = windows.map { window in
             let owner = ownershipCache[window.windowID]
             return MenuBarItem(windowID: window.windowID, frame: window.frame, isOnScreen: window.isOnScreen,
                                windowTitle: window.title, bundleID: owner?.bundleID, pid: owner?.pid,
-                               axDescription: owner?.description)
+                               axDescription: owner?.description, axTitle: owner?.title,
+                               axIdentifier: owner?.identifier, identityKey: owner?.identityKey,
+                               occupiesSystemSlot: systemSlots.contains(window.windowID))
         }.filter { !StaleWindowFilter.isStale($0) }
         let live = Set(windows.map(\.windowID))
         ownershipCache = ownershipCache.filter { live.contains($0.key) }

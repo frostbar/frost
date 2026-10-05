@@ -1,18 +1,12 @@
 import AppKit
+import FrostCore
 import Observation
 
 /// User preferences. Read at init; every property writes back to `UserDefaults.standard` when it changes.
 @Observable
 @MainActor
 final class Preferences {
-    enum DisplayMode: String, CaseIterable, Sendable {
-        /// Frost Bar on displays with a notch, in-place expansion elsewhere.
-        case automatic
-        /// Expand hidden items in place in the menu bar.
-        case inline
-        /// Show hidden items in the Frost Bar panel below the menu bar.
-        case frostBar
-    }
+    typealias DisplayMode = FrostCore.DisplayMode
 
     private enum Key {
         static let autoRehide = "autoRehide"
@@ -20,6 +14,7 @@ final class Preferences {
         static let displayMode = "displayMode"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let keepItemSections = "keepItemSections"
+        static let screenRecordingHintDismissed = "screenRecordingHintDismissed"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -47,6 +42,11 @@ final class Preferences {
         didSet { defaults.set(keepItemSections, forKey: Key.keepItemSections) }
     }
 
+    /// The user closed the "Grant Screen Recording to see real icons" hint (Frost Bar and layout editor).
+    var screenRecordingHintDismissed: Bool {
+        didSet { defaults.set(screenRecordingHintDismissed, forKey: Key.screenRecordingHintDismissed) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         autoRehide = defaults.object(forKey: Key.autoRehide) as? Bool ?? true
@@ -54,16 +54,19 @@ final class Preferences {
         displayMode = defaults.string(forKey: Key.displayMode).flatMap(DisplayMode.init(rawValue:)) ?? .automatic
         hasCompletedOnboarding = defaults.object(forKey: Key.hasCompletedOnboarding) as? Bool ?? false
         keepItemSections = defaults.object(forKey: Key.keepItemSections) as? Bool ?? true
+        screenRecordingHintDismissed = defaults.bool(forKey: Key.screenRecordingHintDismissed)
     }
 
-    /// The display mode in effect: always in place without permissions (basic hide/show needs none, the Frost Bar
-    /// does); `.automatic` uses the Frost Bar on displays with a notch (`safeAreaInsets.top > 0`), in place otherwise.
-    func effectiveDisplayMode(for screen: NSScreen?, permissionsGranted: Bool) -> DisplayMode {
-        guard permissionsGranted else { return .inline }
-        switch displayMode {
-        case .automatic: return Self.hasNotch(screen) ? .frostBar : .inline
-        case .inline, .frostBar: return displayMode
-        }
+    /// The display mode in effect on `screen` (`DisplayMode.effective`): in place without Accessibility (basic
+    /// hide/show needs no permissions, the Frost Bar needs Accessibility; Screen Recording only adds real icon images);
+    /// `.automatic` uses the Frost Bar on displays with a notch (`safeAreaInsets.top > 0`), in place otherwise.
+    func effectiveDisplayMode(for screen: NSScreen?, capabilities: PermissionCapabilities) -> DisplayMode {
+        displayMode.effective(hasNotch: Self.hasNotch(screen), capabilities: capabilities)
+    }
+
+    /// Whether to show the "Grant Screen Recording to see real icons" hint.
+    func showsScreenRecordingHint(_ capabilities: PermissionCapabilities) -> Bool {
+        capabilities.suggestsScreenRecording && !screenRecordingHintDismissed
     }
 
     private static func hasNotch(_ screen: NSScreen?) -> Bool {

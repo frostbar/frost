@@ -96,7 +96,7 @@ final class SectionController {
             guard defaults.object(forKey: key) == nil else { continue }
             defaults.set(seed.position, forKey: key)
             // First run: existing icons without a Preferred Position are placed left of AH (Always Hidden);
-            // NewItemPlacer moves them to Hidden once all permissions are granted (possibly only after granting
+            // NewItemPlacer moves them to Hidden once Accessibility is granted (possibly only after granting
             // and relaunching, hence persisted).
             if seed.name == Self.alwaysHiddenAutosaveName { NewItemPlacer.markFirstRun(defaults: defaults) }
         }
@@ -556,7 +556,7 @@ final class SectionController {
             return
         }
         guard !isEditing else { return }
-        let mode = preferences.effectiveDisplayMode(for: screen, permissionsGranted: permissions.allGranted)
+        let mode = preferences.effectiveDisplayMode(for: screen, capabilities: permissions.capabilities)
         if mode == .frostBar {
             model?.toggleFrostBar(option)
             return

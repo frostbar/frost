@@ -217,7 +217,8 @@ final class LayoutEditorModel {
     // MARK: - Derived state
 
     var phase: Phase {
-        if !model.permissions.allGranted { return .needsPermission }
+        // Accessibility is enough; without Screen Recording tiles show app icons (`ItemFallbackAppearance`).
+        if !model.permissions.canManageItems { return .needsPermission }
         if isWaitingForMover { return .loading }
         switch model.scanner.status {
         case .notScanned: return .loading
@@ -268,17 +269,21 @@ final class LayoutEditorModel {
                 icons[item.windowID] = icon
             }
         }
+        let uncaptured = items.filter { model.capturer.images[$0.windowID] == nil }
+        let fallbackLabels = ItemFallbackAppearance.labels(for: uncaptured)
         let displayBounds = model.scanner.menuBarDisplay?.frame ?? CGDisplayBounds(CGMainDisplayID())
         let obscured = hasSettled
             ? Set(items.filter { ItemMover.isObscured($0, displayBounds: displayBounds) }.map(\.windowID))
             : []
         return LayoutEditorState(
             phase: phase, layout: layout, images: model.capturer.images, imageSizes: model.capturer.sizes,
-            tones: model.capturer.tones, names: names, accessibilityLabels: labels, appIcons: icons, pending: pending,
+            tones: model.capturer.tones, names: names, accessibilityLabels: labels, fallbackLabels: fallbackLabels,
+            appIcons: icons, pending: pending,
             obscured: obscured, errorMessage: errorMessage,
             isRetrying: isActive && fullRefreshSession == session,
             permissions: .init(accessibility: model.permissions.accessibility,
-                               screenRecording: model.permissions.screenRecording))
+                               screenRecording: model.permissions.screenRecording),
+            showsScreenRecordingHint: model.preferences.showsScreenRecordingHint(model.permissions.capabilities))
     }
 
     // MARK: - Refreshing
@@ -478,6 +483,10 @@ final class LayoutEditorModel {
     func openOnboarding() {
         model.openOnboarding()
     }
+
+    func dismissScreenRecordingHint() {
+        model.preferences.screenRecordingHintDismissed = true
+    }
 }
 
 /// All the data the editor view needs to draw (a value type: views don't depend on services directly, so they can be
@@ -498,6 +507,8 @@ struct LayoutEditorState {
     var names: [CGWindowID: String]
     /// VoiceOver labels (`MenuBarItem.accessibilityName`).
     var accessibilityLabels: [CGWindowID: String] = [:]
+    /// Short labels for tiles without a captured image (`ItemFallbackAppearance.labels`).
+    var fallbackLabels: [CGWindowID: String] = [:]
     /// App icons for items without a captured image.
     var appIcons: [CGWindowID: NSImage]
     var pending: Set<CGWindowID>
@@ -509,10 +520,13 @@ struct LayoutEditorState {
     /// separators can't be found.
     var isRetrying: Bool
     var permissions: Permissions
+    /// Accessibility is granted but Screen Recording isn't, and the user hasn't closed the hint.
+    var showsScreenRecordingHint = false
 }
 
 /// Actions sent by the editor view.
 struct LayoutEditorActions {
     var drop: @MainActor (_ windowID: CGWindowID, _ section: MenuBarSection, _ index: Int) -> Void
     var openOnboarding: @MainActor () -> Void
+    var dismissScreenRecordingHint: @MainActor () -> Void = {}
 }

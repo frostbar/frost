@@ -13,7 +13,7 @@ import Foundation
 ///   of AH's value). The user can't have put anything in the always-hidden section yet, so every movable, resolved
 ///   item there is moved to the hidden section; unresolved items are not marked as considered and are treated as
 ///   "never seen" once resolved.
-/// - Icons whose owner or title is unresolved can't be checked against the seen set: wait until they resolve.
+/// - Icons whose owner is unresolved can't be checked against the seen set: wait until they resolve.
 /// - `considered`: windows already handled during this run (present at seeding time, or already decided not to
 ///   move); if they resolve later they are only marked as seen, never moved.
 public enum NewItemPlacement {
@@ -27,11 +27,9 @@ public enum NewItemPlacement {
         public var considered: Set<CGWindowID> = []
     }
 
-    /// A stable identity needs the real owner and the window title (the title needs Screen Recording permission);
-    /// returns nil if either is missing.
+    /// A stable identity needs the real owner and its AX-derived key (`MenuBarItem.identity`); nil while unresolved.
     public static func identity(of item: MenuBarItem) -> ItemIdentity? {
-        guard let bundleID = item.bundleID, !item.windowTitle.isEmpty else { return nil }
-        return ItemIdentity(bundleID: bundleID, title: item.windowTitle)
+        item.identity
     }
 
     /// `layout` must be a trustworthy layout (collapsed, not editing: on a crowded notched display while expanded,
@@ -69,12 +67,25 @@ public enum NewItemPlacement {
         return decision
     }
 
-    /// Persistence format: a JSON array (sorted by bundleID, then title, for stable contents).
+    /// Persistence format (version 2): a JSON array of `{bundleID, key}` (sorted by bundleID, then key, for stable
+    /// contents).
     public static func encode(_ identities: Set<ItemIdentity>) throws -> Data {
-        try JSONEncoder().encode(identities.sorted { ($0.bundleID, $0.title) < ($1.bundleID, $1.title) })
+        try JSONEncoder().encode(identities.sorted { ($0.bundleID, $0.key) < ($1.bundleID, $1.key) })
     }
 
     public static func decode(_ data: Data) throws -> Set<ItemIdentity> {
         Set(try JSONDecoder().decode([ItemIdentity].self, from: data))
+    }
+
+    private struct LegacyIdentity: Codable {
+        var bundleID: String
+        var title: String
+    }
+
+    /// Reads version 1 (`{bundleID, title}`, keyed by window title) as legacy identities (`IdentityMigration.legacy`).
+    public static func decodeLegacy(_ data: Data) throws -> Set<ItemIdentity> {
+        Set(try JSONDecoder().decode([LegacyIdentity].self, from: data).map {
+            IdentityMigration.legacy(bundleID: $0.bundleID, title: $0.title)
+        })
     }
 }

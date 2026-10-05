@@ -3,11 +3,17 @@ import CoreGraphics
 @testable import FrostCore
 
 @Suite struct NewItemPlacementTests {
-    func item(_ id: CGWindowID, _ bundle: String?, _ title: String = "Item-0", x: CGFloat = 0) -> MenuBarItem {
+    func item(_ id: CGWindowID, _ bundle: String?, _ name: String = "Item-0", x: CGFloat = 0) -> MenuBarItem {
+        // No window title: identities come from AX attributes (`identityKey`), which need no Screen Recording; the
+        // clock is recognized by its AX identifier.
         MenuBarItem(windowID: id, frame: CGRect(x: x, y: 0, width: 29, height: 39), isOnScreen: false,
-                    windowTitle: title, bundleID: bundle, pid: bundle == nil ? nil : 1, axDescription: nil)
+                    windowTitle: "", bundleID: bundle, pid: bundle == nil ? nil : 1, axDescription: nil,
+                    axIdentifier: name == "Clock" ? SystemItemRules.clockIdentifier : nil,
+                    identityKey: name.isEmpty ? nil : "desc:\(name)")
     }
-    func id(_ bundle: String, _ title: String = "Item-0") -> ItemIdentity { ItemIdentity(bundleID: bundle, title: title) }
+    func id(_ bundle: String, _ name: String = "Item-0") -> ItemIdentity {
+        ItemIdentity(bundleID: bundle, key: "desc:\(name)")
+    }
 
     var layout: MenuBarLayout {
         [.alwaysHidden: [item(1, "com.a", x: -9000), item(2, "com.b", x: -8970)],
@@ -75,8 +81,8 @@ import CoreGraphics
     }
 
     @Test func unresolvedItemsWaitForOwnership() {
-        // With ownership unresolved (or no title) we can't tell whether the icon was seen: leave it alone and don't
-        // mark it as considered.
+        // With ownership (or the identity key) unresolved we can't tell whether the icon was seen: leave it alone and
+        // don't mark it as considered.
         let unresolved: MenuBarLayout = [.alwaysHidden: [item(1, nil), item(2, "com.x", "")]]
         let d = NewItemPlacement.decide(layout: unresolved, known: [], considered: [])
         #expect(d.toMove.isEmpty)

@@ -4,11 +4,17 @@ import Foundation
 @testable import FrostCore
 
 @Suite struct SectionKeeperTests {
-    func item(_ id: CGWindowID, _ bundle: String?, _ title: String = "Item-0") -> MenuBarItem {
+    func item(_ id: CGWindowID, _ bundle: String?, _ name: String = "Item-0") -> MenuBarItem {
+        // No window title: identities come from AX attributes (`identityKey`), which need no Screen Recording; the
+        // clock is recognized by its AX identifier.
         MenuBarItem(windowID: id, frame: CGRect(x: CGFloat(id) * 30, y: 0, width: 29, height: 39), isOnScreen: false,
-                    windowTitle: title, bundleID: bundle, pid: bundle == nil ? nil : 1, axDescription: nil)
+                    windowTitle: "", bundleID: bundle, pid: bundle == nil ? nil : 1, axDescription: nil,
+                    axIdentifier: name == "Clock" ? SystemItemRules.clockIdentifier : nil,
+                    identityKey: name.isEmpty ? nil : "desc:\(name)")
     }
-    func id(_ bundle: String, _ title: String = "Item-0") -> ItemIdentity { ItemIdentity(bundleID: bundle, title: title) }
+    func id(_ bundle: String, _ name: String = "Item-0") -> ItemIdentity {
+        ItemIdentity(bundleID: bundle, key: "desc:\(name)")
+    }
 
     /// a and b in Always Hidden, c in Hidden, d and the clock in Visible.
     var layout: MenuBarLayout {
@@ -324,15 +330,47 @@ import Foundation
         let data = try SectionKeeper.encode(memory)
         #expect(try SectionKeeper.decode(data) == memory)
         let entries = try #require(try JSONSerialization.jsonObject(with: data) as? [[String: String]])
-        #expect(entries == [["bundleID": "com.a", "title": "Item-0", "section": "hidden"],
-                            ["bundleID": "com.a", "title": "Item-1", "section": "alwaysHidden"],
-                            ["bundleID": "com.b", "title": "Item-0", "section": "visible"]])
+        #expect(entries == [["bundleID": "com.a", "key": "desc:Item-0", "section": "hidden"],
+                            ["bundleID": "com.a", "key": "desc:Item-1", "section": "alwaysHidden"],
+                            ["bundleID": "com.b", "key": "desc:Item-0", "section": "visible"]])
+    }
+
+    @Test func version1MemoryIsReadAsLegacyIdentities() throws {
+        let v1 = Data(#"[{"bundleID":"com.a","title":"Item-0","section":"hidden"}]"#.utf8)
+        #expect(try SectionKeeper.decodeLegacy(v1)
+                == [IdentityMigration.legacy(bundleID: "com.a", title: "Item-0"): .hidden])
+        // The version 2 reader doesn't mistake version 1 data for its own.
+        #expect(throws: (any Error).self) { try SectionKeeper.decode(v1) }
+    }
+
+    @Test func rekeyMovesRememberedSections() {
+        let legacy = IdentityMigration.legacy(bundleID: "com.a", title: "Item-0")
+        var keeper = SectionKeeper(memory: [legacy: .visible, id("com.b"): .hidden])
+        let changed = keeper.rekey([legacy: id("com.a")])
+        #expect(changed)
+        #expect(keeper.memory == [id("com.a"): .visible, id("com.b"): .hidden])
+        let changedAgain = keeper.rekey([:])
+        #expect(!changedAgain)
+    }
+
+    @Test func migratedMemoryRestoresAfterRelaunchWithoutTitles() {
+        // Remembered before identity keys existed (with Screen Recording): com.a in Visible.
+        let legacy = IdentityMigration.legacy(bundleID: "com.a", title: "Item-0")
+        var keeper = SectionKeeper(memory: [legacy: .visible])
+        // First launch of the new version, titles readable: the legacy entry moves to the AX-derived identity.
+        let titled = MenuBarItem(windowID: 1, frame: .zero, isOnScreen: true, windowTitle: "Item-0", bundleID: "com.a",
+                                 pid: 1, axDescription: nil, identityKey: "desc:Item-0")
+        keeper.rekey(IdentityMigration.plan(stored: Set(keeper.memory.keys), items: [titled]))
+        #expect(keeper.memory == [id("com.a"): .visible])
+        // Later, without Screen Recording, the app relaunches and macOS re-adds its icon in Always Hidden.
+        let outcome = keeper.observe(layout: [.alwaysHidden: [item(9, "com.a")]], restoreEnabled: true, canMove: true)
+        #expect(outcome.restores.map(\.to) == [.visible])
     }
 
     @Test func unreadableMemoryThrows() {
         #expect(throws: (any Error).self) { try SectionKeeper.decode(Data("{}".utf8)) }
         #expect(throws: (any Error).self) {
-            try SectionKeeper.decode(Data(#"[{"bundleID":"a","title":"b","section":"elsewhere"}]"#.utf8))
+            try SectionKeeper.decode(Data(#"[{"bundleID":"a","key":"b","section":"elsewhere"}]"#.utf8))
         }
     }
 }

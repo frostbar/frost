@@ -5,22 +5,38 @@
 # column is built from the deployed app's designated requirement (pins the
 # "Frost Local Signing" leaf cert), so the grant survives rebuilds. Idempotent;
 # vm-deploy.sh runs it after every install.
-#   scripts/vm/vm-grant-tcc.sh           # grant
-#   scripts/vm/vm-grant-tcc.sh --revoke  # remove Frost's rows (test first-run flows)
-#   scripts/vm/vm-grant-tcc.sh --show    # list Frost's rows
+#   scripts/vm/vm-grant-tcc.sh                      # grant all three
+#   scripts/vm/vm-grant-tcc.sh --revoke             # remove Frost's rows (test first-run flows)
+#   scripts/vm/vm-grant-tcc.sh --revoke screen      # remove only Screen Recording (Accessibility-only mode)
+#   scripts/vm/vm-grant-tcc.sh --grant screen       # grant only Screen Recording
+#   scripts/vm/vm-grant-tcc.sh --show               # list Frost's rows
+# Services after --grant / --revoke: accessibility (ax), screen (sr, screen-recording), post-event; default: all.
+# Screen Recording changes only take effect in a new Frost process (relaunch with vm-run.sh).
 source "$(dirname "$0")/common.sh"
 vm_running || die "VM '$VM_NAME' is not running (scripts/vm/vm-up.sh)"
 BUNDLE_ID="dev.frost.Frost"
-SERVICES="kTCCServiceAccessibility kTCCServiceScreenCapture kTCCServicePostEvent"
 DB="/Library/Application Support/com.apple.TCC/TCC.db"
 action="${1:---grant}"
+shift || true
+SERVICES=""
+for name in "${@:-all}"; do
+  case "$name" in
+    all) SERVICES="kTCCServiceAccessibility kTCCServiceScreenCapture kTCCServicePostEvent" ;;
+    accessibility|ax) SERVICES="$SERVICES kTCCServiceAccessibility" ;;
+    screen|sr|screen-recording) SERVICES="$SERVICES kTCCServiceScreenCapture" ;;
+    post-event) SERVICES="$SERVICES kTCCServicePostEvent" ;;
+    *) die "unknown service '$name' (accessibility, screen, post-event)" ;;
+  esac
+done
+SERVICES="${SERVICES# }"
+in_list=$(printf "'%s'," $SERVICES); in_list="${in_list%,}"
 
 vm_ssh "bash -s" <<REMOTE
 set -euo pipefail
 DB="$DB"
 case "$action" in
   --show) sudo sqlite3 "\$DB" "select service, auth_value, length(csreq), datetime(last_modified,'unixepoch') from access where client='$BUNDLE_ID'"; exit 0 ;;
-  --revoke) sudo sqlite3 "\$DB" "delete from access where client='$BUNDLE_ID'" ;;
+  --revoke) sudo sqlite3 "\$DB" "delete from access where client='$BUNDLE_ID' and service in ($in_list)" ;;
   --grant)
     csrutil status | grep -q disabled || { echo "SIP is enabled in the guest; cannot write TCC.db" >&2; exit 1; }
     test -d "$GUEST_APP" || { echo "$GUEST_APP missing" >&2; exit 1; }

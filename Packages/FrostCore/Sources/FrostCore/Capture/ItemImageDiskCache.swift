@@ -23,9 +23,10 @@ public struct ItemImageCacheKey: Hashable, Sendable {
     }
 
     /// File name stem (without extension):
-    /// `<sanitized bundle ID>-<first 16 hex digits of SHA-256(bundle ID + title)>-<appearance>@<scale>x`.
+    /// `<sanitized bundle ID>-<first 16 hex digits of SHA-256(bundle ID + key)>-<appearance>@<scale>x`.
     /// The bundle ID prefix is only for human inspection (keeps only `[A-Za-z0-9._-]`, at most 60 characters);
-    /// uniqueness comes from the hash, and the title (which may contain any characters) only goes into the hash.
+    /// uniqueness comes from the hash, and the key (which may contain any characters) only goes into the hash. A legacy
+    /// identity (`title:<title>`) hashes its bare title, which is the name entries written before identity keys had.
     public var fileStem: String {
         "\(Self.sanitized(identity.bundleID))-\(Self.hash(identity))-\(appearance.rawValue)@\(scale)x"
     }
@@ -41,7 +42,9 @@ public struct ItemImageCacheKey: Hashable, Sendable {
     }
 
     static func hash(_ identity: ItemIdentity) -> String {
-        let digest = SHA256.hash(data: Data((identity.bundleID + "\u{0}" + identity.title).utf8))
+        let discriminator = identity.isLegacy
+            ? String(identity.key.dropFirst(IdentityMigration.legacyPrefix.count)) : identity.key
+        let digest = SHA256.hash(data: Data((identity.bundleID + "\u{0}" + discriminator).utf8))
         return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -91,7 +94,10 @@ public struct ItemImageDiskCache: Sendable {
     struct Metadata: Codable, Equatable {
         var version: Int
         var bundleID: String
-        var title: String
+        /// The identity key (entries written before identity keys existed have none, only `title`).
+        var key: String?
+        /// The window title of entries written before identity keys existed.
+        var title: String?
         var appearance: MenuBarAppearance
         var scale: Int
         var tone: GlyphTone
@@ -116,7 +122,8 @@ public struct ItemImageDiskCache: Sendable {
     public func save(_ image: CGImage, tone: GlyphTone, style: GlyphStyle, for key: ItemImageCacheKey,
                      now: Date = Date()) throws {
         guard let png = Self.pngData(image) else { throw CocoaError(.fileWriteUnknown) }
-        let metadata = Metadata(version: Self.formatVersion, bundleID: key.identity.bundleID, title: key.identity.title,
+        let metadata = Metadata(version: Self.formatVersion, bundleID: key.identity.bundleID, key: key.identity.key,
+                                title: nil,
                                 appearance: key.appearance, scale: key.scale, tone: tone, style: style,
                                 pixelWidth: image.width, pixelHeight: image.height, capturedAt: now, lastSeen: now)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -143,7 +150,7 @@ public struct ItemImageDiskCache: Sendable {
     public func load(_ key: ItemImageCacheKey) -> CachedItemImage? {
         guard let metadata = readMetadata(metadataURL(for: key)),
               metadata.version == Self.formatVersion,
-              metadata.bundleID == key.identity.bundleID, metadata.title == key.identity.title,
+              metadata.bundleID == key.identity.bundleID, Self.identityKey(of: metadata) == key.identity.key,
               metadata.appearance == key.appearance, metadata.scale == key.scale,
               let data = try? Data(contentsOf: imageURL(for: key)),
               let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -151,6 +158,34 @@ public struct ItemImageDiskCache: Sendable {
               image.width == metadata.pixelWidth, image.height == metadata.pixelHeight
         else { return nil }
         return CachedItemImage(image: image, tone: metadata.tone, style: metadata.style)
+    }
+
+    /// The identity key an entry was written for (a legacy entry's is its title as a `title:` key).
+    static func identityKey(of metadata: Metadata) -> String? {
+        metadata.key ?? metadata.title.map { IdentityMigration.legacyPrefix + $0 }
+    }
+
+    /// Reads the entry of `legacy` (an identity keyed by window title, from before identity keys existed) and moves it
+    /// to `key`: the next lookup finds it under the item's current identity. Returns nil (and changes nothing) when
+    /// `legacy` has no valid entry.
+    public func migrate(from legacy: ItemImageCacheKey, to key: ItemImageCacheKey,
+                        now: Date = Date()) -> CachedItemImage? {
+        guard let cached = load(legacy), var metadata = readMetadata(metadataURL(for: legacy)),
+              let png = try? Data(contentsOf: imageURL(for: legacy)) else { return nil }
+        metadata.key = key.identity.key
+        metadata.title = nil
+        metadata.lastSeen = now
+        do {
+            try png.write(to: imageURL(for: key), options: .atomic)
+            try Self.encoder.encode(metadata).write(to: metadataURL(for: key), options: .atomic)
+        } catch {
+            return cached
+        }
+        // Both keys name the same files only if the new key is spelled exactly like the old title.
+        guard legacy.fileStem != key.fileStem else { return cached }
+        try? FileManager.default.removeItem(at: metadataURL(for: legacy))
+        try? FileManager.default.removeItem(at: imageURL(for: legacy))
+        return cached
     }
 
     // MARK: - Pruning

@@ -37,7 +37,8 @@ final class FrostBarModel {
     var layout: MenuBarLayout { frozenLayout ?? app.layout }
 
     var phase: FrostBarState.Phase {
-        if !app.permissions.allGranted { return .needsPermission }
+        // Accessibility is enough; without Screen Recording tiles show app icons (`ItemFallbackAppearance`).
+        if !app.permissions.canManageItems { return .needsPermission }
         switch app.scanner.status {
         case .notScanned: return .loading
         case .noWindows: return .unreadable
@@ -57,12 +58,14 @@ final class FrostBarModel {
         let images = app.capturer.images
         let sizes = app.capturer.sizes
         var names: [CGWindowID: String] = [:]
-        var labels: [CGWindowID: String] = [:]
+        var accessibilityLabels: [CGWindowID: String] = [:]
         var icons: [CGWindowID: NSImage] = [:]
         var widths: [CGWindowID: CGFloat] = [:]
-        for item in hidden + alwaysHidden {
+        let shown = hidden + alwaysHidden
+        let labels = ItemFallbackAppearance.labels(for: shown.filter { images[$0.windowID] == nil })
+        for item in shown {
             names[item.windowID] = item.displayName
-            labels[item.windowID] = item.accessibilityName
+            accessibilityLabels[item.windowID] = item.accessibilityName
             if images[item.windowID] == nil, let icon = AppIconCache.shared.icon(for: item.bundleID) {
                 icons[item.windowID] = icon
             }
@@ -70,11 +73,14 @@ final class FrostBarModel {
             widths[item.windowID] = tileWidths.hold(item.windowID, width: current)
         }
         return FrostBarState(phase: phase, alwaysHidden: alwaysHidden, hidden: hidden, images: images,
-                             imageSizes: sizes, contentWidths: widths, accessibilityLabels: labels,
+                             imageSizes: sizes, contentWidths: widths, accessibilityLabels: accessibilityLabels,
+                             fallbackLabels: labels,
                              styles: app.capturer.styles, templates: app.capturer.templates, names: names,
                              appIcons: icons, maxWidth: maxWidth, maxHeight: maxHeight,
                              isPresented: isPresented, isRefreshing: isRefreshing,
-                             isAlwaysHiddenFading: isAlwaysHiddenFading)
+                             isAlwaysHiddenFading: isAlwaysHiddenFading,
+                             showsScreenRecordingHint: app.preferences.showsScreenRecordingHint(
+                                app.permissions.capabilities))
     }
 }
 

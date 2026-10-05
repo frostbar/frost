@@ -6,12 +6,22 @@ public struct AXItemInfo: Hashable, Sendable {
     public let frame: CGRect
     /// The item's AX description, or its AX title when it has no description (text items).
     public let description: String?
+    /// The item's AX title (a text item's text).
+    public let title: String?
+    /// The item's AX identifier, if it has one.
+    public let identifier: String?
+    /// The identity key among its app's items (`ItemIdentityKey`); nil for Frost's own windows.
+    public let identityKey: String?
 
-    public init(bundleID: String, pid: pid_t, frame: CGRect, description: String?) {
+    public init(bundleID: String, pid: pid_t, frame: CGRect, description: String?, title: String? = nil,
+                identifier: String? = nil, identityKey: String? = nil) {
         self.bundleID = bundleID
         self.pid = pid
         self.frame = frame
         self.description = description
+        self.title = title
+        self.identifier = identifier
+        self.identityKey = identityKey
     }
 }
 

@@ -24,7 +24,7 @@ import Foundation
 ///   move-back that failed) must not be mistaken for the user's choice.
 /// - **Ambiguity**: when several current items share an identity (e.g. an app's item re-created while the old window
 ///   lingers), that identity is neither recorded nor restored, and windows with it stay unchecked until it is unique.
-/// - Unresolved items (no owner or title yet) wait until they resolve.
+/// - Unresolved items (no owner yet) wait until they resolve.
 public struct SectionKeeper: Equatable, Sendable {
     /// identity → the section the user keeps that icon in.
     public private(set) var memory: [ItemIdentity: MenuBarSection]
@@ -187,24 +187,49 @@ public struct SectionKeeper: Equatable, Sendable {
 
     // MARK: - Persistence
 
+    /// Moves remembered sections to the identities `plan` maps them to (`IdentityMigration`). Returns whether the
+    /// memory changed.
+    @discardableResult
+    public mutating func rekey(_ plan: [ItemIdentity: ItemIdentity]) -> Bool {
+        let updated = IdentityMigration.apply(plan, to: memory)
+        guard updated != memory else { return false }
+        memory = updated
+        return true
+    }
+
     private struct Entry: Codable {
+        var bundleID: String
+        var key: String
+        var section: MenuBarSection
+    }
+
+    private struct LegacyEntry: Codable {
         var bundleID: String
         var title: String
         var section: MenuBarSection
     }
 
-    /// Persistence format: a JSON array of `{bundleID, title, section}` sorted by bundleID, then title (stable
+    /// Persistence format (version 2): a JSON array of `{bundleID, key, section}` sorted by bundleID, then key (stable
     /// contents). The key it is stored under carries the format version.
     public static func encode(_ memory: [ItemIdentity: MenuBarSection]) throws -> Data {
         let entries = memory
-            .map { Entry(bundleID: $0.key.bundleID, title: $0.key.title, section: $0.value) }
-            .sorted { ($0.bundleID, $0.title) < ($1.bundleID, $1.title) }
+            .map { Entry(bundleID: $0.key.bundleID, key: $0.key.key, section: $0.value) }
+            .sorted { ($0.bundleID, $0.key) < ($1.bundleID, $1.key) }
         return try JSONEncoder().encode(entries)
     }
 
     public static func decode(_ data: Data) throws -> [ItemIdentity: MenuBarSection] {
         let entries = try JSONDecoder().decode([Entry].self, from: data)
-        return Dictionary(entries.map { (ItemIdentity(bundleID: $0.bundleID, title: $0.title), $0.section) },
+        return Dictionary(entries.map { (ItemIdentity(bundleID: $0.bundleID, key: $0.key), $0.section) },
                           uniquingKeysWith: { _, last in last })
+    }
+
+    /// Reads version 1 (`{bundleID, title, section}`, keyed by window title) as legacy identities
+    /// (`IdentityMigration.legacy`), which `IdentityMigration` maps to the items' current identities.
+    public static func decodeLegacy(_ data: Data) throws -> [ItemIdentity: MenuBarSection] {
+        let entries = try JSONDecoder().decode([LegacyEntry].self, from: data)
+        return Dictionary(entries.map {
+            (IdentityMigration.legacy(bundleID: $0.bundleID, title: $0.title), $0.section)
+        }, uniquingKeysWith: { _, last in last })
     }
 }

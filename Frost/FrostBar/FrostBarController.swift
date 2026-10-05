@@ -212,7 +212,7 @@ final class FrostBarController {
             guard self.isOpen, !Task.isCancelled else { return }
             // The memory cache is empty after a relaunch: the warm-up has usually loaded the disk cache in the
             // background already (`warmUp`); load whatever it hasn't so the panel shows it as soon as it appears.
-            if self.app.permissions.screenRecording { self.app.capturer.loadCached(self.requestedItems) }
+            if self.app.permissions.canCaptureImages { self.app.capturer.loadCached(self.requestedItems) }
             #if DEBUG
             FrameProbe.note("cached(images=\(self.app.capturer.images.count))")
             #endif
@@ -325,6 +325,9 @@ final class FrostBarController {
             openSettings: { [weak self] in
                 self?.close(animated: false, reason: "settings opened")
                 self?.app.openSettings()
+            },
+            dismissScreenRecordingHint: { [weak self] in
+                withAnimation(.snappy) { self?.app.preferences.screenRecordingHintDismissed = true }
             })
         let hostingView = FrostBarHostingView(rootView: FrostBarView(model: model, actions: actions))
         // Provide only the ideal size; the controller sizes the hosting view and the window (below the Frost icon).
@@ -386,14 +389,19 @@ final class FrostBarController {
                 if self.isReadyToWarmUp { break }
                 try? await Task.sleep(for: .milliseconds(250))
             }
-            guard let self, !self.isOpen, self.app.permissions.allGranted else { return }
-            // Every item, the Visible section's too: the layout editor shows them all.
-            await self.app.capturer.preloadCached(self.app.scanner.items)
-            self.preloadOnceOwnersAreKnown()
-            // Visible items are on screen and can be captured in either display mode; the layout editor shows them.
-            let visible = self.app.layout[.visible, default: []].filter(\.isOnScreen)
-            let missing = self.app.capturer.missing(visible)
-            if !missing.isEmpty, !self.app.mover.isBusy { await self.app.capturer.capture(missing) }
+            guard let self, !self.isOpen, self.app.permissions.canManageItems else { return }
+            // Without Screen Recording there is nothing to load or capture: tiles show app icons.
+            let canCapture = self.app.permissions.canCaptureImages
+            if canCapture {
+                // Every item, the Visible section's too: the layout editor shows them all.
+                await self.app.capturer.preloadCached(self.app.scanner.items)
+                self.preloadOnceOwnersAreKnown()
+                // Visible items are on screen and can be captured in either display mode; the layout editor shows
+                // them.
+                let visible = self.app.layout[.visible, default: []].filter(\.isOnScreen)
+                let missing = self.app.capturer.missing(visible)
+                if !missing.isEmpty, !self.app.mover.isBusy { await self.app.capturer.capture(missing) }
+            }
             guard !self.isOpen, self.usesFrostBar else { return }
             #if DEBUG
             if let screen = self.app.sections.iconWindow?.screen ?? NSScreen.main {
@@ -401,7 +409,7 @@ final class FrostBarController {
             }
             #endif
             self.prerender()
-            await self.warmUpCapturePipeline()
+            if canCapture { await self.warmUpCapturePipeline() }
         }
     }
 
@@ -433,7 +441,7 @@ final class FrostBarController {
                 guard let self else { return }
                 if !self.app.scanner.items.contains(where: { $0.bundleID == nil }) { break }
             }
-            guard let self, self.app.permissions.screenRecording else { return }
+            guard let self, self.app.permissions.canCaptureImages else { return }
             await self.app.capturer.preloadCached(self.app.scanner.items)
         }
     }
@@ -445,7 +453,7 @@ final class FrostBarController {
 
     /// The scan is usable and every hidden item's owner is known (the disk cache is keyed by it).
     private var isReadyToWarmUp: Bool {
-        guard app.permissions.allGranted, app.scanner.status == .ok, app.sections.controlWindows != nil else {
+        guard app.permissions.canManageItems, app.scanner.status == .ok, app.sections.controlWindows != nil else {
             return false
         }
         let layout = app.layout
@@ -456,7 +464,7 @@ final class FrostBarController {
     private var usesFrostBar: Bool {
         let preferences = app.preferences
         return NSScreen.screens.contains {
-            preferences.effectiveDisplayMode(for: $0, permissionsGranted: app.permissions.allGranted) == .frostBar
+            preferences.effectiveDisplayMode(for: $0, capabilities: app.permissions.capabilities) == .frostBar
         }
     }
 

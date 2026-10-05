@@ -4,7 +4,7 @@ import Foundation
 @testable import FrostCore
 
 @Suite struct ItemImageCacheKeyTests {
-    let identity = ItemIdentity(bundleID: "com.example.App", title: "Item-0")
+    let identity = ItemIdentity(bundleID: "com.example.App", key: "Item-0")
 
     @Test func stemIsStableAndReadable() {
         let key = ItemImageCacheKey(identity: identity, appearance: .dark, scale: 2)
@@ -27,23 +27,23 @@ import Foundation
         #expect(stems.count == 3)
     }
 
-    @Test func titleOnlyAffectsTheHash() {
-        let a = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", title: "Item-0"),
+    @Test func keyOnlyAffectsTheHash() {
+        let a = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", key: "Item-0"),
                                   appearance: .light, scale: 2)
-        let b = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", title: "Item-1"),
+        let b = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", key: "Item-1"),
                                   appearance: .light, scale: 2)
         #expect(a.fileStem != b.fileStem)
         #expect(!a.fileStem.contains("Item"))
     }
 
-    @Test func bundleIDAndTitleDoNotCollideAcrossTheSeparator() {
-        let a = ItemIdentity(bundleID: "com.a", title: "b.c")
-        let b = ItemIdentity(bundleID: "com.a.b", title: "c")
+    @Test func bundleIDAndKeyDoNotCollideAcrossTheSeparator() {
+        let a = ItemIdentity(bundleID: "com.a", key: "b.c")
+        let b = ItemIdentity(bundleID: "com.a.b", key: "c")
         #expect(ItemImageCacheKey.hash(a) != ItemImageCacheKey.hash(b))
     }
 
     @Test func unsafeCharactersAreSanitized() {
-        let identity = ItemIdentity(bundleID: "../evil/../../com app:😀", title: "a/b")
+        let identity = ItemIdentity(bundleID: "../evil/../../com app:😀", key: "a/b")
         let stem = ItemImageCacheKey(identity: identity, appearance: .light, scale: 2).fileStem
         #expect(!stem.contains("/"))
         #expect(!stem.contains(":"))
@@ -54,7 +54,7 @@ import Foundation
     }
 
     @Test func longBundleIDsAreTruncated() {
-        let identity = ItemIdentity(bundleID: String(repeating: "a", count: 300), title: "")
+        let identity = ItemIdentity(bundleID: String(repeating: "a", count: 300), key: "")
         let stem = ItemImageCacheKey(identity: identity, appearance: .light, scale: 3).fileStem
         #expect(stem.count == ItemImageCacheKey.maxPrefixLength + 1 + 16 + "-light@3x".count)
     }
@@ -75,7 +75,7 @@ import Foundation
 @Suite struct ItemImageDiskCacheTests {
     let directory: URL
     let cache: ItemImageDiskCache
-    let key = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", title: "Item-0"),
+    let key = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", key: "desc:Item-0"),
                                 appearance: .dark, scale: 2)
     let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
 
@@ -139,7 +139,7 @@ import Foundation
         try cache.save(Self.sampleImage(), tone: .light, style: .monochrome(.light), for: key, now: now)
         #expect(cache.load(ItemImageCacheKey(identity: key.identity, appearance: .light, scale: 2)) == nil)
         #expect(cache.load(ItemImageCacheKey(identity: key.identity, appearance: .dark, scale: 1)) == nil)
-        #expect(cache.load(ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", title: "Item-1"),
+        #expect(cache.load(ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", key: "Item-1"),
                                              appearance: .dark, scale: 2)) == nil)
     }
 
@@ -155,7 +155,7 @@ import Foundation
 
     @Test func pruneRemovesEntriesNotSeenFor30Days() throws {
         defer { cleanUp() }
-        let old = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.Old", title: "x"),
+        let old = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.Old", key: "x"),
                                     appearance: .light, scale: 2)
         try cache.save(Self.sampleImage(), tone: .light, style: .monochrome(.light), for: old,
                        now: now.addingTimeInterval(-31 * 24 * 3600))
@@ -187,5 +187,61 @@ import Foundation
 
     @Test func pruneOfAMissingDirectoryDoesNothing() {
         #expect(cache.prune(now: now).isEmpty)
+    }
+
+    // MARK: Entries written before identity keys existed
+
+    /// Writes an entry the way versions keyed by window title did: stem hash of bundle ID + title, metadata with a
+    /// `title` and no `key`.
+    private func writeVersion1Entry(bundleID: String, title: String, appearance: MenuBarAppearance = .dark,
+                                    scale: Int = 2) throws -> ItemImageCacheKey {
+        let legacy = ItemImageCacheKey(identity: IdentityMigration.legacy(bundleID: bundleID, title: title),
+                                       appearance: appearance, scale: scale)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try #require(ItemImageDiskCache.pngData(Self.sampleImage())).write(to: cache.imageURL(for: legacy))
+        let json = """
+            {"appearance":"\(appearance.rawValue)","bundleID":"\(bundleID)","capturedAt":"2026-01-01T00:00:00Z",\
+            "lastSeen":"2026-01-01T00:00:00Z","pixelHeight":2,"pixelWidth":4,"scale":\(scale),\
+            "style":{"monochrome":{"_0":"light"}},"title":"\(title)","tone":"light","version":1}
+            """
+        try Data(json.utf8).write(to: cache.metadataURL(for: legacy))
+        return legacy
+    }
+
+    @Test func legacyKeysHashTheBareTitleLikeVersion1() {
+        // Version 1 named entries by SHA-256(bundle ID + NUL + title).
+        let legacy = IdentityMigration.legacy(bundleID: "com.a", title: "Item-0")
+        let bare = ItemIdentity(bundleID: "com.a", key: "Item-0")
+        #expect(ItemImageCacheKey.hash(legacy) == ItemImageCacheKey.hash(bare))
+        #expect(ItemImageCacheKey.hash(legacy) != ItemImageCacheKey.hash(ItemIdentity(bundleID: "com.a",
+                                                                                         key: "desc:Item-0")))
+    }
+
+    @Test func version1EntriesLoadUnderTheirLegacyKey() throws {
+        defer { cleanUp() }
+        let legacy = try writeVersion1Entry(bundleID: "com.example.App", title: "Item-0")
+        #expect(cache.load(legacy)?.tone == .light)
+        // Not under the item's new identity until migrated.
+        #expect(cache.load(key) == nil)
+    }
+
+    @Test func migrationMovesAVersion1EntryToTheNewKey() throws {
+        defer { cleanUp() }
+        let legacy = try writeVersion1Entry(bundleID: "com.example.App", title: "Item-0")
+        let migrated = try #require(cache.migrate(from: legacy, to: key, now: now))
+        #expect(migrated.image.width == 4)
+        #expect(cache.load(key)?.style == .monochrome(.light))
+        #expect(cache.load(legacy) == nil)
+        #expect(!FileManager.default.fileExists(atPath: cache.imageURL(for: legacy).path))
+        // Migrating counts as seeing the entry.
+        #expect(cache.prune(now: now).isEmpty)
+    }
+
+    @Test func migrationWithoutALegacyEntryDoesNothing() throws {
+        defer { cleanUp() }
+        let legacy = ItemImageCacheKey(identity: IdentityMigration.legacy(bundleID: "com.example.App", title: "x"),
+                                       appearance: .dark, scale: 2)
+        #expect(cache.migrate(from: legacy, to: key) == nil)
+        #expect(cache.load(key) == nil)
     }
 }

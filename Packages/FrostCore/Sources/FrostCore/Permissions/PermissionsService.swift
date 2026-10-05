@@ -7,7 +7,14 @@ import Observation
 public final class PermissionsService {
     public private(set) var accessibility = false
     public private(set) var screenRecording = false
-    public var allGranted: Bool { accessibility && screenRecording }
+    /// What the current permissions allow (`PermissionCapabilities`): gate features on these, not on "all granted".
+    public var capabilities: PermissionCapabilities {
+        PermissionCapabilities(accessibility: accessibility, screenRecording: screenRecording)
+    }
+    /// The Frost Bar, the layout editor and moves (Accessibility).
+    public var canManageItems: Bool { capabilities.canManageItems }
+    /// Real images of icons (Screen Recording).
+    public var canCaptureImages: Bool { capabilities.canCaptureImages }
 
     @ObservationIgnored private var pollTask: Task<Void, Never>?
 

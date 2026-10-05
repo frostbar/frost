@@ -9,14 +9,18 @@ struct OnboardingState: Equatable {
     /// The user clicked Grant for Screen Recording: `CGPreflightScreenCaptureAccess` only reflects a new grant after
     /// a relaunch.
     var screenRecordingRequested: Bool
-    /// First run with existing icons in the Always Hidden section: once all permissions are granted they are moved to
-    /// the Hidden section automatically (see `NewItemPlacer`).
+    /// First run with existing icons in the Always Hidden section: once Accessibility is granted they are moved to the
+    /// Hidden section automatically (see `NewItemPlacer`).
     var firstRunPlacementPending = false
 
-    var allGranted: Bool { accessibility && screenRecording }
+    /// Everything works once Accessibility is granted; Screen Recording only adds real icon images
+    /// (`PermissionCapabilities`).
+    var isReady: Bool {
+        PermissionCapabilities(accessibility: accessibility, screenRecording: screenRecording).canManageItems
+    }
     var needsRelaunch: Bool { screenRecordingRequested && !screenRecording }
-    /// Explains where existing icons are for now while permissions are incomplete and no relaunch is pending.
-    var showsPlacementNote: Bool { firstRunPlacementPending && !allGranted && !needsRelaunch }
+    /// Explains where existing icons are for now while Accessibility is missing and no relaunch is pending.
+    var showsPlacementNote: Bool { firstRunPlacementPending && !isReady && !needsRelaunch }
 }
 
 /// Actions emitted by the onboarding view.
@@ -70,20 +74,22 @@ struct OnboardingView: View {
                 .padding(.top, 34)
                 .padding(.bottom, 22)
 
-            Text("Frost needs these two permissions to arrange and show your menu bar icons.")
+            Text("Frost needs Accessibility; Screen Recording is optional.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 4)
                 .padding(.bottom, 10)
 
             GlassEffectContainer(spacing: 12) {
                 VStack(spacing: 12) {
-                    PermissionCard(symbol: "accessibility", tint: .blue, title: "Accessibility",
+                    PermissionCard(symbol: "accessibility", tint: .blue, title: "Accessibility", tag: "Required",
                                    detail: "Used to move icons between sections and to click icons in the Frost Bar.",
                                    isGranted: state.accessibility, grant: actions.grantAccessibility)
                     PermissionCard(symbol: "rectangle.dashed.badge.record", tint: .pink, title: "Screen Recording",
-                                   detail: "Used to show images of icons in the Frost Bar and the layout editor.",
+                                   tag: "Optional",
+                                   detail: "Shows real images of icons. Without it, they appear as app icons.",
                                    isGranted: state.screenRecording, grant: actions.grantScreenRecording)
                 }
             }
@@ -92,7 +98,7 @@ struct OnboardingView: View {
                 if state.needsRelaunch {
                     RelaunchNotice(relaunch: actions.relaunch)
                         .transition(.blurReplace.combined(with: .move(edge: .top)))
-                } else if state.allGranted {
+                } else if state.isReady {
                     NextStepNotice()
                         .transition(.blurReplace.combined(with: .move(edge: .top)))
                 } else if state.showsPlacementNote {
@@ -143,7 +149,7 @@ struct OnboardingView: View {
                 .foregroundStyle(.secondary)
                 .labelStyle(.titleAndIcon)
             Spacer(minLength: 8)
-            if state.allGranted {
+            if state.isReady {
                 Button("Done", action: actions.dismiss)
                     .buttonStyle(.glass)
                     .controlSize(.large)
@@ -170,6 +176,8 @@ private struct PermissionCard: View {
     let symbol: String
     let tint: Color
     let title: LocalizedStringKey
+    /// "Required" / "Optional", shown next to the title.
+    let tag: LocalizedStringKey
     let detail: LocalizedStringKey
     let isGranted: Bool
     let grant: () -> Void
@@ -178,8 +186,16 @@ private struct PermissionCard: View {
         HStack(spacing: 14) {
             SymbolBadge(symbol: symbol, tint: tint, diameter: 42)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.headline)
+                    Text(tag)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.primary.opacity(0.08), in: .capsule)
+                }
                 Text(detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -254,7 +270,7 @@ private struct RelaunchNotice: View {
 private struct PlacementNote: View {
     var body: some View {
         Label {
-            Text("Existing icons stay in Always Hidden until access is granted, then move to Hidden automatically (Screen Recording requires relaunching Frost).")
+            Text("Existing icons stay in Always Hidden until Accessibility is granted, then move to Hidden automatically.")
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "info.circle")
@@ -266,7 +282,7 @@ private struct PlacementNote: View {
     }
 }
 
-/// After everything is granted: explains that existing icons start out in the Hidden section and points the user to
+/// Once Accessibility is granted: explains that existing icons start out in the Hidden section and points the user to
 /// the layout editor.
 private struct NextStepNotice: View {
     var body: some View {

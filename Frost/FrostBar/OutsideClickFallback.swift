@@ -126,8 +126,6 @@ final class OutsideClickFallback {
     private func currentItem() -> MenuBarItem {
         guard let window = StatusWindowParser.windows(withIDs: [item.windowID]).first
         else { return item }
-        return MenuBarItem(windowID: item.windowID, frame: window.frame, isOnScreen: window.isOnScreen,
-                           windowTitle: item.windowTitle, bundleID: item.bundleID, pid: item.pid,
-                           axDescription: item.axDescription)
+        return item.with(frame: window.frame, isOnScreen: window.isOnScreen)
     }
 }

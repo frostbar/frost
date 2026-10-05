@@ -183,6 +183,16 @@
         }
       }
     },
+    "Accessibility Required" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要辅助功能权限"
+          }
+        }
+      }
+    },
     "Allow Frost to launch at login in System Settings." : {
       "localizations" : {
         "zh-Hans" : {
@@ -398,6 +408,16 @@
         }
       }
     },
+    "Don’t show again" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不再显示"
+          }
+        }
+      }
+    },
     "Drag icons into the Hidden section in the layout editor." : {
       "localizations" : {
         "zh-Hans" : {
@@ -458,12 +478,12 @@
         }
       }
     },
-    "Existing icons stay in Always Hidden until access is granted, then move to Hidden automatically (Screen Recording requires relaunching Frost)." : {
+    "Existing icons stay in Always Hidden until Accessibility is granted, then move to Hidden automatically." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "授权前现有图标暂留「始终隐藏」，授权后自动移到「隐藏」（屏幕录制需重启 Frost）。"
+            "value" : "授予辅助功能权限前，现有图标暂留「始终隐藏」，授权后自动移到「隐藏」。"
           }
         }
       }
@@ -503,32 +523,22 @@
         }
       }
     },
-    "Frost needs Accessibility and Screen Recording permissions to show and move icons." : {
+    "Frost needs Accessibility; Screen Recording is optional." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Frost 需要辅助功能与屏幕录制权限来显示和移动图标。"
+            "value" : "Frost 需要辅助功能权限；屏幕录制权限是可选的。"
           }
         }
       }
     },
-    "Frost needs Accessibility and Screen Recording permissions." : {
+    "Frost needs the Accessibility permission to read and move icons. Screen Recording is optional: it shows real images of the icons." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Frost 需要辅助功能与屏幕录制权限。"
-          }
-        }
-      }
-    },
-    "Frost needs these two permissions to arrange and show your menu bar icons." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Frost 需要以下两项权限来排布和显示菜单栏图标。"
+            "value" : "Frost 需要辅助功能权限来读取和移动图标。屏幕录制权限是可选的：用于显示图标的真实图像。"
           }
         }
       }
@@ -574,12 +584,12 @@
         }
       }
     },
-    "Grant Permissions" : {
+    "Grant Screen Recording to see real icons" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "授予权限"
+            "value" : "授予屏幕录制权限以显示真实图标"
           }
         }
       }
@@ -797,6 +807,16 @@
         }
       }
     },
+    "Opens the permissions window" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开权限窗口"
+          }
+        }
+      }
+    },
     "Opens this icon’s menu" : {
       "localizations" : {
         "zh-Hans" : {
@@ -807,22 +827,33 @@
         }
       }
     },
+    "Optional" : {
+      "comment" : "Onboarding: tag next to a permission that is an optional upgrade",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选"
+          }
+        }
+      }
+    },
+    "Optional. Shows real images of icons in the Frost Bar and the layout editor; without it, they appear as app icons." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选。在 Frost Bar 与布局编辑器中显示图标的真实图像；未授权时，图标以所属应用的图标显示。"
+          }
+        }
+      }
+    },
     "Paste" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "粘贴"
-          }
-        }
-      }
-    },
-    "Permissions Required" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要权限"
           }
         }
       }
@@ -898,6 +929,27 @@
         }
       }
     },
+    "Required" : {
+      "comment" : "Onboarding: tag next to a permission that Frost needs",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必需"
+          }
+        }
+      }
+    },
+    "Required. Used to move icons between sections and to click icons in the Frost Bar." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必需。用于在分区之间移动图标，以及在 Frost Bar 中点击图标。"
+          }
+        }
+      }
+    },
     "Retrying automatically…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -914,6 +966,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "屏幕录制"
+          }
+        }
+      }
+    },
+    "Screen Recording (optional)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "屏幕录制（可选）"
           }
         }
       }
@@ -979,12 +1041,32 @@
         }
       }
     },
-    "The Frost Bar needs Accessibility and Screen Recording permissions. Until they’re granted, hidden icons expand in the menu bar." : {
+    "Shows real images of icons. Without it, they appear as app icons." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Frost Bar 需要辅助功能与屏幕录制权限；授权之前，隐藏的图标会在菜单栏内展开。"
+            "value" : "显示图标的真实图像。未授权时，图标以所属应用的图标显示。"
+          }
+        }
+      }
+    },
+    "The Frost Bar needs the Accessibility permission." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frost Bar 需要辅助功能权限。"
+          }
+        }
+      }
+    },
+    "The Frost Bar needs the Accessibility permission. Until it’s granted, hidden icons expand in the menu bar." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frost Bar 需要辅助功能权限；授权之前，隐藏的图标会在菜单栏内展开。"
           }
         }
       }
@@ -1046,16 +1128,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用于在分区之间移动图标，以及在 Frost Bar 中点击图标。"
-          }
-        }
-      }
-    },
-    "Used to show images of icons in the Frost Bar and the layout editor." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用于在 Frost Bar 与布局编辑器中显示图标的截图。"
           }
         }
       }

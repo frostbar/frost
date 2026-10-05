@@ -66,7 +66,7 @@ extension FrostBarController {
         let sections = app.sections
         let conditions = LiveRefreshPolicy.Conditions(
             isPanelOpen: isOpen && panel?.isVisible == true,
-            hasPermissions: app.permissions.allGranted,
+            hasPermissions: app.permissions.capabilities.canLiveRefresh,
             isActivationInFlight: activationTask != nil,
             isMoveInFlight: app.mover.isBusy,
             isMouseButtonPressed: NSEvent.pressedMouseButtons != 0,

@@ -27,7 +27,8 @@ extension MenuBarItem {
     }
 }
 
-/// App icons cached by bundle ID, shown for items without a capture (hidden by the notch or not captured yet).
+/// App icons cached by bundle ID, shown for items without a capture (no Screen Recording, hidden by the notch or not
+/// captured yet).
 @MainActor
 final class AppIconCache {
     static let shared = AppIconCache()
@@ -44,7 +45,8 @@ final class AppIconCache {
 }
 
 /// A menu bar item's glyph: template image (tinted with the foreground color) -> capture (shown at the item's point
-/// size, 2x pixels) -> app icon -> placeholder symbol.
+/// size, 2x pixels) -> fallback: a system item's SF Symbol or the app icon (`ItemFallbackAppearance`), with a short
+/// label when one is given -> placeholder symbol.
 /// Captures taller than the container (39 pt menu bar) have transparent margins that the container clips.
 struct ItemGlyph: View {
     let item: MenuBarItem
@@ -56,6 +58,9 @@ struct ItemGlyph: View {
     var appIconSize: CGFloat = 20
     /// Capture size in points; nil uses the item's frame.
     var imageSize: CGSize?
+    /// Fallback only (no image): a short label shown next to the icon on wide tiles (a text item's text), below it on
+    /// narrow ones (`ItemFallbackAppearance.label`).
+    var label: String?
 
     private var size: CGSize { imageSize ?? item.frame.size }
 
@@ -72,15 +77,53 @@ struct ItemGlyph: View {
                 .resizable()
                 .interpolation(.high)
                 .frame(width: size.width, height: size.height)
-        } else if let appIcon {
-            Image(nsImage: appIcon)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: appIconSize, height: appIconSize)
+        } else if symbol != nil || appIcon != nil {
+            if let label, size.width >= ItemFallbackAppearance.minLabelWidth {
+                HStack(spacing: 3) {
+                    fallbackIcon(size: 15)
+                    Text(label)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .padding(.horizontal, 4)
+            } else if let label {
+                VStack(spacing: 1) {
+                    fallbackIcon(size: 14)
+                    Text(label)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .padding(.horizontal, 2)
+            } else {
+                fallbackIcon(size: appIconSize)
+            }
         } else {
             Image(systemName: "questionmark.square.dashed")
                 .font(.system(size: 15))
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+extension ItemGlyph {
+    /// A system item's symbol (e.g. Wi-Fi: its owner, Control Center, has one icon for all of them), else the app icon.
+    private var symbol: String? { ItemFallbackAppearance.symbol(for: item) }
+
+    @ViewBuilder fileprivate func fallbackIcon(size: CGFloat) -> some View {
+        if let symbol {
+            Image(systemName: symbol)
+                .font(.system(size: size * 0.8, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: size, height: size)
+        } else if let appIcon {
+            Image(nsImage: appIcon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size, height: size)
         }
     }
 }

@@ -14,14 +14,14 @@ struct AboutView: View {
 
                 GlassCard {
                     PermissionRow(symbol: "accessibility", tint: .blue, title: String(localized: "Accessibility"),
-                                  subtitle: String(localized: "Used to move icons between sections and to click icons in the Frost Bar."),
+                                  subtitle: String(localized: "Required. Used to move icons between sections and to click icons in the Frost Bar."),
                                   isGranted: permissions.accessibility) {
                         model.openOnboarding()
                     }
                     Divider()
                         .padding(.leading, SettingRow<EmptyView>.textInset)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", tint: .pink, title: String(localized: "Screen Recording"),
-                                  subtitle: String(localized: "Used to show images of icons in the Frost Bar and the layout editor."),
+                                  subtitle: String(localized: "Optional. Shows real images of icons in the Frost Bar and the layout editor; without it, they appear as app icons."),
                                   isGranted: permissions.screenRecording) {
                         model.openOnboarding()
                     }

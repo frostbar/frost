@@ -45,13 +45,24 @@ public enum AXExtrasReader {
             AXUIElementSetMessagingTimeout(element, messagingTimeout)
             guard let bar: AXUIElement = copy(element, kAXExtrasMenuBarAttribute),
                   let children: [AXUIElement] = copy(extrasBar(bar), kAXChildrenAttribute) else { continue }
-            for child in children {
+            // Every child's identifying attributes first (zero-size ones too): identity keys depend on the app's whole
+            // list of extras (`ItemIdentityKey`).
+            let read = children.map { child in
                 AXUIElementSetMessagingTimeout(child, messagingTimeout)
-                guard let frame = frame(of: child) else { continue }
+                let description: String? = copy(child, kAXDescriptionAttribute)
+                let title: String? = copy(child, kAXTitleAttribute)
+                let attributes = AXItemAttributes(identifier: copy(child, kAXIdentifierAttribute),
+                                                  description: description, help: copy(child, kAXHelpAttribute))
+                return (frame: frame(of: child), description: description, title: title, attributes: attributes)
+            }
+            let keys = ItemIdentityKey.keys(for: read.map(\.attributes))
+            for (child, key) in zip(read, keys) {
+                guard let frame = child.frame else { continue }
                 // Icon items usually describe themselves; text items (no image) often have only a title.
-                var description: String? = copy(child, kAXDescriptionAttribute)
-                if description?.isEmpty ?? true { description = copy(child, kAXTitleAttribute) }
-                result.append(AXItemInfo(bundleID: app.bundleID, pid: app.pid, frame: frame, description: description))
+                let description = (child.description?.isEmpty ?? true) ? child.title : child.description
+                result.append(AXItemInfo(bundleID: app.bundleID, pid: app.pid, frame: frame, description: description,
+                                         title: child.title, identifier: child.attributes.identifier,
+                                         identityKey: key))
             }
         }
         return result
