@@ -322,6 +322,56 @@ public struct ObscuredCapturePolicy: Sendable {
         }
     }
 
+    // MARK: - Moving the item back
+
+    /// The moved-out item sits right of the Frost icon, in the Visible section, until it is moved back; the freeze frame
+    /// must cover it that whole time, and quitting must not leave it there (the system remembers the position). One
+    /// lifecycle for both (`restoreStep`):
+    ///
+    /// - A ⌘-drag can't be posted while the user holds a mouse button (`ItemMover` waits for the release). The operation
+    ///   waits for the release itself, keeping the freeze frame up (its safety-net timeout extended while it waits), and
+    ///   moves the item back the moment the button is released.
+    /// - The move back itself may wait again (the button pressed once more, up to `ItemMover.mouseReleaseTimeout`):
+    ///   before it starts, the freeze frame's timeout is extended to cover that whole wait (`restoreCoverage`).
+    /// - Held longer than `holdCoverageLimit` (a stuck button?): the freeze frame goes, and the move back is handed to a
+    ///   task that waits for the release and moves the item back under a fresh freeze frame. Never a synthetic move
+    ///   without one, unless its screenshot fails (the item is visible by then anyway).
+    /// - Quitting: the move back is attempted at once; if the button stays held for `shutdownHoldLimit` (quitting waits
+    ///   only a few seconds), the item is left where it is and its return is recorded for the next launch, which moves
+    ///   it back (`SectionKeeper.pendingReturns`).
+    public enum RestoreStep: Sendable, Equatable {
+        /// Move the item back now (under the freeze frame).
+        case restoreNow
+        /// Keep the freeze frame up and check again shortly.
+        case waitForRelease
+        /// Remove the freeze frame and move the item back later under a fresh one.
+        case handOff
+        /// Frost is quitting: leave the item; its recorded return is made on the next launch.
+        case leaveForNextLaunch
+    }
+
+    /// How long the operation keeps the freeze frame up waiting for the user to release a mouse button.
+    public static let holdCoverageLimit: Duration = .seconds(60)
+    /// The same while quitting (the termination grace is a few seconds, and the move back needs some of it).
+    public static let shutdownHoldLimit: Duration = .seconds(2)
+    /// How often the wait checks the buttons (and extends the freeze frame's timeout by `holdPoll` * a margin).
+    public static let holdPoll: Duration = .milliseconds(20)
+
+    /// The next step of moving the item back, after `waited` of waiting for a held button; `sinceShutdown`: how long
+    /// ago quitting began (nil: not quitting), which may be well after the wait began.
+    public static func restoreStep(isMouseButtonHeld: Bool, waited: Duration, sinceShutdown: Duration?) -> RestoreStep {
+        guard isMouseButtonHeld else { return .restoreNow }
+        if let sinceShutdown { return sinceShutdown >= shutdownHoldLimit ? .leaveForNextLaunch : .waitForRelease }
+        return waited >= holdCoverageLimit ? .handOff : .waitForRelease
+    }
+
+    /// How long the freeze frame must stay up once a move back starts: it may wait `mouseReleaseTimeout` for a button,
+    /// then make its attempts (each a ⌘-drag plus a settle wait of about a second), plus the fallback to the section
+    /// boundary.
+    public static func restoreCoverage(mouseReleaseTimeout: Duration) -> Duration {
+        mouseReleaseTimeout * 2 + .seconds(10)
+    }
+
     /// Back-off after `failures` consecutive failures (1 = the first): `retryBase` doubled per failure, capped.
     public static func retryDelay(afterFailures failures: Int) -> Duration {
         let doublings = max(0, min(failures - 1, 16))

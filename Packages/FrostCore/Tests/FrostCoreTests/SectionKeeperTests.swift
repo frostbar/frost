@@ -367,6 +367,38 @@ import Foundation
         #expect(outcome.restores.map(\.to) == [.visible])
     }
 
+    // MARK: Pending returns (Frost quit before moving an item back)
+
+    @Test func aPendingReturnMovesTheItemBackOnTheNextLaunchEvenWithKeepingOff() {
+        var keeper = SectionKeeper(memory: [id("com.a"): .visible], pendingReturns: [id("com.a"): .hidden])
+        let outcome = keeper.observe(layout: [.visible: [item(1, "com.a")]], restoreEnabled: false, canMove: true)
+        #expect(outcome.restores == [SectionKeeper.Restore(item: item(1, "com.a"), identity: id("com.a"),
+                                                           from: .visible, to: .hidden)])
+        let changed = keeper.restoreAttempted(1, identity: id("com.a"))
+        #expect(changed)
+        #expect(keeper.pendingReturns.isEmpty)
+        // Not tried again.
+        let again = keeper.observe(layout: [.visible: [item(1, "com.a")]], restoreEnabled: false, canMove: true)
+        #expect(again.restores.isEmpty)
+    }
+
+    @Test func aPendingReturnWaitsUntilMovingIsPossible() {
+        var keeper = SectionKeeper(pendingReturns: [id("com.a"): .alwaysHidden])
+        let waiting = keeper.observe(layout: [.visible: [item(1, "com.a")]], restoreEnabled: true, canMove: false)
+        #expect(waiting.restores.isEmpty)
+        #expect(waiting.seeded.isEmpty)
+        let now = keeper.observe(layout: [.visible: [item(1, "com.a")]], restoreEnabled: true, canMove: true)
+        #expect(now.restores.map(\.to) == [.alwaysHidden])
+    }
+
+    @Test func aPendingReturnFoundInPlaceIsDropped() {
+        var keeper = SectionKeeper(pendingReturns: [id("com.a"): .hidden])
+        let outcome = keeper.observe(layout: [.hidden: [item(1, "com.a")]], restoreEnabled: true, canMove: true)
+        #expect(outcome.restores.isEmpty)
+        #expect(outcome.pendingReturnsChanged)
+        #expect(keeper.pendingReturns.isEmpty)
+    }
+
     // MARK: Accessibility-only upgrade, then Screen Recording (two launches)
 
     /// One launch's pass as `NewItemPlacer` makes it: migrate, then observe without seeding identities that may still

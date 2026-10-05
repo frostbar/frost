@@ -138,6 +138,7 @@ them out. Pass them with `make vm-run FROST_ENV="NAME=value"`.
 | `FROST_TEST_SETTINGS_HEIGHT=<pt>` | overrides the settings window's content height (small: the tabs scroll; tall: measure each tab's full content) |
 | `FROST_TEST_NOTCH_PRIMARY_DISPLAY=1` | display mode Automatic treats the primary display as notched (the VM has no notch) |
 | `FROST_TEST_FRAME_PROBE=1` | `FrameProbe`: frame timing of settings tab switches, the Frost Bar's opens and the launch warm-up; the distributed notification `dev.frost.Frost.frameProbe` (object = label) starts an idle baseline (see "Verification techniques") |
+| `FROST_TEST_OBSCURED_RESTORE_PAUSE_MS=<ms>` | the background capture of items behind the notch pauses that long between the capture and the move back, so `guest-interrupt` can reliably hold a button while the item sits right of the Frost icon |
 | `FROST_LIVE_REFRESH_TRACE=1` | logs one timing line per live refresh round (not just the first) and items whose frame changed around a strip capture |
 
 ## Notes

@@ -128,7 +128,9 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   like pushed-out items. They are captured in the background by moving them right of the Frost icon one at a time
   (`FrostBarController+ObscuredCapture`, `ObscuredCapturePolicy`) under a whole-menu-bar freeze frame at level 501: a
   ⌘-drag draws the lifted item over the Frost icon in layer-500 drag windows, which show through a layer-26 freeze
-  frame.
+  frame. The freeze frame stays up until the item is back (a held mouse button delays the move back; the overlay's
+  safety net is extended meanwhile, `ObscuredCapturePolicy.RestoreStep`), and the item's return is persisted before it
+  is moved out, so quitting mid-wait leaves it for the next launch (`SectionKeeper.pendingReturns`).
 - AXPress blocks when it opens an NSMenu and returns `.cannotComplete`, but the menu is in fact open — don't add a
   click on top. `com.apple.*` items are always clicked directly with HID CGEvents.
 - After a ⌘-drag the dragged item may get stuck in the "pressed" state; post an extra mouse-up before clicking.

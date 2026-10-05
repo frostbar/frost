@@ -43,9 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///   observes the mover idle, so nothing can start in between.
     /// - While shutting down every move makes a single attempt (`ItemMover.shutdownMaxAttempts`): the worst case
     ///   (an interrupted move-out, a move-back to the anchor then to the section boundary, and one retry of both) is
-    ///   about 4.5 s, below `terminationGrace`. After the grace period Frost quits anyway, but never while a
-    ///   synthetic event sequence is being posted (`SyntheticEventGate`), so the mouse-up and the cursor restore are
-    ///   never left pending.
+    ///   about 4.5 s, below `terminationGrace`. A background capture whose item waits for a held mouse button to be moved
+    ///   back waits at most `ObscuredCapturePolicy.shutdownHoldLimit`, then leaves it: its return was recorded before
+    ///   the move out, and the next launch makes it (`SectionKeeper.pendingReturns`). After the grace period Frost
+    ///   quits anyway, but never while a synthetic event sequence is being posted (`SyntheticEventGate`), so the
+    ///   mouse-up and the cursor restore are never left pending.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model, let frostBar else { return .terminateNow }
         model.mover.beginShutdown()

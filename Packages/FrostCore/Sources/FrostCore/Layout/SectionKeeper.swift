@@ -34,8 +34,16 @@ public struct SectionKeeper: Equatable, Sendable {
     /// Windows seen during this run but not yet checked against `memory` (a restore is pending or not possible yet).
     public private(set) var unsettled: Set<CGWindowID> = []
 
-    public init(memory: [ItemIdentity: MenuBarSection] = [:]) {
+    /// identity -> the section Frost must move that icon back to: Frost moved it out temporarily (the background
+    /// capture of items behind the notch) and quit before it could move it back (`ObscuredCapturePolicy.RestoreStep`).
+    /// Loaded at launch; a window with such an identity is moved back when first seen (regardless of the "keep icons in
+    /// their sections" setting: it was Frost's own move), and the entry is dropped once that was attempted or the window
+    /// is seen in that section.
+    public private(set) var pendingReturns: [ItemIdentity: MenuBarSection]
+
+    public init(memory: [ItemIdentity: MenuBarSection] = [:], pendingReturns: [ItemIdentity: MenuBarSection] = [:]) {
         self.memory = memory
+        self.pendingReturns = pendingReturns
     }
 
     /// A window to move back into its remembered section.
@@ -75,6 +83,8 @@ public struct SectionKeeper: Equatable, Sendable {
         public var seeded: Set<ItemIdentity> = []
         /// Identities shared by several current items (skipped).
         public var ambiguous: Set<ItemIdentity> = []
+        /// `pendingReturns` lost entries (found back in place).
+        public var pendingReturnsChanged = false
 
         public var memoryChanged: Bool { !userMoves.isEmpty || !seeded.isEmpty }
     }
@@ -137,6 +147,16 @@ public struct SectionKeeper: Equatable, Sendable {
                 unsettled.insert(id)
             }
             guard unsettled.contains(id) else { continue }
+            if let pending = pendingReturns[identity] {
+                if pending == section {
+                    pendingReturns[identity] = nil
+                    outcome.pendingReturnsChanged = true
+                    unsettled.remove(id)
+                } else if canMove {
+                    outcome.restores.append(Restore(item: item, identity: identity, from: section, to: pending))
+                }
+                continue
+            }
             guard let remembered = memory[identity] else {
                 if awaitingMigration.contains(identity) { continue }
                 memory[identity] = section
@@ -153,9 +173,14 @@ public struct SectionKeeper: Equatable, Sendable {
         return outcome
     }
 
-    /// A restore was attempted (moved or failed): the window is checked and not retried.
-    public mutating func restoreAttempted(_ windowID: CGWindowID) {
+    /// A restore was attempted (moved or failed): the window is checked and not retried. `identity`: the restore's,
+    /// whose pending return (if any) is done. Returns whether `pendingReturns` changed.
+    @discardableResult
+    public mutating func restoreAttempted(_ windowID: CGWindowID, identity: ItemIdentity? = nil) -> Bool {
         unsettled.remove(windowID)
+        guard let identity, pendingReturns[identity] != nil else { return false }
+        pendingReturns[identity] = nil
+        return true
     }
 
     /// Records that `item` now belongs to `section` (the user dropped it there in the layout editor, or Frost placed a

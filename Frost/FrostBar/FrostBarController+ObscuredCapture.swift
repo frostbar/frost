@@ -175,6 +175,7 @@ extension FrostBarController {
         timing.screenshot = clock.now - start
         var outcome: ObscuredCapturePolicy.Outcome = .interrupted
         var restoredExactly = false
+        var returnIdentity: ItemIdentity?
         do {
             try await mover.transaction { () async -> Void in
                 var mark = clock.now
@@ -194,6 +195,9 @@ extension FrostBarController {
                 var moveFailed = false
                 if !shouldAbortObscuredCapture {
                     do {
+                        // If Frost quits before the item is back, the next launch moves it back.
+                        returnIdentity = scanner.items.first { $0.windowID == id }
+                            .flatMap { app.newItems.notePendingReturn(of: $0, to: plan.section) }
                         mark = clock.now
                         try await moveOutUnlessInterrupted(id, controls: controls)
                         timing.moveOut = clock.now - mark
@@ -215,21 +219,38 @@ extension FrostBarController {
                         moveFailed = true
                     }
                 }
-                // Move back (also when the move out failed: `move` finds the item in place and returns). Waits until
-                // every window has stopped sliding, then a frame or two for the menu bar to redraw before the freeze
-                // frame goes.
+                // Move back (also when the move out failed: `move` finds the item in place and returns), always under
+                // the freeze frame (`ObscuredCapturePolicy.RestoreStep`). Waits until every window has stopped sliding,
+                // then a frame or two for the menu bar to redraw before the freeze frame goes.
+                #if DEBUG
+                if let pause = Self.testRestorePause { try? await Task.sleep(for: pause) }
+                #endif
                 mark = clock.now
-                let restoreError = await restore(plan, controls: controls, until: .settled)
+                let back = await moveBackUnderFreezeFrame(plan, controls: controls, freeze: freeze)
                 timing.moveBack = clock.now - mark
-                if let restoreError {
+                switch back {
+                case .restored:
+                    break
+                case .handedOff:
+                    moveFailed = true
+                    FrostLog.capture.error("background capture of item \(id, privacy: .public): a mouse button is still held; moving it back once released, under a new freeze frame")
+                    scheduleCoveredRestore(plan, controls: controls, returnIdentity: returnIdentity)
+                case .leftForNextLaunch:
+                    moveFailed = true
+                    FrostLog.capture.error("background capture of item \(id, privacy: .public): Frost is quitting while a mouse button is held; the next launch moves it back")
+                case .failed(let restoreError):
                     moveFailed = true
                     if case ItemMoveError.controlsDisturbed = restoreError {
                         FrostLog.capture.error("background capture of item \(id, privacy: .public): Frost's controls were disturbed; not retrying")
+                    } else if mover.isShuttingDown {
+                        FrostLog.capture.error("background capture of item \(id, privacy: .public): moving it back failed while quitting (\(restoreError, privacy: .public)); the next launch moves it back")
                     } else {
-                        FrostLog.capture.error("background capture of item \(id, privacy: .public): moving it back failed (\(restoreError, privacy: .public)); retrying in 1.5 s")
-                        scheduleRestoreRetry(plan, controls: controls)
+                        FrostLog.capture.error("background capture of item \(id, privacy: .public): moving it back failed (\(restoreError, privacy: .public)); retrying under a new freeze frame")
+                        scheduleCoveredRestore(plan, controls: controls, returnIdentity: returnIdentity)
                     }
-                } else {
+                }
+                if case .restored = back {
+                    app.newItems.clearPendingReturn(returnIdentity)
                     scanner.rescan()
                     restoredExactly = Self.sectionOrder(SectionAssigner.layout(of: scanner.items, controls: controls))
                         == Self.sectionOrder(before)
@@ -249,6 +270,122 @@ extension FrostBarController {
             background capture of item \(id, privacy: .public) (\(next.need.rawValue, privacy: .public)): \
             \(Self.describe(outcome), privacy: .public), \(slot, privacy: .public); \(timing.description, privacy: .public)
             """)
+        replayInterceptedClick()
+    }
+
+    enum MoveBack {
+        case restored
+        /// A mouse button stayed held past `ObscuredCapturePolicy.holdCoverageLimit`: moved back later.
+        case handedOff
+        /// Frost is quitting while a mouse button is held: the next launch moves it back.
+        case leftForNextLaunch
+        case failed(Error)
+    }
+
+    /// Moves the item back while `freeze` covers the menu bar, keeping it up for as long as that takes
+    /// (`ObscuredCapturePolicy.RestoreStep`): waits for a held mouse button to be released (extending the freeze frame's
+    /// safety net meanwhile) and moves the item back the moment it is.
+    private func moveBackUnderFreezeFrame(_ plan: RestorePlan, controls: FrostControlWindows,
+                                          freeze: MenuBarFreezeFrame) async -> MoveBack {
+        let mover = app.mover
+        let clock = ContinuousClock()
+        let waitStart = clock.now
+        var shutdownSeen: ContinuousClock.Instant?
+        var logged = false
+        while true {
+            if mover.isShuttingDown, shutdownSeen == nil { shutdownSeen = clock.now }
+            switch ObscuredCapturePolicy.restoreStep(isMouseButtonHeld: UserMouseButtons.isAnyHeld,
+                                                     waited: clock.now - waitStart,
+                                                     sinceShutdown: shutdownSeen.map { clock.now - $0 }) {
+            case .restoreNow:
+                freeze.extendLimit(ObscuredCapturePolicy.restoreCoverage(
+                    mouseReleaseTimeout: ItemMover.mouseReleaseTimeout(isShuttingDown: mover.isShuttingDown)))
+                if let error = await restore(plan, controls: controls, until: .settled) { return .failed(error) }
+                return .restored
+            case .waitForRelease:
+                if !logged {
+                    logged = true
+                    FrostLog.capture.notice("background capture: waiting for the mouse button to be released to move the item back (freeze frame stays up)")
+                }
+                freeze.extendLimit(Self.obscuredFreezeLimit)
+                try? await Task.sleep(for: ObscuredCapturePolicy.holdPoll)
+            case .handOff:
+                return .handedOff
+            case .leaveForNextLaunch:
+                return .leftForNextLaunch
+            }
+        }
+    }
+
+    /// Moves an item a background capture couldn't move back in time back into its section, under a fresh freeze frame:
+    /// once the user releases the mouse button (cancelling the task, when quitting or before a click forward, skips that
+    /// wait). Runs as `restoreRetryTask`, so quitting waits for it and background captures don't start meanwhile. If it
+    /// fails, the item's recorded return (`returnIdentity`) is left for the next launch.
+    func scheduleCoveredRestore(_ plan: RestorePlan, controls: FrostControlWindows, returnIdentity: ItemIdentity?) {
+        restoreRetryTask?.cancel()
+        restoreRetryTask = Task { [weak self] in
+            while UserMouseButtons.isAnyHeld, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            // The move itself runs in a task that doesn't inherit cancellation.
+            await Task { @MainActor [weak self] in
+                await self?.coveredRestore(plan, controls: controls, returnIdentity: returnIdentity)
+            }.value
+            self?.restoreRetryTask = nil
+        }
+    }
+
+    private func coveredRestore(_ plan: RestorePlan, controls: FrostControlWindows,
+                                returnIdentity: ItemIdentity?) async {
+        let mover = app.mover, sections = app.sections
+        interceptedClick = nil
+        // The screenshot must show the menu bar as it is when the transaction starts: retake it if a move ran meanwhile.
+        var screenshot: MenuBarFreezeFrame.Capture?
+        for _ in 0..<3 {
+            _ = await mover.waitUntilIdle(timeout: .seconds(5))
+            // A freeze frame only in the collapsed state (it would hide a collapse while editing or expanded).
+            guard sections.state == .collapsed, !sections.isEditing else { break }
+            let before = mover.transactionCount
+            screenshot = await MenuBarFreezeFrame.capture(
+                menuBarFallbackHeight: sections.iconWindow?.frame.height ?? 24, iconFrames: frostIconFrames,
+                managedDisplayID: managedDisplayID, contentCache: app.capturer.contentCache, coverage: .wholeMenuBar)
+            if !mover.isBusy, mover.transactionCount == before { break }
+            screenshot = nil
+        }
+        if screenshot == nil {
+            FrostLog.capture.error("moving a background-captured item back without a freeze frame (none available)")
+        }
+        do {
+            // Putting the icon back is exactly what quitting waits for, so it may run while shutting down.
+            try await mover.transaction(allowedDuringShutdown: true) {
+                var freeze: MenuBarFreezeFrame?
+                if let screenshot {
+                    freeze = await MenuBarFreezeFrame.show(
+                        screenshot,
+                        limit: ObscuredCapturePolicy.restoreCoverage(
+                            mouseReleaseTimeout: ItemMover.mouseReleaseTimeout(isShuttingDown: mover.isShuttingDown)),
+                        level: MenuBarFreezeFrame.aboveDragImagesLevel
+                    ) { [weak self] event in
+                        self?.freezeFrameTookClick(event)
+                    }
+                }
+                defer { freeze?.remove() }
+                if sections.isEditing {
+                    try await sections.whileCollapsedForMove { try await self.restoreIfNeeded(plan, controls: controls) }
+                } else {
+                    if sections.state != .collapsed {
+                        sections.setState(.collapsed)
+                        await sections.waitForSettle()
+                    }
+                    try await restoreIfNeeded(plan, controls: controls)
+                }
+                if freeze != nil { try? await Task.sleep(for: MenuBarFreezeFrame.settleDelay) }
+            }
+            app.newItems.clearPendingReturn(returnIdentity)
+            FrostLog.capture.notice("moved a background-captured item back under a new freeze frame")
+        } catch {
+            FrostLog.capture.error("moving a background-captured item back failed (\(error, privacy: .public)); the next launch moves it back")
+        }
         replayInterceptedClick()
     }
 
@@ -276,8 +413,17 @@ extension FrostBarController {
         try await move.value
     }
 
+    #if DEBUG
+    /// Environment variable `FROST_TEST_OBSCURED_RESTORE_PAUSE_MS=<ms>` (VM testing only): pause between the capture
+    /// and the move back, so a test can press a mouse button while the item sits right of the Frost icon.
+    private static let testRestorePause: Duration? = ProcessInfo.processInfo
+        .environment["FROST_TEST_OBSCURED_RESTORE_PAUSE_MS"].flatMap(Int.init).map { .milliseconds($0) }
+    #endif
+
     /// The freeze frame's safety net for this operation: a move out, a capture and a move back normally take about a
-    /// second (two ⌘-drags with their settle waits); retries take longer.
+    /// second (two ⌘-drags with their settle waits); retries take longer. Once the item is to be moved back, the safety
+    /// net is extended for as long as that may take (`moveBackUnderFreezeFrame`): the overlay never goes while the item
+    /// still sits in the Visible section.
     private static let obscuredFreezeLimit: Duration = .seconds(8)
 
     /// The freeze frame took a mouse-down: the operation stops at its next checkpoint.

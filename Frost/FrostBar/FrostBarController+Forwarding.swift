@@ -256,7 +256,7 @@ extension FrostBarController {
     }
 
     /// Moves the item back if it's still outside its original section; does nothing if it's back or gone.
-    private func restoreIfNeeded(_ plan: RestorePlan, controls: FrostControlWindows) async throws {
+    func restoreIfNeeded(_ plan: RestorePlan, controls: FrostControlWindows) async throws {
         let scanner = app.scanner
         scanner.rescan()
         let controls = app.sections.controlWindows ?? controls

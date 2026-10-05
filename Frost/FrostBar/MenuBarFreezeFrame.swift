@@ -161,14 +161,22 @@ final class MenuBarFreezeFrame {
         }
         let frame = MenuBarFreezeFrame(windows: windows)
         for window in frame.windows { window.orderFrontRegardless() }
-        frame.timeout = Task { [weak frame] in
-            try? await Task.sleep(for: limit)
-            guard let frame, frame.isShown, !Task.isCancelled else { return }
-            FrostLog.freezeFrame.error("still shown after \(limit, privacy: .public); removing it")
-            frame.remove()
-        }
+        frame.extendLimit(limit)
         await frame.waitUntilOnScreen()
         return frame
+    }
+
+    /// Restarts the safety net: the overlay is removed automatically `limit` from now unless `remove()` runs first
+    /// (an owner that legitimately needs it longer, e.g. while a moved-out item waits to be moved back, extends it).
+    func extendLimit(_ limit: Duration) {
+        guard isShown else { return }
+        timeout?.cancel()
+        timeout = Task { [weak self] in
+            try? await Task.sleep(for: limit)
+            guard let self, self.isShown, !Task.isCancelled else { return }
+            FrostLog.freezeFrame.error("still shown after \(limit, privacy: .public); removing it")
+            self.remove()
+        }
     }
 
     /// Pays ScreenCaptureKit's one-time setup costs ahead of the first live refresh round (called by the Frost Bar's

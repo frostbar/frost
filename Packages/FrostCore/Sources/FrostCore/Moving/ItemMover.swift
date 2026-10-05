@@ -267,7 +267,7 @@ public final class ItemMover {
 
     /// How long a move waits for the user to let go of a mouse button: as long as a deliberate drag takes, but briefly
     /// while quitting (which gives up after a few seconds anyway).
-    nonisolated static func mouseReleaseTimeout(isShuttingDown: Bool) -> Duration {
+    public nonisolated static func mouseReleaseTimeout(isShuttingDown: Bool) -> Duration {
         isShuttingDown ? .seconds(1) : .seconds(30)
     }
 

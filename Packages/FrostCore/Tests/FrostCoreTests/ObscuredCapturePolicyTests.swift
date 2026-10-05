@@ -278,4 +278,39 @@ import CoreGraphics
         #expect(policy.timeUntilNextDue(order: [1], needsImage: { _ in true }, now: ready) == .zero)
         #expect(!Policy(launchedAt: launch).shouldWake(.capturesInvalidated))
     }
+
+    // MARK: Moving the item back
+
+    @Test func theItemGoesBackTheMomentTheButtonIsReleased() {
+        #expect(Policy.restoreStep(isMouseButtonHeld: false, waited: .zero, sinceShutdown: nil) == .restoreNow)
+        #expect(Policy.restoreStep(isMouseButtonHeld: false, waited: .seconds(45), sinceShutdown: nil) == .restoreNow)
+        #expect(Policy.restoreStep(isMouseButtonHeld: false, waited: .seconds(1), sinceShutdown: .seconds(1)) == .restoreNow)
+    }
+
+    @Test func aHeldButtonKeepsTheFreezeFrameUpWellPastItsUsualLimit() {
+        // A ten-second drag: still covered (the overlay's own safety net is 8 s).
+        #expect(Policy.restoreStep(isMouseButtonHeld: true, waited: .seconds(10), sinceShutdown: nil) == .waitForRelease)
+        #expect(Policy.restoreStep(isMouseButtonHeld: true, waited: Policy.holdCoverageLimit, sinceShutdown: nil)
+                == .handOff)
+    }
+
+    @Test func quittingWaitsOnlyBrieflyThenLeavesTheReturnForTheNextLaunch() {
+        #expect(Policy.restoreStep(isMouseButtonHeld: true, waited: .milliseconds(500), sinceShutdown: .milliseconds(500))
+                == .waitForRelease)
+        // Quitting began after a long wait: it still gets its own grace (measured from the quit, not the wait).
+        #expect(Policy.restoreStep(isMouseButtonHeld: true, waited: .seconds(20), sinceShutdown: .zero) == .waitForRelease)
+        #expect(Policy.restoreStep(isMouseButtonHeld: true, waited: .seconds(20), sinceShutdown: Policy.shutdownHoldLimit)
+                == .leaveForNextLaunch)
+        // Released meanwhile: moved back right away, even while quitting.
+        #expect(Policy.restoreStep(isMouseButtonHeld: false, waited: .seconds(20), sinceShutdown: .seconds(1))
+                == .restoreNow)
+        // Waiting plus a single-attempt move back (`ItemMover`: 1 s button wait while quitting, ~1 s per ⌘-drag, the
+        // boundary fallback) fits the six-second termination grace.
+        #expect(Policy.shutdownHoldLimit + .seconds(1) + .seconds(2) < .seconds(6))
+    }
+
+    @Test func theMoveBackIsCoveredForItsWholeButtonWait() {
+        let coverage = Policy.restoreCoverage(mouseReleaseTimeout: .seconds(30))
+        #expect(coverage > .seconds(30) * 2)
+    }
 }
