@@ -367,6 +367,64 @@ import Foundation
         #expect(outcome.restores.map(\.to) == [.visible])
     }
 
+    // MARK: Accessibility-only upgrade, then Screen Recording (two launches)
+
+    /// One launch's pass as `NewItemPlacer` makes it: migrate, then observe without seeding identities that may still
+    /// migrate; returns the memory as persisted.
+    func launch(memory: Data, items: [MenuBarItem], layouts: [MenuBarLayout]) throws -> (Data, [SectionKeeper.Outcome]) {
+        var keeper = SectionKeeper(memory: try SectionKeeper.decode(memory))
+        keeper.rekey(IdentityMigration.plan(stored: Set(keeper.memory.keys), items: items))
+        let outcomes = layouts.map { layout in
+            keeper.observe(layout: layout,
+                           awaitingMigration: IdentityMigration.awaitingMigration(stored: Set(keeper.memory.keys),
+                                                                                  items: items),
+                           restoreEnabled: true, canMove: true)
+        }
+        return (try SectionKeeper.encode(keeper.memory), outcomes)
+    }
+
+    func app(_ windowID: CGWindowID, key: String, title: String) -> MenuBarItem {
+        MenuBarItem(windowID: windowID, frame: CGRect(x: CGFloat(windowID) * 30, y: 0, width: 29, height: 39),
+                    isOnScreen: false, windowTitle: title, bundleID: "com.a", pid: 1, axDescription: nil,
+                    identityKey: key)
+    }
+
+    @Test func anAccessibilityOnlyLaunchDoesNotBlockTheLaterMigration() throws {
+        // Remembered by title (an earlier version with Screen Recording): the app's two items in Visible and Hidden.
+        let v1 = try SectionKeeper.encode([IdentityMigration.legacy(bundleID: "com.a", title: "Item-0"): .visible,
+                                           IdentityMigration.legacy(bundleID: "com.a", title: "Item-1"): .hidden])
+        // Launch 1, Accessibility only: the app re-created both in Always Hidden; titles unreadable, so which is which
+        // can't be told yet.
+        let blind = [app(1, key: "desc:A", title: ""), app(2, key: "desc:B", title: "")]
+        let (afterBlind, first) = try launch(memory: v1, items: blind, layouts: [[.alwaysHidden: blind]])
+        #expect(first[0].seeded.isEmpty)
+        #expect(first[0].restores.isEmpty)
+        #expect(try SectionKeeper.decode(afterBlind) == SectionKeeper.decode(v1))
+        // Launch 2, Screen Recording granted: titles map the remembered sections, which are restored.
+        let titled = [app(11, key: "desc:A", title: "Item-0"), app(12, key: "desc:B", title: "Item-1")]
+        let (afterTitled, second) = try launch(memory: afterBlind, items: titled, layouts: [[.alwaysHidden: titled]])
+        #expect(Set(second[0].restores.map { "\($0.item.windowID)->\($0.to.rawValue)" })
+                == ["11->\(MenuBarSection.visible.rawValue)", "12->\(MenuBarSection.hidden.rawValue)"])
+        #expect(try SectionKeeper.decode(afterTitled) == [ItemIdentity(bundleID: "com.a", key: "desc:A"): .visible,
+                                                          ItemIdentity(bundleID: "com.a", key: "desc:B"): .hidden])
+    }
+
+    @Test func aMoveTheUserMakesMeanwhileWinsOverTheMigration() throws {
+        let v1 = try SectionKeeper.encode([IdentityMigration.legacy(bundleID: "com.a", title: "Item-0"): .visible,
+                                           IdentityMigration.legacy(bundleID: "com.a", title: "Item-1"): .hidden])
+        let blind = [app(1, key: "desc:A", title: ""), app(2, key: "desc:B", title: "")]
+        // B is seen in Always Hidden, then the user moves it to Visible: their choice, recorded.
+        let (afterBlind, first) = try launch(memory: v1, items: blind, layouts: [
+            [.alwaysHidden: blind], [.alwaysHidden: [blind[0]], .visible: [blind[1]]],
+        ])
+        #expect(first[1].userMoves.map(\.to) == [.visible])
+        let titled = [app(11, key: "desc:A", title: "Item-0"), app(12, key: "desc:B", title: "Item-1")]
+        let (afterTitled, _) = try launch(memory: afterBlind, items: titled, layouts: [[.alwaysHidden: titled]])
+        let memory = try SectionKeeper.decode(afterTitled)
+        #expect(memory[ItemIdentity(bundleID: "com.a", key: "desc:A")] == .visible)
+        #expect(memory[ItemIdentity(bundleID: "com.a", key: "desc:B")] == .visible)
+    }
+
     @Test func unreadableMemoryThrows() {
         #expect(throws: (any Error).self) { try SectionKeeper.decode(Data("{}".utf8)) }
         #expect(throws: (any Error).self) {

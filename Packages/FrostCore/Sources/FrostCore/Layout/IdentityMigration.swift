@@ -108,6 +108,15 @@ public enum IdentityMigration {
     /// so whether one of them is new can't be decided; moving an icon the user put in Always Hidden would be worse
     /// than leaving a new one there).
     public static func presumedKnown(known: Set<ItemIdentity>, items: [MenuBarItem]) -> Set<ItemIdentity> {
+        awaitingMigration(stored: known, items: items)
+    }
+
+    /// Current identities that may still take over one of the `stored` legacy identities once titles are readable:
+    /// items whose app has unmapped legacy identities and whose title isn't readable. Nothing may be stored under them
+    /// meanwhile (`SectionKeeper.observe`'s `awaitingMigration`): `plan` never maps onto an identity already stored, so
+    /// a section seeded from where the item happens to be now would win over the one the user chose.
+    public static func awaitingMigration(stored: Set<ItemIdentity>, items: [MenuBarItem]) -> Set<ItemIdentity> {
+        let known = stored
         let legacyApps = Set(known.filter(\.isLegacy).map(\.bundleID))
         guard !legacyApps.isEmpty else { return [] }
         return Set(items.compactMap { item in

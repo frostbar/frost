@@ -12,7 +12,8 @@ import Foundation
 /// - **Memory** (`memory`, persisted): identity → section. Written when the user moves an icon (an editor drop via
 ///   `record`, or a ⌘-drag in the menu bar detected by `observe`: the **same window** changed section without Frost
 ///   moving it), when Frost places a new icon (`record`), and seeded from the first trusted observation of an identity
-///   that has no entry yet (existing entries are never overwritten by seeding).
+///   that has no entry yet (existing entries are never overwritten by seeding), unless that identity may still take
+///   over a title-keyed entry (`awaitingMigration`).
 /// - **This run** (`observed`, `unsettled`): the section each window was last seen in, and the windows not yet checked
 ///   against the memory. A window is checked once, when it first appears (an app launch or relaunch, the item being
 ///   re-created, or Frost's own launch); after that only the user moves it, and a section change of a known window
@@ -87,8 +88,12 @@ public struct SectionKeeper: Equatable, Sendable {
     ///   - restoreEnabled: the user's setting; when off, displaced windows are accepted where they are.
     ///   - canMove: moving is possible now (collapsed, user present, …); when false, displaced windows stay unchecked
     ///     until it is.
+    ///   - awaitingMigration: identities that may still take over a remembered legacy identity
+    ///     (`IdentityMigration.awaitingMigration`): not seeded (the window stays unchecked), so the migration can still
+    ///     bring back the section the user chose. A move the user makes is still recorded.
     public mutating func observe(layout: MenuBarLayout, obscured: Set<CGWindowID> = [],
                                  movedByFrost: Set<CGWindowID> = [], skipping: Set<CGWindowID> = [],
+                                 awaitingMigration: Set<ItemIdentity> = [],
                                  restoreEnabled: Bool, canMove: Bool) -> Outcome {
         var outcome = Outcome()
         let entries = MenuBarSection.leftToRight.flatMap { section in
@@ -133,6 +138,7 @@ public struct SectionKeeper: Equatable, Sendable {
             }
             guard unsettled.contains(id) else { continue }
             guard let remembered = memory[identity] else {
+                if awaitingMigration.contains(identity) { continue }
                 memory[identity] = section
                 outcome.seeded.insert(identity)
                 unsettled.remove(id)

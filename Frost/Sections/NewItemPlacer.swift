@@ -228,8 +228,11 @@ final class NewItemPlacer {
         }
         guard separatorsTrusted else { return [] }
         let obscured = Set(items.filter { ItemMover.isObscured($0, displayBounds: displayBounds) }.map(\.windowID))
+        // Items that may still take over a title-keyed remembered section once titles are readable aren't seeded.
+        let awaiting = IdentityMigration.awaitingMigration(stored: Set(keeper.memory.keys), items: items)
         let outcome = keeper.observe(layout: layout, obscured: obscured, movedByFrost: mover.takeMovedWindowIDs(),
-                                     skipping: skipping, restoreEnabled: preferences.keepItemSections,
+                                     skipping: skipping, awaitingMigration: awaiting,
+                                     restoreEnabled: preferences.keepItemSections,
                                      canMove: collapsed && !mover.isShuttingDown)
         for move in outcome.userMoves {
             FrostLog.newItems.notice("""
