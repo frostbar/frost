@@ -349,7 +349,10 @@ private final class FreezeFrameView: NSView {
     override func otherMouseDown(with event: NSEvent) { report(event) }
 
     private func report(_ event: NSEvent) {
-        guard !SyntheticEvents.isPostedByFrost(event) else { return }
+        guard !SyntheticEvents.isPostedByFrost(event) else {
+            FrostLog.freezeFrame.info("ignoring Frost's own synthetic mouse-down on the freeze frame")
+            return
+        }
         onMouseDown?(event)
     }
 }

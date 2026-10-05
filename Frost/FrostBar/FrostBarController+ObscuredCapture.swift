@@ -47,6 +47,8 @@ extension FrostBarController {
     /// How long the loop waits before its next decision: zero when an operation may start now, nil when nothing is
     /// due. Logs the reason it waits whenever it changes.
     private func obscuredCaptureWait() -> Duration? {
+        // Without Screen Recording nothing can be captured (and granting it takes a relaunch): stop.
+        guard app.permissions.canCaptureImages else { return nil }
         let now = ContinuousClock.now
         let items = app.scanner.items
         app.obscuredCapture.retain(Set(items.map(\.windowID)))
@@ -83,11 +85,12 @@ extension FrostBarController {
     /// The current conditions (`ObscuredCapturePolicy.Conditions`).
     private func obscuredConditions() -> ObscuredCapturePolicy.Conditions {
         let sections = app.sections
-        let idle = CGEventSource.secondsSinceLastEventType(.hidSystemState,
-                                                           eventType: CGEventType(rawValue: ~0) ?? .null)
+        // The user's own input (HID state; `kCGAnyInputEventType` isn't a `CGEventType` case, so the kinds that matter).
+        let idle = Self.userInputKinds.map { CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: $0) }
+            .min() ?? .infinity
         return ObscuredCapturePolicy.Conditions(
-            // Both explicitly (moving needs Accessibility, capturing Screen Recording).
-            hasPermissions: app.permissions.accessibility && app.permissions.screenRecording,
+            // Moving needs Accessibility, capturing Screen Recording: without it the feature is off.
+            hasPermissions: app.permissions.capabilities.canLiveRefresh,
             isUserAway: app.presence.isAway, isShuttingDown: app.mover.isShuttingDown, isFrostBarOpen: isOpen,
             isFrostBarBusy: activationTask != nil || captureTask != nil || restoreRetryTask != nil,
             isEditing: sections.isEditing, isCollapsed: sections.state == .collapsed,
@@ -96,6 +99,11 @@ extension FrostBarController {
             isPointerInMenuBar: isPointerInAnyMenuBar(),
             sinceLastInput: idle.isFinite ? .milliseconds(Int(idle * 1000)) : nil)
     }
+
+    private static let userInputKinds: [CGEventType] = [
+        .mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged, .rightMouseDragged,
+        .scrollWheel, .keyDown, .flagsChanged,
+    ]
 
     /// Whether the pointer is over any display's menu bar.
     private func isPointerInAnyMenuBar() -> Bool {
@@ -185,7 +193,7 @@ extension FrostBarController {
                 if !shouldAbortObscuredCapture {
                     do {
                         mark = clock.now
-                        try await mover.move(id, to: .rightOf(controls.icon), until: .itemLanded)
+                        try await moveOutUnlessInterrupted(id, controls: controls)
                         timing.moveOut = clock.now - mark
                         mark = clock.now
                         let item = try await settledOnScreenItem(id)
@@ -197,6 +205,8 @@ extension FrostBarController {
                             captured = app.capturer.images[id] != nil && app.capturer.missing([item]).isEmpty
                             if !captured { failed = true }
                         }
+                    } catch is CancellationError {
+                        // Interrupted by the user (`moveOutUnlessInterrupted`): not a failure.
                     } catch {
                         FrostLog.capture.error("background capture of item \(id, privacy: .public): moving it out failed (\(error, privacy: .public))")
                         failed = true
@@ -242,6 +252,30 @@ extension FrostBarController {
             \(Self.describe(outcome), privacy: .public), \(slot, privacy: .public); \(timing.description, privacy: .public)
             """)
         replayInterceptedClick()
+    }
+
+    /// Moves the item right of the Frost icon, giving up as soon as the user needs the menu bar: a ⌘-drag cut short by
+    /// the user's mouse-down doesn't take effect, and `ItemMover` would otherwise wait for the button to be released and
+    /// try again, just to move the item back right after. The move runs in its own task, cancelled by a watcher (the
+    /// move checks for cancellation between attempts and while waiting); the operation's own task isn't cancelled, so
+    /// moving back still works. The pointer isn't watched: it's warped to the Frost icon during each ⌘-drag.
+    private func moveOutUnlessInterrupted(_ id: CGWindowID, controls: FrostControlWindows) async throws {
+        let mover = app.mover
+        let move = Task { @MainActor in try await mover.move(id, to: .rightOf(controls.icon), until: .itemLanded) }
+        let watcher = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                if self.interceptedClick != nil || UserMouseButtons.isAnyHeld || self.isOpen
+                    || self.activationTask != nil || mover.isShuttingDown || self.app.presence.isAway {
+                    FrostLog.capture.notice("background capture: interrupted while moving the item out")
+                    move.cancel()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        defer { watcher.cancel() }
+        try await move.value
     }
 
     /// The freeze frame's safety net for this operation: a move out, a capture and a move back normally take about a
