@@ -301,6 +301,37 @@ Conclusions:
 - New, unseeded items are placed at the far left, so on a notched display they land directly under the notch. In this
   test the spike's V/X/Y/AH did exactly that.
 
+### Later measurement (VM, macOS 26.6.2): capturing items that don't fit by moving them out
+
+Setup: no notch, so items are made not to fit: FakeItems with 30 extra text items (~1,000 pt of Hidden items next to
+the Finder menus). Expanded (Frost Bar live refresh), 12 Hidden items stayed `onscreen=false`.
+
+- **Where items that don't fit end up**: laid out leftwards as if they fitted, in roughly (not exactly) their order:
+  some inside the display (behind the app menus), the rest at **negative x**, left of the display, like pushed-out
+  items. So "off screen with a frame inside the display" (`ItemMover.isObscured`) misses some of them; when the state
+  is known to show an item (a temporary expansion's requested items, every item while editing), being off screen is
+  what counts (`ObscuredCapturePolicy.obscured(in:expected:)`).
+- **Capture by moving out**: collapsed, a ⌘-drag of such an item to `.rightOf(Frost icon)` lands it on screen like any
+  pushed-out item, and the strip capture takes it (the same image as when it fits). Per item (60 operations over
+  five runs): the freeze frame's screenshot 16–80 ms, the freeze frame on screen 42–59 ms after that, move out
+  77–247 ms (until landed), capture 14–91 ms, move back 0.4–1.0 s (`RestorePlan` destination, until every window has
+  stopped sliding), freeze frame up 0.56–1.2 s, 0.6–1.3 s in all; with the 2 s spacing, one item about every 3 s.
+  Every item went back to its exact slot (the same order before and after).
+- **Drag images show through a freeze frame at layer 26**: while the synthetic button is down (~40–70 ms per ⌘-drag),
+  the window server draws the lifted item at the pointer, i.e. over the Frost icon, in Control Center's layer-500
+  windows (2–3 of them; the probe saw `drag 3`). In a recording of a layer-26 freeze frame, every move out showed the
+  item's image half over the snowflake for a frame or two, and every move back the same. A freeze frame at level 501
+  (`CGWindowLevelForKey(.draggingWindow) + 1`) hides them: no frame of the recording differs from the menu bar at rest.
+  The moves work the same with Frost's window above the snowflake (routing by `0x33`; the window doesn't receive the
+  synthetic mouse-down). Level 501 is also above menus (101), so it is only used while no menu is open.
+- **A click during the operation**: a freeze frame that takes mouse events (left of and on the Frost icon) receives
+  the user's mouse-down without activating Frost (non-activating panel, `acceptsFirstMouse`). A user mouse-down during
+  Frost's own ⌘-drag cuts it short (`ItemMover` posts the mouse-up at once, the move doesn't take effect), and
+  `ItemMover`'s retry waits for the button to be released (a move out then took 1.3 s, a move back 1.7 s). So the move
+  out is cancelled as soon as the user interrupts (a click on the frozen snowflake 30 ms into the operation: nothing
+  moved, the freeze frame gone 153 ms after it appeared, the Frost Bar open right after); a move back still waits for
+  the button (2.1 s with the button held 1.5 s).
+
 ---
 
 ## Impact on later tasks

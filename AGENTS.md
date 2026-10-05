@@ -43,10 +43,10 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   - `Capture/`: ScreenCaptureKit captures, glyph brightness, the disk cache, live refresh policy
   - `Permissions/`
 - `Frost/`: app layer. `Sections/SectionController` (the three status items and the section state machine),
-  `FrostBar/` (`FrostBarController` is split into panel, `+LiveRefresh` and `+Forwarding` files), `Settings/`
-  (including the layout editor), `Onboarding/`, `Support/` (preferences, `EventMonitors`, the Debug-only `FrameProbe`),
-  `App/` (`AppModel` wires the components and navigation callbacks together). `Resources/Localizable.xcstrings`: the
-  String Catalog (English base, zh-Hans).
+  `FrostBar/` (`FrostBarController` is split into panel, `+LiveRefresh`, `+Forwarding` and `+ObscuredCapture` files),
+  `Settings/` (including the layout editor), `Onboarding/`, `Support/` (preferences, `EventMonitors`, the Debug-only
+  `FrameProbe`), `App/` (`AppModel` wires the components and navigation callbacks together).
+  `Resources/Localizable.xcstrings`: the String Catalog (English base, zh-Hans).
 - `Tools/FakeItems/`: a fake third-party menu bar app for testing (VM testing only).
 - `scripts/vm/`: VM testing scripts. `scripts/release/`: release scripts (`config.sh` is the single release
   configuration). `Spikes/`: early proof-of-concept programs, not part of the build.
@@ -124,7 +124,11 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   "unchanged" after a timeout as stable.
 - `NSPanel.isFloatingPanel = true` resets `level` to `.floating`: the Frost Bar panel actually sits at layer 3.
 - Items that don't fit under the notch have `isOnScreen == false`, and their x does not reflect the real order;
-  moves involving them must happen in the collapsed state (`whileCollapsedForMove`).
+  moves involving them must happen in the collapsed state (`whileCollapsedForMove`). Some even lie left of the display
+  like pushed-out items. They are captured in the background by moving them right of the Frost icon one at a time
+  (`FrostBarController+ObscuredCapture`, `ObscuredCapturePolicy`) under a whole-menu-bar freeze frame at level 501: a
+  ⌘-drag draws the lifted item over the Frost icon in layer-500 drag windows, which show through a layer-26 freeze
+  frame.
 - AXPress blocks when it opens an NSMenu and returns `.cannotComplete`, but the menu is in fact open — don't add a
   click on top. `com.apple.*` items are always clicked directly with HID CGEvents.
 - After a ⌘-drag the dragged item may get stuck in the "pressed" state; post an extra mouse-up before clicking.

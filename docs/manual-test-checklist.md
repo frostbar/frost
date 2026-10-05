@@ -226,7 +226,7 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] **Background capture of items behind the notch** (same setup, image cache deleted:
   `rm -rf ~/Library/Caches/dev.frost.Frost/items`, then relaunch): open the Frost Bar once (log `N item(s) behind the
   notch`), close it, park the pointer on the desktop and wait: about every 3 s one of them is captured (log
-  `background capture of item <id> (missing): captured, back in its exact slot; … total ~0.6–1 s`), never in the first
+  `background capture of item <id> (missing): captured, back in its exact slot; … total ~0.6–1.3 s`), never in the first
   20 s after launch. Reopen the Frost Bar: those tiles now show real images instead of app icons, also after a
   relaunch (disk cache). Record the menu bar meanwhile (VM: `screencapture -v -C`, compare every frame left of the
   system items with a frame at rest): no frame shows an item moving, the snowflake shifting, the lifted item's drag
