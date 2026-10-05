@@ -124,6 +124,19 @@ The guest has keyboard navigation on (`AppleKeyboardUIMode = 3`), so focus rings
 on clicked controls in screenshots. The macOS Tahoe "See what's new" notification can sit
 over the Frost Bar; close it via Notification Center's AX "Close" action.
 
+## Debug-only test hooks
+
+Environment variables read only by Debug builds (`make build`, which `vm-deploy.sh` installs); a Release build compiles
+them out. Pass them with `make vm-run FROST_ENV="NAME=value"`.
+
+| variable | effect |
+| --- | --- |
+| `FROST_TEST_DROP_REPLICA_CLICKS=1` | drops the click the VM redelivers to the snowflake after a click on its replica on another display, like a real Mac that loses it, so the `ReplicaClickDetector` fallback can be tested with left clicks (see "Notes") |
+| `FROST_TEST_SETTINGS_HEIGHT=<pt>` | overrides the settings window's content height (small: the tabs scroll; tall: measure each tab's full content) |
+| `FROST_TEST_NOTCH_PRIMARY_DISPLAY=1` | display mode Automatic treats the primary display as notched (the VM has no notch) |
+| `FROST_TEST_FRAME_PROBE=1` | `FrameProbe`: frame timing of settings tab switches, the Frost Bar's opens and the launch warm-up; the distributed notification `dev.frost.Frost.frameProbe` (object = label) starts an idle baseline (see "Verification techniques") |
+| `FROST_LIVE_REFRESH_TRACE=1` | logs one timing line per live refresh round (not just the first) and items whose frame changed around a strip capture |
+
 ## Notes
 
 - The VM keeps running headless between sessions. `tart list` shows its state and
@@ -137,7 +150,8 @@ over the Frost Bar; close it via Notification Center's AX "Close" action.
   `scanner`, `mover`, `capture`, `frostbar`, `freezeframe`, `activation`, `layout`, `newitems`). It does not
   write to stdout/stderr any more, so `/tmp/frost-stdout.log` only has crashes and system noise; `vm-logs.sh` shows
   the unified log. The same command works on a real Mac, where Frost runs with stderr = `/dev/null`:
-  `log show --last 10m --info --style compact --predicate 'subsystem == "dev.frost.Frost"'` (or `log stream`).
+  `/usr/bin/log show --last 10m --info --style compact --predicate 'subsystem == "dev.frost.Frost"'` (or
+  `/usr/bin/log stream`; in zsh a bare `log` is a builtin).
   Item titles and other user content are logged `.private` (shown as `<private>`).
 - Guest look (see "Verification techniques" below): a red/orange gradient
   wallpaper (`~/Pictures/wallpaper-host-like-p3.png`, Display P3) and a built-in Mac display's "Color LCD" profile

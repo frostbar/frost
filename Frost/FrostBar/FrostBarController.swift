@@ -84,8 +84,13 @@ final class FrostBarController {
     /// Set when the item of a finished click forward must stop lingering in the Visible section (the Frost Bar
     /// reopens); quitting cancels the forward instead.
     var endLingerRequested = false
-    /// Environment variable `FROST_LIVE_REFRESH_TRACE=1`: log timings for every round (for measurements in the VM).
+    /// Environment variable `FROST_LIVE_REFRESH_TRACE=1` (Debug builds, VM measurements only): log timings for every
+    /// round, and items whose frame changed around a strip capture (`ItemImageCapturer.traceStripMismatches`).
+    #if DEBUG
     static let traceCycles = ProcessInfo.processInfo.environment["FROST_LIVE_REFRESH_TRACE"] == "1"
+    #else
+    static let traceCycles = false
+    #endif
 
     init(app: AppModel) {
         self.app = app
