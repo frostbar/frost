@@ -409,8 +409,6 @@ extension FrostBarController {
             poll: { isFading in await fallbackHooks?.poll(isFading) ?? false })
     }
 
-    /// Waits until all of the app's windows outside `baseline` are gone (up to 1 s; a closed menu's window disappears
-    /// in ~0.25 s, a popover's in ~0.5 s).
     /// Quitting cancels the wait for a forwarded click's menu / popover while it may still be open. An open menu
     /// consumes the ⌘-drag's mouse-down, so the move back would fail (and while quitting, a failed move isn't retried
     /// and the item lands at the section boundary instead of its old place): close it first with a click on the item,
@@ -428,6 +426,8 @@ extension FrostBarController {
         }
     }
 
+    /// Waits until all of the app's windows outside `baseline` are gone (up to 1 s; a closed menu's window disappears
+    /// in ~0.25 s, a popover's in ~0.5 s).
     private func waitUntilDismissed(pid: pid_t, baseline: Set<CGWindowID>) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(1)
