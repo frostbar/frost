@@ -36,7 +36,7 @@ Scripts (all in `scripts/vm/`, each has a usage header):
 | `vm-vnc.sh <vncdotool cmds>` | mouse/keyboard input into the VM (e.g. `move 2956 30 click 1`, `key cmd-space`, `type text`). Coordinates are framebuffer pixels = points × 2. |
 | `vm-fake-items.sh deploy\|launch [A\|B] [extra] [polite\|net]\|quit\|reset\|log` | build / install / run the FakeItems test apps (`Tools/FakeItems`): `dev.frost.FakeItems` (9 items: menus, 2 popovers, a no-op, the ticking `FIClock`) and `dev.frost.FakeItemsB` (2 items); `extra` adds N more text items; `net` makes `FIClock` show network-speed-like text whose width changes every second (like a network-speed item); every click / menu / popover is logged to guest `/tmp/fakeitems.log` |
 | `vm-logs.sh [10m\|1h\|-f]` | `/tmp/frost-stdout.log` plus `log show --info --predicate 'subsystem == "dev.frost.Frost"'`; `-f` streams |
-| `vm-grant-tcc.sh [--grant\|--revoke\|--show]` | write/remove Frost's rows in the guest's system TCC.db |
+| `vm-grant-tcc.sh [--grant\|--revoke\|--show] [accessibility\|screen\|post-event]...` | write/remove Frost's rows in the guest's system TCC.db (all three services by default; e.g. `--revoke screen` leaves Accessibility only, to test Frost without Screen Recording; relaunch Frost afterwards) |
 | `vm-down.sh` | `tart stop` (graceful, forced after 60 s) |
 
 Environment overrides: `FROST_VM` (VM name, default `frost-test`), `FROST_VM_USER` /

@@ -10,8 +10,9 @@ shows the hidden ones in a glass panel below the menu bar (the Frost Bar).
 - Supports **macOS 26+** only (Liquid Glass); no compatibility with older systems.
 - Stack: Swift 6.4 (Swift 6 language mode, `SWIFT_STRICT_CONCURRENCY: complete`), Xcode 27, SwiftUI + AppKit,
   XcodeGen, Sparkle 2 (SPM, automatic updates).
-- Not sandboxed, distributed directly; needs the Accessibility and Screen Recording permissions. Basic hiding and
-  showing needs no permissions at all.
+- Not sandboxed, distributed directly. Basic hiding and showing needs no permissions; the Frost Bar, the layout editor
+  and every move need only Accessibility (`PermissionCapabilities`); Screen Recording is optional and only adds real
+  icon images (captures, the disk cache, live refresh). Never gate a feature on "all permissions granted".
 
 ## Common commands
 
@@ -84,7 +85,13 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
 - The owner of every status item window is Control Center; the real owner must be matched through AX
   (`kAXExtrasMenuBarAttribute`) by midX (4 pt tolerance).
 - `button.window.windowNumber` is **not** the CG window ID, and converting it crashes; Frost locates its own control
-  items by frame (converted to CG coordinates) or by window title (the autosave name).
+  items by frame (converted to CG coordinates), with the window title (the autosave name) only as a fallback.
+- Without Screen Recording, `kCGWindowName` (window titles) is empty for other apps' windows (also through private
+  window-property calls) and their windows can't be captured. Item identities therefore come from AX attributes
+  (`ItemIdentityKey`: AX identifier, else description / help, else the index among the app's extras, which is creation
+  order), never from titles; titles are only an extra signal for migrating title-keyed data (`IdentityMigration`).
+  Control Center's clock and Control Center button are recognized by their AX identifiers
+  (`com.apple.menuextra.clock` / `.controlcenter`), see `SystemItemRules`.
 - `NSStatusBar.system.thickness` returns 22, which does not match the actual menu bar height (39 on notched
   displays); use `screen.frame.maxY - screen.visibleFrame.maxY`.
 - A separator with `length = 10_000` is clamped to a 5016 pt wide window, which is enough to push the items on its

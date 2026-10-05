@@ -4,6 +4,15 @@ All notable changes to Frost are documented here. The format follows [Keep a Cha
 and versions follow [Semantic Versioning](https://semver.org/). Each version's section is used verbatim as the
 release notes on GitHub and in the in-app update window.
 
+## [Unreleased]
+
+### Changed
+- Screen Recording is now optional: with Accessibility alone, the Frost Bar, the layout editor, moving icons and
+  keeping them in their sections all work, and icons are shown as their app's icon (or a system symbol) with a short
+  label where it helps. Grant Screen Recording to see real images of the icons; a small hint offers it.
+- Icons are identified by their Accessibility attributes instead of their window titles. Remembered sections, known
+  icons and cached images are moved over automatically.
+
 ## [0.2.0] - 2026-10-05
 
 Frost is now signed with a Developer ID and notarized by Apple: it opens without the "Open Anyway" step.

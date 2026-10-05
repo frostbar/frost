@@ -34,11 +34,14 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] Click the grant button on the Accessibility card: the system prompt appears and Privacy & Security →
   Accessibility opens; after turning the switch on in System Settings, the card turns into a green checkmark within
   about 1 second (the checkmark bounces once), without switching back to Frost.
+- [ ] The Accessibility card is tagged **Required** and the Screen Recording card **Optional**.
+- [ ] Once Accessibility is granted (Screen Recording still missing): the "all set" message and the done / "open layout
+  editor" buttons appear already; the Frost Bar and the layout editor work (see "Accessibility only" below).
 - [ ] Click the grant button on the Screen Recording card: the Screen Recording pane opens; a note below the card says
   Frost must be relaunched after granting.
 - [ ] Click the relaunch button: Frost quits and relaunches within about 1 second, the onboarding window reappears,
   and Screen Recording shows as granted.
-- [ ] Once both are granted: an "all set" message appears; the bottom buttons change to a done button plus an
+- [ ] Once Accessibility is granted: an "all set" message appears; the bottom buttons change to a done button plus an
   "open layout editor" button. The latter closes onboarding and opens the Settings window on the **Layout** tab (it
   also switches to Layout if the Settings window is already open on another tab).
 - [ ] The later / done buttons, the close button and Esc (when not everything is granted) close onboarding; after
@@ -71,6 +74,7 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] Right-click the snowflake: the menu contains "Settings…", "Check for Updates…" and "Quit Frost", each with an
   icon so the titles line up (also in Simplified Chinese).
 - [ ] Without any permissions, the display mode is forced to In Menu Bar, and hiding / showing works normally.
+- [ ] With Accessibility only (no Screen Recording), Automatic still uses the Frost Bar on a notched display.
 
 ## 4. Layout editor
 
@@ -109,8 +113,9 @@ For each item, record: environment (model / displays / macOS version) and result
   into it: editing resumes. Lock the screen (⌃⌘Q) or let the displays sleep: editing ends and the editor's periodic
   refreshes stop (log `user away (screenLocked)` / `(displaysAsleep)`); after unlocking, editing resumes once the
   window is key (log `user back`).
-- [ ] Revoke Accessibility or Screen Recording: the editor shows a permission-needed placeholder that updates as
-  permissions change; its button opens the onboarding window.
+- [ ] Revoke Accessibility: the editor shows an "Accessibility Required" placeholder that updates as permissions
+  change; its button opens the onboarding window. Revoking only Screen Recording does **not** show the placeholder
+  (see "Accessibility only").
 - [ ] **Known risk (b)**: when moving an item hidden under the notch, the menu bar briefly collapses and then
   restores. Confirm it doesn't flicker excessively, the layout is correct afterwards, and editing state is restored.
 - [ ] Items hidden under the notch are shown with the app icon (or a previously cached image) instead of a capture.
@@ -404,6 +409,31 @@ on-screen, windowID, title; real windows are titled with their autosave name, re
   works; a move in progress fails safely (no hang, no stray cursor movement).
 - [ ] Revoke Screen Recording while running: images stop updating, and app icons or placeholders are shown; after
   re-granting and relaunching, images come back.
+
+### 9.1 Accessibility only (no Screen Recording)
+
+VM: `scripts/vm/vm-grant-tcc.sh --revoke screen`, then relaunch Frost (`vm-run.sh`); `--grant screen` restores it.
+Evidence goes under `build/vm-shots/no-screen-recording/`.
+
+- [ ] The Frost Bar opens (Automatic on a notched display, or Frost Bar mode) and shows a tile for every hidden icon:
+  the owning app's icon, an SF Symbol for system items (Spotlight, Control Center modules), the text of text items on
+  wide tiles, and a short label under the icon when several icons of one app would look the same. No live refresh
+  runs (log `live refresh: … skipped permissionsMissing`), and the menu bar never expands.
+- [ ] A small "Grant Screen Recording to see real icons" row sits above the footer; clicking it closes the panel and
+  opens onboarding; its close button hides it for good (also in the layout editor), `screenRecordingHintDismissed`.
+- [ ] Clicking a tile opens the item's menu / popover; right-click or Control-click opens its secondary menu; the item
+  moves back afterwards.
+- [ ] The layout editor shows the same fallback tiles and the same hint in its footer; drags between sections work;
+  the clock and the Control Center button carry a lock and can't be dragged.
+- [ ] Keep icons in their sections: move an app's icon to another section, quit the app and reset its saved positions,
+  relaunch it: Frost moves the icon back (log `moved … back to …: its app re-added it elsewhere`).
+- [ ] Upgrading from a version that keyed items by window title (`itemSections.v1` / `knownItemIdentities`): on the
+  first launch with Screen Recording, log `moved N remembered section(s) to the items' current identities`, and
+  `itemSections.v2` / `knownItemIdentities.v2` / `itemTitles.v1` are written; cached images in
+  `~/Library/Caches/dev.frost.Frost/items/` are moved to the new keys (their metadata gets a `key`). Without Screen
+  Recording, an app's only icon still takes over its remembered section; apps with several icons wait for titles and
+  aren't treated as new meanwhile.
+- [ ] Grant Screen Recording and relaunch: real images replace the app icons and the hint is gone.
 - [ ] After a rebuild (same signing certificate), grants remain valid and don't need to be granted again.
 
 ## 10. Automatic updates (Sparkle)
@@ -436,6 +466,12 @@ local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
   error), and no Gatekeeper prompt appears at launch.
 
 ## Known limitations
+
+- Without Screen Recording, an icon's identity comes from its AX attributes. An app whose icons have neither an AX
+  identifier nor a description (or help) is identified by the order in which it created them; one whose icon's
+  description changes all the time (e.g. it includes a live value) gets a new identity whenever it changes, so after a
+  relaunch its section may not be restored. With Screen Recording, the window title last seen with an identity lets
+  Frost follow such changes.
 
 - The image cache is keyed by the system's light / dark appearance (`NSApp.effectiveAppearance`), not by the menu bar
   brightness that the wallpaper determines: in Light Mode with a dark wallpaper, white glyphs are cached, but still

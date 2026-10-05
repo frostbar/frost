@@ -41,7 +41,8 @@
   Frost Bar.
 - **Multiple displays, launch at login, automatic updates** with a quiet reminder dot instead of pop-ups.
 
-Hiding and showing icons needs **no permissions**; only the Frost Bar and the layout editor do.
+Hiding and showing icons needs **no permissions**. The Frost Bar and the layout editor need only **Accessibility**;
+Screen Recording is optional and shows real images of the icons.
 
 | Settings → Layout | Settings → Behavior |
 | --- | --- |
@@ -54,7 +55,7 @@ Requires **macOS 26 Tahoe or later** (Apple silicon or Intel).
 1. Download **`Frost-<version>.dmg`** from the [latest release](https://github.com/frostbar/frost/releases/latest).
 2. Open it and drag **Frost** to **Applications** in Finder.
 3. Open Frost. It's signed with a Developer ID and notarized by Apple, so it opens like any other app; onboarding then
-   asks for the two permissions below.
+   asks for Accessibility (and, optionally, Screen Recording; see below).
 
 Install by dragging in Finder: a copy made another way (e.g. `cp` from the disk image) runs from a temporary read-only
 location and can't update itself.
@@ -70,13 +71,14 @@ Frost entry and grant it again. Later updates keep the permissions.
 
 ## Permissions
 
-| Permission | Used for | Without it |
-| --- | --- | --- |
-| Accessibility | Identifying which app owns each icon; moving icons between sections; opening them from the Frost Bar | The Frost Bar and layout editor ask for it; hiding and showing still work |
-| Screen Recording | Images of menu bar icons for the Frost Bar and layout editor | Same as above |
+| Permission | | Used for | Without it |
+| --- | --- | --- | --- |
+| Accessibility | Required | Identifying each icon and the app that owns it; moving icons between sections; opening them from the Frost Bar; keeping icons in their sections | The Frost Bar and layout editor ask for it; hiding and showing still work (hidden icons expand in the menu bar) |
+| Screen Recording | Optional | Real images of the icons in the Frost Bar and the layout editor, kept current while the Frost Bar is open | Everything still works; icons are shown as their app's icon (or a system symbol), with a short label where it helps tell them apart |
 
 Onboarding opens on first launch. **Settings → About** shows each permission's status, and **Grant Access** reopens
-onboarding. Frost has to be relaunched after granting Screen Recording; onboarding offers a button for it.
+onboarding. Without Screen Recording, the Frost Bar and the layout editor offer it in a small hint you can close.
+Frost has to be relaunched after granting Screen Recording; onboarding offers a button for it.
 
 ## Updates and privacy
 
