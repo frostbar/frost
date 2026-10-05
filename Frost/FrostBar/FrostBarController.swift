@@ -38,7 +38,7 @@ final class FrostBarController {
     private var hostingView: FrostBarHostingView?
 
     private(set) var isOpen = false
-    private var monitors: [Any] = []
+    private var monitors = EventMonitors()
     private var observers: [NSObjectProtocol] = []
     private var isPollingPermissions = false
     /// Incremented on every presentation; a leftover observation callback from an earlier presentation sees the
@@ -586,24 +586,19 @@ final class FrostBarController {
 
     private func installMonitors() {
         removeMonitors()
-        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        // Clicks in other apps (not Frost's own synthetic events: a new item placed meanwhile, see `NewItemPlacer`).
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            guard !SyntheticEvents.isPostedByFrost(event) else {
-                FrostLog.frostBar.debug("ignoring Frost's own synthetic mouse event")
-                return
-            }
-            MainActor.assumeIsolated { self?.close(reason: "click outside (other app)") }
-        }) {
-            monitors.append(global)
-        }
-        // Clicks in Frost's own windows (settings, onboarding, status items).
-        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            MainActor.assumeIsolated { self?.handleLocalMouseDown(event) }
-            return event
-        }) {
-            monitors.append(local)
-        }
+        monitors.add(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown],
+            // Clicks in other apps (not Frost's own synthetic events: a new item placed meanwhile, see
+            // `NewItemPlacer`).
+            global: { [weak self] event in
+                guard !SyntheticEvents.isPostedByFrost(event) else {
+                    FrostLog.frostBar.debug("ignoring Frost's own synthetic mouse event")
+                    return
+                }
+                self?.close(reason: "click outside (other app)")
+            },
+            // Clicks in Frost's own windows (settings, onboarding, status items).
+            local: { [weak self] event in self?.handleLocalMouseDown(event) })
     }
 
     private func handleLocalMouseDown(_ event: NSEvent) {
@@ -618,7 +613,6 @@ final class FrostBarController {
     }
 
     private func removeMonitors() {
-        for monitor in monitors { NSEvent.removeMonitor(monitor) }
         monitors.removeAll()
     }
 
@@ -1363,21 +1357,10 @@ private final class ItemClickWatcher {
     /// The item's current frame (CG global coordinates); nil = not known yet.
     var frame: CGRect?
     private var clicked = false
-    private var monitors: [Any] = []
+    private var monitors = EventMonitors()
 
     init() {
-        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            MainActor.assumeIsolated { self?.mouseDown(event) }
-        }) {
-            monitors.append(global)
-        }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            MainActor.assumeIsolated { self?.mouseDown(event) }
-            return event
-        }) {
-            monitors.append(local)
-        }
+        monitors.add(matching: [.leftMouseDown, .rightMouseDown], global: { [weak self] event in self?.mouseDown(event) })
     }
 
     /// Whether the item was clicked since the last call.
@@ -1387,15 +1370,13 @@ private final class ItemClickWatcher {
     }
 
     func stop() {
-        for monitor in monitors { NSEvent.removeMonitor(monitor) }
         monitors.removeAll()
     }
 
     private func mouseDown(_ event: NSEvent) {
         guard !SyntheticEvents.isPostedByFrost(event), let frame else { return }
-        // The event's own location (the pointer may have moved on by now); a global event's is in screen coordinates.
-        let screenPoint = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? event.locationInWindow
-        let point = ScreenCoordinates.cgPoint(fromAppKit: screenPoint)
+        // The event's own location (the pointer may have moved on by now).
+        let point = ScreenCoordinates.cgPoint(fromAppKit: event.screenLocation)
         if frame.contains(point) { clicked = true }
     }
 }

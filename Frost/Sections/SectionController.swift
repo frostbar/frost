@@ -38,7 +38,7 @@ final class SectionController {
 
     @ObservationIgnored private var rehideTask: Task<Void, Never>?
     /// Mouse monitors (global + local) that collapse immediately on an outside click while expanded inline.
-    @ObservationIgnored private var outsideClickMonitors: [Any] = []
+    @ObservationIgnored private var outsideClickMonitors = EventMonitors()
     @ObservationIgnored private var settleTask: Task<Void, Never>?
     /// The control item windows located last time. Window IDs don't change for the life of the process, so they're
     /// reused as long as they're still in the scan results.
@@ -49,7 +49,7 @@ final class SectionController {
     /// Multiple displays: clicks on a snowflake replica on another display that never reached the button
     /// (see `ReplicaClickDetector`).
     @ObservationIgnored private var replicaClicks = ReplicaClickDetector()
-    @ObservationIgnored private var replicaClickMonitors: [Any] = []
+    @ObservationIgnored private var replicaClickMonitors = EventMonitors()
     @ObservationIgnored private var replicaClickTask: Task<Void, Never>?
     @ObservationIgnored private var screenParametersObserver: NSObjectProtocol?
     @ObservationIgnored private var displayRescanTask: Task<Void, Never>?
@@ -464,26 +464,20 @@ final class SectionController {
             guard let self, !self.isEditing, self.state != .collapsed else { return }
             self.setState(.collapsed)
         }
-        // Clicks in other apps.
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
-            guard !SyntheticEvents.isPostedByFrost(event) else { return }
-            MainActor.assumeIsolated { self?.outsideClick(at: NSEvent.mouseLocation) }
-        }) {
-            outsideClickMonitors.append(global)
-        }
-        // Clicks in Frost's own windows (Settings, onboarding): global monitors don't receive this app's events. Frost's
-        // status items (snowflake, separators) are in the menu bar and excluded by `outsideClick`; clicking the
-        // snowflake toggles via `handleIconClick`.
-        if let local = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
-            guard !SyntheticEvents.isPostedByFrost(event) else { return event }
-            MainActor.assumeIsolated {
+        outsideClickMonitors.add(
+            matching: .leftMouseDown,
+            // Clicks in other apps.
+            global: { [weak self] event in
+                guard !SyntheticEvents.isPostedByFrost(event) else { return }
+                self?.outsideClick(at: NSEvent.mouseLocation)
+            },
+            // Clicks in Frost's own windows (Settings, onboarding). Frost's status items (snowflake, separators) are in
+            // the menu bar and excluded by `outsideClick`; clicking the snowflake toggles via `handleIconClick`.
+            local: { [weak self] event in
+                guard !SyntheticEvents.isPostedByFrost(event) else { return }
                 let point = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? NSEvent.mouseLocation
                 self?.outsideClick(at: point, in: event.window)
-            }
-            return event
-        }) {
-            outsideClickMonitors.append(local)
-        }
+            })
     }
 
     /// A click outside the menu bar (AppKit global coordinates): collapse. `window` is the Frost window of a local
@@ -503,7 +497,6 @@ final class SectionController {
     private func cancelAutoRehide() {
         rehideTask?.cancel()
         rehideTask = nil
-        for monitor in outsideClickMonitors { NSEvent.removeMonitor(monitor) }
         outsideClickMonitors.removeAll()
     }
 
@@ -674,20 +667,10 @@ final class SectionController {
     private func updateReplicaClickMonitors() {
         let needed = NSScreen.screens.count > 1
         if needed, replicaClickMonitors.isEmpty {
-            let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp]
-            if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
-                MainActor.assumeIsolated { self?.replicaMouseEvent(event, isLocal: false) }
-            }) {
-                replicaClickMonitors.append(global)
-            }
-            if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
-                MainActor.assumeIsolated { self?.replicaMouseEvent(event, isLocal: true) }
-                return event
-            }) {
-                replicaClickMonitors.append(local)
-            }
+            replicaClickMonitors.add(matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp],
+                                     global: { [weak self] event in self?.replicaMouseEvent(event, isLocal: false) },
+                                     local: { [weak self] event in self?.replicaMouseEvent(event, isLocal: true) })
         } else if !needed, !replicaClickMonitors.isEmpty {
-            for monitor in replicaClickMonitors { NSEvent.removeMonitor(monitor) }
             replicaClickMonitors.removeAll()
             replicaClickTask?.cancel()
             replicaClickTask = nil

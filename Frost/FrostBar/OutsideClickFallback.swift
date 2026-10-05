@@ -17,7 +17,7 @@ final class OutsideClickFallback {
     private let baseline: Set<CGWindowID>
     private let owner: NSRunningApplication?
     private var dismissal = OutsideClickDismissal()
-    private var monitors: [Any] = []
+    private var monitors = EventMonitors()
     /// The presentation's windows (from `hooks.presented`); any other menu on screen defers Esc / the toggle click.
     private var presentation: Set<CGWindowID> = []
     private var loggedDeferral = false
@@ -45,7 +45,6 @@ final class OutsideClickFallback {
 
     func stop() {
         stopped = true
-        for monitor in monitors { NSEvent.removeMonitor(monitor) }
         monitors.removeAll()
     }
 
@@ -53,28 +52,15 @@ final class OutsideClickFallback {
         guard !stopped, monitors.isEmpty else { return }
         self.presentation = presentation
         ownerWasActive = owner?.isActive ?? false
-        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        // Clicks in other apps (including the presentation itself and the menu bar).
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            MainActor.assumeIsolated { self?.mouseDown(event) }
-        }) {
-            monitors.append(global)
-        }
-        // Clicks in Frost's own windows (settings, onboarding, the Frost icon).
-        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            MainActor.assumeIsolated { self?.mouseDown(event) }
-            return event
-        }) {
-            monitors.append(local)
-        }
+        // Clicks in other apps (including the presentation itself and the menu bar) and in Frost's own windows
+        // (settings, onboarding, the Frost icon).
+        monitors.add(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown],
+                     global: { [weak self] event in self?.mouseDown(event) })
     }
 
     private func mouseDown(_ event: NSEvent) {
         guard !stopped else { return }
-        // Global monitor events have no window, so `locationInWindow` is in screen coordinates (AppKit, bottom-left
-        // origin).
-        let screenPoint = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? event.locationInWindow
-        let point = ScreenCoordinates.cgPoint(fromAppKit: screenPoint)
+        let point = ScreenCoordinates.cgPoint(fromAppKit: event.screenLocation)
         let frames = ItemClicker.ownerWindowFrames(ownerPID: pid, baseline: baseline)
         dismissal.mouseDown(at: point, time: .now, presentationFrames: frames.presentation,
                             itemFrame: currentItem().frame, ownerWindowFrames: frames.other,
