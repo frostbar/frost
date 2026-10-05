@@ -35,14 +35,17 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
 
 - `Packages/FrostCore/`: logic and system adapter layer; all testable pure logic goes here (Swift Testing,
   `import Testing`, not XCTest).
-  - `Scanning/`: merges CGWindowList (layer 25) + Accessibility into `MenuBarItem`
+  - `Model/`: `MenuBarItem`, sections and section state, screen geometry (`NSScreen.displayID`, `ScreenCoordinates`)
+  - `Scanning/`: merges CGWindowList (layer 25) + Accessibility into `MenuBarItem`; multi-display resolution
   - `Layout/`: section classification, drop indices, layout reconciliation, panel positioning, placement of new items
   - `Moving/`: ⌘-drag moves (`ItemMover`), click forwarding (`ItemClicker`), restore plans, activation handoff
-  - `Capture/`: ScreenCaptureKit captures, glyph brightness
+  - `Capture/`: ScreenCaptureKit captures, glyph brightness, the disk cache, live refresh policy
   - `Permissions/`
 - `Frost/`: app layer. `Sections/SectionController` (the three status items and the section state machine),
-  `FrostBar/`, `Settings/` (including the layout editor), `Onboarding/`, `App/` (`AppModel` wires the components and
-  navigation callbacks together). `Resources/Localizable.xcstrings`: the String Catalog (English base, zh-Hans).
+  `FrostBar/` (`FrostBarController` is split into panel, `+LiveRefresh` and `+Forwarding` files), `Settings/`
+  (including the layout editor), `Onboarding/`, `Support/` (preferences, `EventMonitors`, the Debug-only `FrameProbe`),
+  `App/` (`AppModel` wires the components and navigation callbacks together). `Resources/Localizable.xcstrings`: the
+  String Catalog (English base, zh-Hans).
 - `Tools/FakeItems/`: a fake third-party menu bar app for testing (VM testing only).
 - `scripts/vm/`: VM testing scripts. `scripts/release/`: release scripts (`config.sh` is the single release
   configuration). `Spikes/`: early proof-of-concept programs, not part of the build.
@@ -175,7 +178,9 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
 - FrostCore public types need `public` + an explicit `public init`; mark value types `Sendable`. UI/state classes
   use `@MainActor @Observable`.
 - Coordinates: CG / AX / CGEvent always use the global top-left origin; convert to AppKit's bottom-left origin only
-  when placing an NSWindow.
+  when placing an NSWindow (and from it for NSEvent locations); convert with `ScreenCoordinates`.
+- Test hooks (`FROST_TEST_*` environment variables and the like) are read only under `#if DEBUG` and listed in
+  `docs/testing-vm.md`, "Debug-only test hooks".
 - Every move (including the Frost Bar's whole "move out → click → move back" flow) must be wrapped in
   `ItemMover.transaction`.
 - Language: code, comments, docs, test data and commit messages are in English. Chinese appears only in
