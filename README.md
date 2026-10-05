@@ -56,16 +56,16 @@ macOS 26 Tahoe or later (Apple silicon or Intel). Earlier macOS versions are not
 
 1. Download `Frost-<version>.dmg` from [Releases](https://github.com/frostbar/frost/releases/latest).
 2. Open it and drag **Frost** to **Applications**.
-3. Open Frost. It is signed with the project's own certificate but **not notarized by Apple**, so the first launch is
-   blocked with "Frost Not Opened". Click **Done**, then open **System Settings → Privacy & Security**, scroll to
-   **Security**, click **Open Anyway** next to "Frost was blocked…", confirm with your password and click
-   **Open Anyway** again.
+3. Open Frost. It is signed with a Developer ID and notarized by Apple, so it opens like any other app, and the
+   onboarding asks for the two permissions below.
 
-   Alternatively, in Terminal: `xattr -dr com.apple.quarantine /Applications/Frost.app`
+Install by dragging in Finder: a copy made another way (e.g. `cp` from the disk image) runs from a temporary read-only
+location and can't update itself.
 
-You only do this once. Updates installed through Frost don't need it, and your permissions stay granted because every
-release is signed with the same certificate. Install by dragging in Finder: a copy made another way (e.g. `cp` from the
-disk image) runs from a temporary read-only location and can't update itself until you run the `xattr` command above.
+**Upgrading from 0.1.x:** 0.2.0 is the first release signed with a Developer ID instead of the project's own
+certificate, so macOS asks once more for Accessibility and Screen Recording after the update (System Settings →
+Privacy & Security; remove the old Frost entry and grant the new one if the switch looks on but Frost still asks).
+Later updates keep the permissions.
 
 ## Permissions
 
@@ -98,10 +98,10 @@ Requirements: Xcode 27 (Swift 6.4), [XcodeGen](https://github.com/yonaskolb/Xcod
 (`brew install xcodegen openssl`).
 
 ```sh
-./scripts/create-signing-cert.sh   # once: creates the self-signed "Frost Local Signing" identity
+./scripts/create-signing-cert.sh   # once: creates the self-signed "Frost Local Signing" identity for Debug builds
 make build                         # Debug build: build/DerivedData/Build/Products/Debug/Frost.app
 make test-core                     # unit tests (Swift Testing)
-make install                       # signed Release build, installed to /Applications and launched
+make install                       # Release build (Developer ID if you have one), installed to /Applications
 make ci-build                      # unsigned universal Release build, as run by CI
 ```
 

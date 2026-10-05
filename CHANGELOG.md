@@ -4,6 +4,26 @@ All notable changes to Frost are documented here. The format follows [Keep a Cha
 and versions follow [Semantic Versioning](https://semver.org/). Each version's section is used verbatim as the
 release notes on GitHub and in the in-app update window.
 
+## [0.2.0] - 2026-10-05
+
+Frost is now signed with a Developer ID and notarized by Apple: it opens without the "Open Anyway" step.
+
+**After updating from 0.1.x, grant Accessibility and Screen Recording once more** (System Settings → Privacy &
+Security). The signing certificate changed, so macOS treats Frost as a new app this one time; later updates keep the
+permissions.
+
+### Added
+- Right-click (or Control-click) an icon in the Frost Bar to open its secondary menu; ⌥-click forwards the Option
+  key.
+
+### Changed
+- An icon opened from the Frost Bar stays in the menu bar while you keep using it (pointer on the menu bar, or a
+  second click — e.g. a right click for its other menu) and goes back 2.5 s after the pointer leaves.
+
+### Fixed
+- Clicking the snowflake while an opened icon is still in the menu bar opens the Frost Bar on the first click.
+- Right clicks on Frost Bar tiles were forwarded as left clicks.
+
 ## [0.1.2] - 2026-10-02
 
 ### Added

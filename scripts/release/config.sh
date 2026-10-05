@@ -38,14 +38,19 @@ COMMIT_AUTHOR_EMAIL="${COMMIT_AUTHOR_EMAIL:-1912137+kylezh@users.noreply.github.
 # developer-id: sign with "Developer ID Application: <DEVELOPER_ID_NAME> (<TEAM_ID>)" with a secure timestamp, then
 #   notarize the DMG with notarytool and staple the ticket. Switch-over steps: docs/releasing.md, "Switching to
 #   Developer ID and notarization".
-SIGNING_MODE="${SIGNING_MODE:-selfsigned}"
+SIGNING_MODE="${SIGNING_MODE:-developer-id}"
 SELF_SIGNED_IDENTITY="${SELF_SIGNED_IDENTITY:-Frost Local Signing}"
 # Required by developer-id mode (ignored otherwise): the name and the 10-character Team ID exactly as they appear in
 # the certificate's common name, "Developer ID Application: <name> (<team id>)" (security find-identity -v -p
 # codesigning lists it). DEVELOPER_ID_IDENTITY defaults to that common name; set it only to pick the certificate
 # some other way (e.g. by its SHA-1 hash when the keychain holds two certificates with the same name).
-DEVELOPER_ID_NAME="${DEVELOPER_ID_NAME:-}"
-TEAM_ID="${TEAM_ID:-}"
+TEAM_ID="${TEAM_ID:-R974K7QN64}"
+# The developer's name is not kept in the repository: when DEVELOPER_ID_NAME is unset it is read from the one
+# "Developer ID Application: <name> (<TEAM_ID>)" certificate in the keychain.
+if [[ -z "${DEVELOPER_ID_NAME:-}" ]]; then
+  DEVELOPER_ID_NAME="$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n "s/.*\"Developer ID Application: \(.*\) ($TEAM_ID)\".*/\1/p" | head -n 1)"
+fi
 DEVELOPER_ID_IDENTITY="${DEVELOPER_ID_IDENTITY:-Developer ID Application: $DEVELOPER_ID_NAME ($TEAM_ID)}"
 # Keychain profile holding the notary credentials, created once with `xcrun notarytool store-credentials`.
 NOTARY_PROFILE="${NOTARY_PROFILE:-frost-notary}"

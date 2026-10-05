@@ -12,9 +12,16 @@ build: gen
 
 RELEASE_APP := $(DERIVED)/Build/Products/Release/Frost.app
 
+# Signed with the Developer ID certificate when the keychain has one for the release Team ID (so a locally installed
+# build keeps the same signature as published releases and macOS keeps its permission grants); otherwise with the
+# self-signed identity from project.yml.
+RELEASE_TEAM_ID := $(shell . scripts/release/config.sh >/dev/null 2>&1; echo $$TEAM_ID)
+DEVELOPER_ID_SIGN_FLAGS := $(shell security find-identity -v -p codesigning 2>/dev/null | grep -q 'Developer ID Application: .*($(RELEASE_TEAM_ID))' && \
+  echo 'CODE_SIGN_IDENTITY="Developer ID Application" DEVELOPMENT_TEAM=$(RELEASE_TEAM_ID) CODE_SIGN_ENTITLEMENTS=Frost/Resources/Frost.entitlements')
+
 release: gen
 	xcodebuild -project Frost.xcodeproj -scheme Frost -configuration Release \
-	  -destination 'platform=macOS,arch=arm64' -derivedDataPath $(DERIVED) -quiet build
+	  -destination 'platform=macOS,arch=arm64' -derivedDataPath $(DERIVED) -quiet $(DEVELOPER_ID_SIGN_FLAGS) build
 
 # Unsigned Release build for the generic macOS destination (universal), the same command CI runs
 # (.github/workflows/ci.yml). Uses its own DerivedData so it doesn't replace the signed build of `make release`.
