@@ -96,7 +96,7 @@ extension FrostBarController {
 
     /// The Frost icon's frame on each display (AppKit coordinates): the real window (on the active menu bar) plus
     /// replicas on other displays.
-    private var frostIconFrames: [CGRect] {
+    var frostIconFrames: [CGRect] {
         let replicas = app.scanner.replicaIconFrames.values.map(ScreenCoordinates.appKitRect(fromCG:))
         return (app.sections.iconWindow.map { [$0.frame] } ?? []) + replicas
     }
@@ -165,7 +165,8 @@ extension FrostBarController {
     /// the panel closes, a mouse button is pressed, or the pointer enters the changing part of the menu bar: no more
     /// capturing, but it always collapses and removes the freeze frame. Items still off screen after expanding (under
     /// the notch) are recorded in `retryPolicy` and keep their cached screenshot or app icon without affecting the
-    /// cadence.
+    /// cadence; once the panel is closed, the background capture (`+ObscuredCapture`) moves them out one at a time to
+    /// capture them.
     private func captureWhileExpanded(_ ids: [CGWindowID], target: SectionController.State,
                                       context: CaptureRetryPolicy.Context) async {
         let sections = app.sections
@@ -217,6 +218,9 @@ extension FrostBarController {
                     let wanted = Set(ids)
                     let targets = app.scanner.items.filter { wanted.contains($0.windowID) && $0.isOnScreen }
                     onScreen = Set(targets.map(\.windowID))
+                    // Requested items still off screen are behind the notch: captured later in the background by
+                    // moving them out one at a time (`FrostBarController+ObscuredCapture`).
+                    app.noteExpandedScan(expected: wanted)
                     captured = targets.isEmpty ? [] : await app.capturer.capture(targets)
                     timing.capture = clock.now - mark
                     timing.perWindow = targets.isEmpty ? 0 : app.capturer.lastPerWindowCount
@@ -272,7 +276,9 @@ extension FrostBarController {
             self.app.permissions.refresh()
             await self.app.scanner.refreshOwnership()
             self.retryPolicy.reset()
+            self.app.obscuredCapture.reset()
             self.restartLiveRefresh(immediately: true)
+            self.scheduleObscuredCapture()
             // Let the refresh animation complete at least one full turn.
             try? await Task.sleep(for: .milliseconds(500))
             self.model.isRefreshing = false

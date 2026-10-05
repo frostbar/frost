@@ -139,11 +139,21 @@ final class NewItemPlacer {
 
     private func schedule(after delay: Duration) {
         evaluateTask?.cancel()
+        evaluations &+= 1
+        let evaluation = evaluations
+        isIdle = false
         evaluateTask = Task { [weak self] in
             do { try await Task.sleep(for: delay) } catch { return }
             await self?.evaluate()
+            // Idle unless the decision scheduled another one (a retry, the rest of a batch) or a newer one replaced it.
+            if self?.evaluations == evaluation { self?.isIdle = true }
         }
     }
+
+    /// No decision is pending or running: the background capture of items behind the notch waits for this, so it
+    /// never moves an item while new-item placement or the section memory is about to look at or move items.
+    private(set) var isIdle = true
+    private var evaluations = 0
 
     /// A move to make: a new icon to Hidden, or a re-added icon back to its remembered section.
     private struct Placement {

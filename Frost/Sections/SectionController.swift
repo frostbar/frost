@@ -548,6 +548,14 @@ final class SectionController {
         return NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? windowScreen
     }
 
+    /// A click on the Frost icon that the freeze frame of a background capture took (the icon had shifted under it, see
+    /// `FrostBarController+ObscuredCapture`): handled now, once the menu bar is back as it was, as if it had reached
+    /// the icon.
+    func replayIconClick(context: Bool, option: Bool, screen: NSScreen?) {
+        FrostLog.sections.notice("handling a Frost icon click taken by a background capture's freeze frame")
+        handleIconClick(context: context, option: option, screen: screen)
+    }
+
     /// Right-click / Control-click -> menu; click -> Frost Bar (per the effective display mode of `screen`, the display
     /// clicked on) or toggle collapsed <-> expanded; with ⌥ -> expandedAll.
     private func handleIconClick(context: Bool, option: Bool, screen: NSScreen?) {

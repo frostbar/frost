@@ -334,6 +334,11 @@ final class LayoutEditorModel {
     }
 
     private func capture(all: Bool) async {
+        // Editing shows every section: items off screen don't fit (behind the notch). Recorded for the background
+        // capture, which fills in their images once the editor is closed.
+        if hasSettled, !model.mover.isBusy, model.sections.isEditing {
+            model.noteExpandedScan(expected: Set(model.scanner.items.map(\.windowID)))
+        }
         guard model.permissions.screenRecording else { return }
         let items = model.scanner.items.filter(\.isOnScreen)
         let targets = all ? items : model.capturer.missing(items)

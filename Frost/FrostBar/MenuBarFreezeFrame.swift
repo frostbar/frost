@@ -38,6 +38,13 @@ import ScreenCaptureKit
 ///   screen, only the area left of that screen's Frost icon (real window or replica); the icon and everything to its
 ///   right (clock, Control Center) stay live. While the Frost Bar is open it refreshes every second with the freeze
 ///   frame on screen about half the time, so covering the whole bar would make the clock and other items look stuck.
+/// - The background capture of items behind the notch (`FrostBarController+ObscuredCapture`) covers each menu bar
+///   whole instead (`Coverage.wholeMenuBar`): it moves an item right of the Frost icon, so the icon itself shifts. It
+///   runs rarely and briefly, so a clock that pauses for a second doesn't matter. Its overlay also takes the clicks on
+///   the part whose contents shift (`ObscuredCapturePolicy.shiftingRegion`, from the left edge to the icon's right
+///   edge): a click there would hit whatever has slid under the pointer, not what the overlay shows; the rest stays
+///   click-through. And it sits above the window server's drag images (`aboveDragImagesLevel`): while a ⌘-drag's
+///   button is down, the lifted item is drawn at the pointer in layer-500 windows, which show through layer 26.
 /// - If capturing any screen fails, `show()` returns nil and the caller doesn't expand (better to show app icons than
 ///   to flicker).
 /// - Shown for at most `maximumDuration`, then removed automatically (a safety net; normally `remove()` runs in a
@@ -45,6 +52,11 @@ import ScreenCaptureKit
 @MainActor
 final class MenuBarFreezeFrame {
     static let level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+    /// Above the window server's drag images (`kCGDraggingWindowLevel`, 500): a ⌘-drag of a status item shows the lifted
+    /// item at the pointer (the Frost icon, where the mouse-down lands) in drag windows at that level, which would show
+    /// through a freeze frame at `level` (measured in the VM). For the background capture, which ⌘-drags under the
+    /// freeze frame; it also covers menus (101), so it is only used while no menu is open.
+    static let aboveDragImagesLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.draggingWindow)) + 1)
     /// Safety net: a normal round takes ~0.2 s; collapsing occasionally takes ~0.5 s to apply. A round keeps waiting
     /// for the collapse to be confirmed until shortly before this limit (`FrostBarController.restoreBudget`).
     static let maximumDuration: Duration = .seconds(3)
@@ -66,14 +78,22 @@ final class MenuBarFreezeFrame {
         fileprivate let shots: [(Strip, CGImage)]
     }
 
+    /// What part of each menu bar to cover.
+    enum Coverage {
+        /// The part a temporary expansion changes: left of the Frost icon (`LiveRefreshPolicy.changingRegion`).
+        case changingRegion
+        /// The whole menu bar (an item moved right of the Frost icon shifts the icon too).
+        case wholeMenuBar
+    }
+
     /// Captures the menu bar (shows nothing yet; `show` puts it on screen). Returns nil on failure.
     /// `iconFrames`: the Frost icon's frame on each display (AppKit global coordinates; the real window plus replicas on
     /// other displays); each menu bar strip covers only the area left of its own icon. `managedDisplayID`: the display of
     /// the scanned menu bar (uses `menuBarFallbackHeight` when it auto-hides).
     static func capture(menuBarFallbackHeight: CGFloat, iconFrames: [CGRect], managedDisplayID: CGDirectDisplayID,
-                        contentCache: ShareableContentCache) async -> Capture? {
+                        contentCache: ShareableContentCache, coverage: Coverage = .changingRegion) async -> Capture? {
         let strips = menuBarStrips(fallbackHeight: menuBarFallbackHeight, iconFrames: iconFrames,
-                                   managedDisplayID: managedDisplayID)
+                                   managedDisplayID: managedDisplayID, coverage: coverage)
         guard !strips.isEmpty else { return nil }
         guard let content = await contentCache.content() else {
             FrostLog.freezeFrame.error("no shareable content")
@@ -130,14 +150,21 @@ final class MenuBarFreezeFrame {
     }
 
     /// Shows the overlay made from `capture`, returning once it is actually on screen. The menu bar must not have
-    /// changed since the capture.
-    static func show(_ capture: Capture) async -> MenuBarFreezeFrame {
-        let frame = MenuBarFreezeFrame(windows: capture.shots.map { makeWindow(strip: $0.0, image: $0.1) })
+    /// changed since the capture. `limit`: the safety net (removed automatically after it). `level`: the windows' level
+    /// (`aboveDragImagesLevel` to hide ⌘-drags). `onMouseDown`: when set, the part of each strip whose contents shift
+    /// (`Strip.shifting`) takes the user's mouse-downs and reports them instead of letting them through to the menu bar
+    /// (Frost's own synthetic events are ignored).
+    static func show(_ capture: Capture, limit: Duration = maximumDuration, level: NSWindow.Level = MenuBarFreezeFrame.level,
+                     onMouseDown: ((NSEvent) -> Void)? = nil) async -> MenuBarFreezeFrame {
+        let windows = capture.shots.flatMap { strip, image in
+            makeWindows(strip: strip, image: image, level: level, onMouseDown: onMouseDown)
+        }
+        let frame = MenuBarFreezeFrame(windows: windows)
         for window in frame.windows { window.orderFrontRegardless() }
         frame.timeout = Task { [weak frame] in
-            try? await Task.sleep(for: maximumDuration)
+            try? await Task.sleep(for: limit)
             guard let frame, frame.isShown, !Task.isCancelled else { return }
-            FrostLog.freezeFrame.error("still shown after \(maximumDuration, privacy: .public); removing it")
+            FrostLog.freezeFrame.error("still shown after \(limit, privacy: .public); removing it")
             frame.remove()
         }
         await frame.waitUntilOnScreen()
@@ -188,15 +215,18 @@ final class MenuBarFreezeFrame {
         var screenFrame: CGRect
         var scale: CGFloat
         var colorSpace: NSColorSpace?
+        /// `Coverage.wholeMenuBar`: the part of `frame` whose contents shift while an item sits right of the Frost icon
+        /// (pixel-aligned; nil when the icon isn't on this strip, then all of it).
+        var shifting: CGRect?
     }
 
     /// Menu bar strips to cover: on every screen showing a menu bar (`frame.maxY - visibleFrame.maxY > 0`), the part
     /// that changes on expansion (`LiveRefreshPolicy.changingRegion`). Every screen's menu bar has Frost's status items
     /// (replicas on other screens), so all of them change. When the managed one's menu bar (`managedDisplayID`, where
     /// the active menu bar is) auto-hides its height is 0, so `fallbackHeight` (the Frost icon window's height) is used.
-    /// Returns whole menu bars when `iconFrames` is empty.
-    static func menuBarStrips(fallbackHeight: CGFloat, iconFrames: [CGRect],
-                              managedDisplayID: CGDirectDisplayID) -> [Strip] {
+    /// Returns whole menu bars when `iconFrames` is empty or `coverage` is `.wholeMenuBar`.
+    static func menuBarStrips(fallbackHeight: CGFloat, iconFrames: [CGRect], managedDisplayID: CGDirectDisplayID,
+                              coverage: Coverage = .changingRegion) -> [Strip] {
         NSScreen.screens.compactMap { screen in
             guard let id = screen.displayID else { return nil }
             var height = screen.frame.maxY - screen.visibleFrame.maxY
@@ -205,19 +235,57 @@ final class MenuBarFreezeFrame {
             let full = CGRect(x: screen.frame.minX, y: screen.frame.maxY - height,
                               width: screen.frame.width, height: height)
             let scale = screen.backingScaleFactor
-            let region = LiveRefreshPolicy.pixelAligned(LiveRefreshPolicy.changingRegion(of: full, iconFrames: iconFrames),
-                                                        scale: scale)
-            guard region.width >= 1 else { return nil }
-            return Strip(displayID: id, frame: region, screenFrame: screen.frame, scale: scale,
-                         colorSpace: screen.colorSpace)
+            switch coverage {
+            case .changingRegion:
+                let region = LiveRefreshPolicy.pixelAligned(
+                    LiveRefreshPolicy.changingRegion(of: full, iconFrames: iconFrames), scale: scale)
+                guard region.width >= 1 else { return nil }
+                return Strip(displayID: id, frame: region, screenFrame: screen.frame, scale: scale,
+                             colorSpace: screen.colorSpace)
+            case .wholeMenuBar:
+                let region = LiveRefreshPolicy.pixelAligned(full, scale: scale)
+                let shifting = ObscuredCapturePolicy.shiftingRegion(of: region, iconFrames: iconFrames)
+                    .map { LiveRefreshPolicy.pixelAligned($0, scale: scale) }
+                return Strip(displayID: id, frame: region, screenFrame: screen.frame, scale: scale,
+                             colorSpace: screen.colorSpace, shifting: shifting)
+            }
         }
     }
 
-    private static func makeWindow(strip: Strip, image: CGImage) -> NSWindow {
-        let window = FreezeFrameWindow(contentRect: strip.frame, styleMask: [.borderless, .nonactivatingPanel],
+    /// The overlay windows for one strip: one click-through window, or (with `onMouseDown`) one over the shifting part
+    /// that takes mouse-downs plus a click-through one over the rest, each showing its own crop of the screenshot (the
+    /// split is device-pixel aligned, so the two join seamlessly).
+    private static func makeWindows(strip: Strip, image: CGImage, level: NSWindow.Level,
+                                    onMouseDown: ((NSEvent) -> Void)?) -> [NSWindow] {
+        guard let onMouseDown else {
+            return [makeWindow(frame: strip.frame, scale: strip.scale, image: image, level: level)]
+        }
+        let split = strip.shifting?.maxX ?? strip.frame.maxX
+        let splitPixel = min(image.width, max(0, Int(((split - strip.frame.minX) * strip.scale).rounded())))
+        var windows: [NSWindow] = []
+        if splitPixel > 0, let left = image.cropping(to: CGRect(x: 0, y: 0, width: splitPixel, height: image.height)) {
+            var frame = strip.frame
+            frame.size.width = CGFloat(splitPixel) / strip.scale
+            windows.append(makeWindow(frame: frame, scale: strip.scale, image: left, level: level,
+                                      onMouseDown: onMouseDown))
+        }
+        if splitPixel < image.width,
+           let right = image.cropping(to: CGRect(x: splitPixel, y: 0, width: image.width - splitPixel,
+                                                 height: image.height)) {
+            var frame = strip.frame
+            frame.origin.x += CGFloat(splitPixel) / strip.scale
+            frame.size.width = CGFloat(image.width - splitPixel) / strip.scale
+            windows.append(makeWindow(frame: frame, scale: strip.scale, image: right, level: level))
+        }
+        return windows
+    }
+
+    private static func makeWindow(frame: CGRect, scale: CGFloat, image: CGImage, level: NSWindow.Level,
+                                   onMouseDown: ((NSEvent) -> Void)? = nil) -> NSWindow {
+        let window = FreezeFrameWindow(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
                                        backing: .buffered, defer: false)
         window.level = level
-        window.ignoresMouseEvents = true
+        window.ignoresMouseEvents = onMouseDown == nil
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         window.hasShadow = false
         window.isOpaque = false
@@ -229,16 +297,17 @@ final class MenuBarFreezeFrame {
         window.setAccessibilityElement(false)
         // Leave `colorSpace` at its default (the screen's color space, same as the capture's profile); setting it
         // explicitly has no effect (verified in the VM).
-        let view = NSView(frame: NSRect(origin: .zero, size: strip.frame.size))
+        let view = FreezeFrameView(frame: NSRect(origin: .zero, size: frame.size))
+        view.onMouseDown = onMouseDown
         view.wantsLayer = true
         view.layer?.contents = image
-        view.layer?.contentsScale = strip.scale
+        view.layer?.contentsScale = scale
         view.layer?.contentsGravity = .resize
         // Already 1:1 (the region is rounded to device pixels); avoid interpolation blur on any rounding difference.
         view.layer?.magnificationFilter = .nearest
         view.layer?.minificationFilter = .nearest
         window.contentView = view
-        window.setFrame(strip.frame, display: true)
+        window.setFrame(frame, display: true)
         return window
     }
 
@@ -266,6 +335,22 @@ final class MenuBarFreezeFrame {
     static func presentationDelay(forMaximumRefreshInterval interval: TimeInterval?) -> Duration {
         let frame = interval ?? (1.0 / 60.0)
         return .milliseconds(max(34, Int((frame * 1000).rounded(.up)) + 10))
+    }
+}
+
+/// The overlay's content: the screenshot, and (when it takes clicks) the user's mouse-downs, reported without
+/// activating Frost.
+private final class FreezeFrameView: NSView {
+    var onMouseDown: ((NSEvent) -> Void)?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { report(event) }
+    override func rightMouseDown(with event: NSEvent) { report(event) }
+    override func otherMouseDown(with event: NSEvent) { report(event) }
+
+    private func report(_ event: NSEvent) {
+        guard !SyntheticEvents.isPostedByFrost(event) else { return }
+        onMouseDown?(event)
     }
 }
 

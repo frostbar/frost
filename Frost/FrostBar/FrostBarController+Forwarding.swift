@@ -49,9 +49,11 @@ extension FrostBarController {
     /// The current (or most recent) click forwarding task; tests and reopening the panel wait for it.
     var pendingActivation: Task<Void, Never>? { activationTask }
 
-    /// Whether a click forward, capture round, or move-back retry is still pending (quitting must wait for them, or a
-    /// moved-out icon would stay in the Visible section).
-    var hasPendingWork: Bool { activationTask != nil || captureTask != nil || restoreRetryTask != nil }
+    /// Whether a click forward, capture round, background capture or move-back retry is still pending (quitting must
+    /// wait for them, or a moved-out icon would stay in the Visible section).
+    var hasPendingWork: Bool {
+        activationTask != nil || captureTask != nil || restoreRetryTask != nil || obscuredCaptureTask != nil
+    }
 
     /// Called before quitting: cancels a click forward waiting for its menu to close (it still moves back after
     /// cancellation; the menu wait has no limit, so this is the only way to end it), runs any pending move-back retry
@@ -63,6 +65,9 @@ extension FrostBarController {
             await activation.value
         }
         if let capture = captureTask { await capture.value }
+        // A background capture sees the shutdown at its next checkpoint and moves its item back right away.
+        obscuredLoop?.cancel()
+        if let obscured = obscuredCaptureTask { await obscured.value }
         await flushRestoreRetry()
     }
 
@@ -182,7 +187,7 @@ extension FrostBarController {
     /// Moves the item back to its original section. If the anchor destination fails (anchor gone, move didn't take
     /// effect, under the notch... any error except disturbed Frost control items), tries the section boundary once.
     /// A vanished item (its app quit) counts as success.
-    private func restore(_ plan: RestorePlan, controls: FrostControlWindows,
+    func restore(_ plan: RestorePlan, controls: FrostControlWindows,
                          until completion: ItemMover.Completion = .settled) async -> Error? {
         let scanner = app.scanner, mover = app.mover
         scanner.rescan()
@@ -216,7 +221,7 @@ extension FrostBarController {
     /// After a failed move-back, tries once more in a new move transaction after `restoreRetryDelay` (e.g. occasional
     /// failures caused by drag remnants succeed on a later retry). Cancelling the task (quit, next click forward) skips
     /// the remaining delay and retries immediately.
-    private func scheduleRestoreRetry(_ plan: RestorePlan, controls: FrostControlWindows) {
+    func scheduleRestoreRetry(_ plan: RestorePlan, controls: FrostControlWindows) {
         restoreRetryTask?.cancel()
         restoreRetryTask = Task { [weak self] in
             try? await Task.sleep(for: Self.restoreRetryDelay)
@@ -446,7 +451,7 @@ extension FrostBarController {
     /// or the menu opens mid-animation. `ItemMover.move` already waited for the item to land in its final frame
     /// (`LandingDetector`) and rescanned; this double-checks via CGWindowList every 10 ms until 2 identical on-screen reads
     /// (the first compared with the scanned frame), up to 1.5 s.
-    private func settledOnScreenItem(_ id: CGWindowID) async throws -> MenuBarItem {
+    func settledOnScreenItem(_ id: CGWindowID) async throws -> MenuBarItem {
         let clock = ContinuousClock()
         let deadline = clock.now + .milliseconds(1500)
         var previous = app.scanner.items.first { $0.windowID == id && $0.isOnScreen }?.frame

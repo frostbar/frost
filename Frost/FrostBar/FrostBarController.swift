@@ -31,7 +31,9 @@ enum FrostBarError: Error {
 /// at once; a round in progress still collapses and removes its freeze frame.
 ///
 /// Files: this one opens, closes, warms up and positions the panel; `FrostBarController+LiveRefresh.swift` has the
-/// live refresh loop, `FrostBarController+Forwarding.swift` click forwarding, the linger and moving items back.
+/// live refresh loop, `FrostBarController+Forwarding.swift` click forwarding, the linger and moving items back,
+/// `FrostBarController+ObscuredCapture.swift` the background capture of items behind the notch (while the panel is
+/// closed).
 @MainActor
 final class FrostBarController {
     let model: FrostBarModel
@@ -59,6 +61,14 @@ final class FrostBarController {
     /// A delayed retry scheduled after a failed move-back (runs in its own move transaction).
     var restoreRetryTask: Task<Void, Never>?
     static let restoreRetryDelay: Duration = .milliseconds(1500)
+
+    /// The background capture of items behind the notch (`FrostBarController+ObscuredCapture.swift`): the loop that
+    /// decides when to run, the operation in progress (a task that doesn't inherit cancellation: it always moves the
+    /// item back), a click its freeze frame took, and the last reason it waited (logged once per change).
+    var obscuredLoop: Task<Void, Never>?
+    var obscuredCaptureTask: Task<Void, Never>?
+    var interceptedClick: InterceptedClick?
+    var lastObscuredSkip: ObscuredCapturePolicy.SkipReason?
 
     /// Items still uncapturable after a temporary expansion (under the notch) keep their disk-cached screenshot or app
     /// icon. When every item is like that, stop expanding (retry only after a layout or display configuration change,
@@ -99,6 +109,7 @@ final class FrostBarController {
         let workspace = NSWorkspace.shared.notificationCenter
         app.capturer.traceStripMismatches = Self.traceCycles
         app.mover.milestone = { [weak self] label, instant in self?.forwardTrace?.mark(label, at: instant) }
+        app.obscuredItemsChanged = { [weak self] in self?.scheduleObscuredCapture() }
         observers.append(workspace.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil,
                                                queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.close(animated: false, reason: "active Space changed") }
@@ -205,6 +216,12 @@ final class FrostBarController {
             if let activation = self?.activationTask {
                 FrostLog.frostBar.notice("Frost Bar opening: waiting for the click forward in progress")
                 await activation.value
+            }
+            // A background capture of an item behind the notch is moving it (the click that opens the panel was taken
+            // by its freeze frame and replayed, or the panel opened another way): wait until it's back in its slot.
+            if let capture = self?.obscuredCaptureTask {
+                FrostLog.frostBar.notice("Frost Bar opening: waiting for the background capture in progress")
+                await capture.value
             }
             await self?.flushRestoreRetry()
             guard let self, self.isOpen, !Task.isCancelled else { return }

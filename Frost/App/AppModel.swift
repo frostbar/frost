@@ -30,6 +30,28 @@ final class AppModel {
 
     @ObservationIgnored private var opportunisticCapture: Task<Void, Never>?
 
+    /// Items behind the notch and when to capture them in the background (`FrostBarController+ObscuredCapture`).
+    @ObservationIgnored var obscuredCapture = ObscuredCapturePolicy(launchedAt: .now)
+    /// Called when `noteExpandedScan` found items behind the notch it didn't know yet. Set by the Frost Bar, which runs
+    /// the background captures.
+    @ObservationIgnored var obscuredItemsChanged: () -> Void = {}
+
+    /// A settled scan in an expanded or editing state: records which items it shows off screen (behind the notch, see
+    /// `ObscuredCapturePolicy.obscured`). `expected`: the items that state shows (nil: unknown).
+    func noteExpandedScan(expected: Set<CGWindowID>?) {
+        let items = scanner.items
+        let bounds = scanner.menuBarDisplay?.frame ?? CGDisplayBounds(CGMainDisplayID())
+        let obscured = ObscuredCapturePolicy.obscured(in: items, expected: expected, displayBounds: bounds)
+            .subtracting(sections.controlWindows?.all ?? [])
+        let known = obscuredCapture.obscuredItems
+        obscuredCapture.observe(obscured: obscured, visible: Set(items.filter(\.isOnScreen).map(\.windowID)),
+                                now: .now)
+        let added = obscured.subtracting(known)
+        guard !added.isEmpty else { return }
+        FrostLog.capture.notice("\(added.count) item(s) behind the notch (\(obscured.count) in all)")
+        obscuredItemsChanged()
+    }
+
     init() {
         preferences = Preferences()
         permissions = PermissionsService()
@@ -63,10 +85,13 @@ final class AppModel {
     /// Called once the Hidden section has expanded in place (not a temporary Frost Bar expansion) and settled: captures
     /// the hidden items while they are on screen (also writing the disk cache) so the Frost Bar does not have to expand
     /// them temporarily later. Skipped while a move is in progress, while editing, or while a menu is open (an icon may
-    /// be drawn highlighted).
+    /// be drawn highlighted). Items that don't fit are recorded for the background capture (`noteExpandedScan`).
     func captureNaturallyVisibleItems() {
-        guard opportunisticCapture == nil, permissions.screenRecording, !mover.isBusy, !sections.isEditing,
-              sections.state != .collapsed, !ItemClicker.isMenuOnScreen() else { return }
+        guard !mover.isBusy, !sections.isEditing, sections.state != .collapsed else { return }
+        // Fully expanded, every item should be on screen; expanded, the Always Hidden items are pushed out by their
+        // separator, so only items under the notch count.
+        noteExpandedScan(expected: sections.state == .expandedAll ? Set(scanner.items.map(\.windowID)) : nil)
+        guard opportunisticCapture == nil, permissions.screenRecording, !ItemClicker.isMenuOnScreen() else { return }
         let layout = layout
         let shown = layout[.hidden, default: []]
             + (sections.state == .expandedAll ? layout[.alwaysHidden, default: []] : [])
