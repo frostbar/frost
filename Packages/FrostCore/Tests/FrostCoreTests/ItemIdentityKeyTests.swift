@@ -31,6 +31,26 @@ import Testing
         #expect(keys == ["desc:Status#0", "desc:Other", "desc:Status#1"])
     }
 
+    @Test func suffixLikeLiteralDescriptionsNeverCollideWithNumberedDuplicates() {
+        let keys = ItemIdentityKey.keys(for: [A(description: "Status"), A(description: "Status"),
+                                              A(description: "Status#0"), A(help: "Sync#1"), A(description: ##"a\#0"##)])
+        #expect(keys == ["desc:Status#0", "desc:Status#1", ##"desc:Status\#0"##, ##"help:Sync\#1"##, ##"desc:a\\\#0"##])
+        #expect(Set(keys).count == keys.count)
+    }
+
+    @Test func literalSuffixesAreNumberedToo() {
+        let keys = ItemIdentityKey.keys(for: [A(description: "Status#0"), A(description: "Status#0"),
+                                              A(description: "Status")])
+        #expect(keys == [##"desc:Status\#0#0"##, ##"desc:Status\#0#1"##, "desc:Status"])
+    }
+
+    @Test func theEarlierUnescapedEncodingIsRecoverable() {
+        #expect(ItemIdentityKey.unescapedEncoding(of: ##"desc:Status\#0"##) == "desc:Status#0")
+        #expect(ItemIdentityKey.unescapedEncoding(of: ##"help:C:\\x"##) == ##"help:C:\x"##)
+        #expect(ItemIdentityKey.unescapedEncoding(of: "desc:Status#0") == nil)
+        #expect(ItemIdentityKey.unescapedEncoding(of: "id:a\\#b") == nil)
+    }
+
     @Test func duplicatedIdentifiersFallBackToDescriptions() {
         let keys = ItemIdentityKey.keys(for: [A(identifier: "item", description: "A"),
                                               A(identifier: "item", description: "B")])

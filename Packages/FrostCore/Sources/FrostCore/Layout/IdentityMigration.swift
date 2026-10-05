@@ -7,9 +7,12 @@ import Foundation
 /// - **Legacy identities**: before identities were derived from AX attributes (`ItemIdentityKey`), they were bundle
 ///   ID + window title. Persisted data in that format is loaded as `title:<title>` keys (`legacy(bundleID:title:)`).
 /// - **Changed keys**: an item's AX description (part of its key) may change between launches.
+/// - **Earlier encoding**: keys written before descriptions were escaped (`ItemIdentityKey.unescapedEncoding`); only
+///   descriptions containing `#` or `\` differ.
 ///
 /// For each current item with a resolved identity that isn't remembered yet (and that no other current item shares),
 /// a remembered identity of the same app is taken over when one of these holds (in this order):
+/// 0. Its key in the earlier encoding is remembered and no other current item had that key.
 /// 1. Its window title is known (Screen Recording) and matches a legacy identity's title, or the title last seen with a
 ///    remembered identity (`titles`).
 /// 2. It is the app's only current item and the app has exactly one remembered identity that no current item has (no
@@ -39,6 +42,11 @@ public enum IdentityMigration {
         let itemsPerApp = Dictionary(resolved.map { ($0.identity.bundleID, 1) }, uniquingKeysWith: +)
         // Remembered identities no current item has: the candidates to take over.
         var available = stored.subtracting(current)
+        let earlier: [ItemIdentity: ItemIdentity] = Dictionary(uniqueKeysWithValues: current.compactMap { identity in
+            ItemIdentityKey.unescapedEncoding(of: identity.key)
+                .map { (identity, ItemIdentity(bundleID: identity.bundleID, key: $0)) }
+        })
+        let earlierCounts = Dictionary(earlier.values.map { ($0, 1) }, uniquingKeysWith: +)
         var plan: [ItemIdentity: ItemIdentity] = [:]
 
         func take(_ old: ItemIdentity, for new: ItemIdentity) {
@@ -48,6 +56,10 @@ public enum IdentityMigration {
 
         for (item, identity) in resolved
         where identityCounts[identity] == 1 && !stored.contains(identity) && !plan.values.contains(identity) {
+            if let old = earlier[identity], earlierCounts[old] == 1, available.contains(old) {
+                take(old, for: identity)
+                continue
+            }
             let title = item.windowTitle
             if !title.isEmpty, titleCounts[identity.bundleID]?[title] == 1 {
                 let legacyIdentity = legacy(bundleID: identity.bundleID, title: title)

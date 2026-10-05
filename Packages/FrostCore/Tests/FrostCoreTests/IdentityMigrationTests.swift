@@ -95,6 +95,22 @@ import Foundation
 
     // MARK: Applying
 
+    // MARK: Earlier (unescaped) key encoding
+
+    @Test func keysOfTheEarlierEncodingMoveToTheEscapedKeys() {
+        let items = [item(1, "com.a", key: ##"desc:Up\#2"##), item(2, "com.a", key: "desc:Down")]
+        let stored: Set = [id("com.a", "desc:Up#2"), id("com.a", "desc:Down")]
+        #expect(IdentityMigration.plan(stored: stored, items: items) == [id("com.a", "desc:Up#2"): id("com.a", ##"desc:Up\#2"##)])
+    }
+
+    @Test func anEarlierKeyAnotherCurrentItemStillHasIsNotTaken() {
+        // `Status`, `Status`, `Status#0`: the earlier encoding gave the first and the third the same key; which of them
+        // it meant can't be told, and the first keeps it.
+        let items = [item(1, "com.a", key: "desc:Status#0"), item(2, "com.a", key: "desc:Status#1"),
+                     item(3, "com.a", key: ##"desc:Status\#0"##)]
+        #expect(IdentityMigration.plan(stored: [id("com.a", "desc:Status#0")], items: items).isEmpty)
+    }
+
     @Test func applyMovesValuesAndKeepsExistingEntries() {
         let plan = [legacy("com.a", "T"): id("com.a", "desc:A"), legacy("com.b", "U"): id("com.b", "desc:B")]
         let values: [ItemIdentity: MenuBarSection] = [legacy("com.a", "T"): .visible, legacy("com.b", "U"): .hidden,
