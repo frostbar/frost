@@ -151,7 +151,7 @@ final class SectionController {
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, let screen = self.iconWindow?.screen else { return }
-                    let id = Self.displayID(of: screen)
+                    let id = screen.displayID ?? 0
                     // Also fires when the status item is created (no screen -> main display): only record real
                     // display changes.
                     defer { self.iconDisplayID = id }
@@ -527,10 +527,6 @@ final class SectionController {
         return point.y >= screen.frame.maxY - menuBarHeight(of: screen)
     }
 
-    static func displayID(of screen: NSScreen) -> CGDirectDisplayID {
-        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-    }
-
     private func menuBarHeight(of screen: NSScreen) -> CGFloat {
         let height = screen.frame.maxY - screen.visibleFrame.maxY
         if height > 0 { return height }
@@ -738,7 +734,7 @@ final class SectionController {
             let pointer = NSEvent.mouseLocation
             if !hit, isInMenuBar(pointer),
                let screen = NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) }),
-               Self.displayID(of: screen) != iconDisplayID {
+               (screen.displayID ?? 0) != iconDisplayID {
                 scanner.rescan()
                 hit = replicaClicks.globalMouseDown(at: point, time: event.timestamp, button: button, control: control,
                                                     option: option, replicaIcons: scanner.replicaIconFrames)
@@ -764,13 +760,13 @@ final class SectionController {
         guard let click = replicaClicks.due(now: ProcessInfo.processInfo.systemUptime) else { return }
         let clock = ContinuousClock()
         let deadline = clock.now + .milliseconds(500)
-        while iconWindow?.screen.map(Self.displayID(of:)) != click.displayID, clock.now < deadline {
+        while iconWindow?.screen?.displayID != click.displayID, clock.now < deadline {
             do { try await Task.sleep(for: .milliseconds(20)) } catch { return }
         }
-        let current = iconWindow?.screen.map(Self.displayID(of:)) ?? 0
+        let current = iconWindow?.screen?.displayID ?? 0
         FrostLog.sections.notice(
             "click on the Frost icon replica on display \(click.displayID) did not reach the button; handling it (icon on display \(current))")
-        let screen = NSScreen.screens.first { Self.displayID(of: $0) == click.displayID } ?? iconWindow?.screen
+        let screen = NSScreen.screens.first { ($0.displayID ?? 0) == click.displayID } ?? iconWindow?.screen
         handleIconClick(context: click.isContextClick, option: click.option, screen: screen)
     }
 

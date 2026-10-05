@@ -198,9 +198,7 @@ final class MenuBarFreezeFrame {
     static func menuBarStrips(fallbackHeight: CGFloat, iconFrames: [CGRect],
                               managedDisplayID: CGDirectDisplayID) -> [Strip] {
         NSScreen.screens.compactMap { screen in
-            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
-            else { return nil }
-            let id = number.uint32Value
+            guard let id = screen.displayID else { return nil }
             var height = screen.frame.maxY - screen.visibleFrame.maxY
             if height <= 0, id == managedDisplayID { height = fallbackHeight }
             guard height > 0 else { return nil }

@@ -208,9 +208,7 @@ public final class MenuBarItemScanner {
     /// the menu bar auto-hides). Don't use `NSStatusBar.system.thickness` (it returns 22).
     public static func currentDisplays() -> [MenuBarDisplay] {
         NSScreen.screens.compactMap { screen in
-            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
-            else { return nil }
-            let id = number.uint32Value
+            guard let id = screen.displayID else { return nil }
             return MenuBarDisplay(id: id, frame: CGDisplayBounds(id),
                                   menuBarHeight: max(0, screen.frame.maxY - screen.visibleFrame.maxY))
         }

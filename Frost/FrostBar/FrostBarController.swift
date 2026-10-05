@@ -771,8 +771,7 @@ final class FrostBarController {
     private func captureContext() -> CaptureRetryPolicy.Context {
         let displays = NSScreen.screens.map { screen in
             CaptureRetryPolicy.Display(
-                id: (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0,
-                frame: screen.frame, scale: screen.backingScaleFactor)
+                id: screen.displayID ?? 0, frame: screen.frame, scale: screen.backingScaleFactor)
         }
         return CaptureRetryPolicy.Context(items: app.scanner.items, displays: displays)
     }

@@ -439,9 +439,7 @@ public final class ItemImageCapturer {
     /// key window).
     private var menuBarScale: CGFloat {
         let displayID = menuBarDisplayID()
-        return NSScreen.screens.first {
-            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID
-        }?.backingScaleFactor ?? 2
+        return NSScreen.screens.first { $0.displayID == displayID }?.backingScaleFactor ?? 2
     }
 }
 
