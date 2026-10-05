@@ -250,4 +250,32 @@ import CoreGraphics
         #expect(policy.need(1, needsImage: false, now: first + .seconds(1)) == nil)
         #expect(policy.need(1, needsImage: false, now: first + Policy.retryDelay(afterFailures: 1)) == .refresh)
     }
+
+    // MARK: Restarting the scheduling loop
+
+    @Test func newlyObscuredItemsWakeTheLoop() {
+        let policy = policy(obscured: [1, 2])
+        #expect(policy.shouldWake(.expandedScan(added: [2], needingImages: [])))
+    }
+
+    @Test func knownObscuredItemsThatNeedImagesWakeTheLoop() {
+        // Every item was static, so the loop had stopped; the scan finds a known one without a current capture.
+        var policy = policy(obscured: [1, 2])
+        policy.record(.captured(changed: false), for: 1, now: ready)
+        policy.record(.captured(changed: false), for: 2, now: ready)
+        #expect(policy.timeUntilNextDue(order: [1, 2], needsImage: { _ in false }, now: ready) == nil)
+        #expect(policy.shouldWake(.expandedScan(added: [], needingImages: [2])))
+        #expect(!policy.shouldWake(.expandedScan(added: [], needingImages: [])))
+        // Items that aren't obscured are captured the ordinary way.
+        #expect(!policy.shouldWake(.expandedScan(added: [], needingImages: [7])))
+    }
+
+    @Test func invalidatedCapturesWakeTheLoopWhenThereAreObscuredItems() {
+        var policy = policy(obscured: [1])
+        policy.record(.captured(changed: false), for: 1, now: ready)
+        #expect(policy.shouldWake(.capturesInvalidated))
+        // Once invalid, the static item is due again.
+        #expect(policy.timeUntilNextDue(order: [1], needsImage: { _ in true }, now: ready) == .zero)
+        #expect(!Policy(launchedAt: launch).shouldWake(.capturesInvalidated))
+    }
 }

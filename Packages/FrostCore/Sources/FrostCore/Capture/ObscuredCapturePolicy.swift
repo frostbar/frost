@@ -175,6 +175,26 @@ public struct ObscuredCapturePolicy: Sendable {
         if lastOutcome == .failed { lastOutcome = nil }
     }
 
+    /// Something that may make an item due again after the scheduling loop stopped (it stops once nothing is due, e.g.
+    /// when every item counts as static).
+    public enum WakeTrigger: Sendable, Equatable {
+        /// An expanded or editing scan was recorded (`observe`): `added` are the items it newly found obscured,
+        /// `needingImages` the items (of that scan) with no current capture.
+        case expandedScan(added: Set<CGWindowID>, needingImages: Set<CGWindowID>)
+        /// Existing captures became invalid (the menu bar appearance changed): every item needs a new one.
+        case capturesInvalidated
+    }
+
+    /// Whether the scheduling loop must be (re)started: an item is (or may be) due that it didn't account for.
+    public func shouldWake(_ trigger: WakeTrigger) -> Bool {
+        switch trigger {
+        case .expandedScan(let added, let needingImages):
+            !added.isEmpty || !needingImages.isDisjoint(with: records.keys)
+        case .capturesInvalidated:
+            !records.isEmpty
+        }
+    }
+
     // MARK: - Decisions
 
     /// nil = an operation may start now.

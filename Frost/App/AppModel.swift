@@ -32,8 +32,9 @@ final class AppModel {
 
     /// Items behind the notch and when to capture them in the background (`FrostBarController+ObscuredCapture`).
     @ObservationIgnored var obscuredCapture = ObscuredCapturePolicy(launchedAt: .now)
-    /// Called when `noteExpandedScan` found items behind the notch it didn't know yet. Set by the Frost Bar, which runs
-    /// the background captures.
+    /// Called when items behind the notch may need a capture the background loop doesn't account for
+    /// (`ObscuredCapturePolicy.shouldWake`): `noteExpandedScan` found new ones or known ones without a current capture,
+    /// or the captures became invalid (an appearance change). Set by the Frost Bar, which runs the background captures.
     @ObservationIgnored var obscuredItemsChanged: () -> Void = {}
 
     /// A settled scan in an expanded or editing state: records which items it shows off screen (behind the notch, see
@@ -47,8 +48,19 @@ final class AppModel {
         obscuredCapture.observe(obscured: obscured, visible: Set(items.filter(\.isOnScreen).map(\.windowID)),
                                 now: .now)
         let added = obscured.subtracting(known)
-        guard !added.isEmpty else { return }
-        FrostLog.capture.notice("\(added.count) item(s) behind the notch (\(obscured.count) in all)")
+        if !added.isEmpty {
+            FrostLog.capture.notice("\(added.count) item(s) behind the notch (\(obscured.count) in all)")
+        }
+        let needing = permissions.canCaptureImages
+            ? Set(capturer.missing(items.filter { obscured.contains($0.windowID) }).map(\.windowID)) : []
+        guard obscuredCapture.shouldWake(.expandedScan(added: added, needingImages: needing)) else { return }
+        obscuredItemsChanged()
+    }
+
+    /// The captures became invalid (`ItemImageCapturer.capturesInvalidated`): items behind the notch need new ones.
+    private func capturesInvalidated() {
+        guard obscuredCapture.shouldWake(.capturesInvalidated) else { return }
+        FrostLog.capture.notice("captures invalidated; rescheduling the background capture of items behind the notch")
         obscuredItemsChanged()
     }
 
@@ -69,6 +81,7 @@ final class AppModel {
         scanner.ownWindowIDs = { [weak sections] in sections?.controlWindows?.all ?? [] }
         scanner.controlFrames = { [weak sections] in sections?.controlFrames }
         capturer.menuBarDisplayID = { [weak scanner] in scanner?.menuBarDisplay?.id ?? CGMainDisplayID() }
+        capturer.capturesInvalidated = { [weak self] in self?.capturesInvalidated() }
     }
 
     /// Menu bar items in each of the three sections (left to right). Empty when the Frost control items are missing.

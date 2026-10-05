@@ -87,7 +87,12 @@ public final class ItemImageCapturer {
         stale.formUnion(images.keys)
         pixels.removeAll()
         diskMisses.removeAll()
+        capturesInvalidated()
     }
+
+    /// Called when existing captures became invalid (`appearanceDidChange`), so work that stopped because every
+    /// capture was current (the background capture of items behind the notch) can start again.
+    @ObservationIgnored public var capturesInvalidated: () -> Void = {}
 
     /// Returns the items in `images` that have no current capture (none yet, or a stale one from the previous
     /// appearance), for the caller to capture. Fills from the disk cache first (see `loadCached(_:)`).

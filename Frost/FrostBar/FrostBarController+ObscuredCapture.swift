@@ -14,7 +14,8 @@ extension FrostBarController {
     // MARK: - Background capture of items behind the notch
 
     /// (Re)starts the loop that captures items behind the notch in the background (`ObscuredCapturePolicy`): called
-    /// when an expanded scan finds new ones, on a manual refresh, and at the end of each operation's wait. Runs only
+    /// when an expanded scan finds new ones or known ones without a current capture, when the captures become invalid
+    /// (an appearance change; `ObscuredCapturePolicy.shouldWake`), and on a manual refresh. Runs only
     /// while something is due (an item without a capture, or one whose capture may be out of date), checking every
     /// `ObscuredCapturePolicy.recheck` whether the menu bar is free; ends when nothing is due. One item per operation.
     func scheduleObscuredCapture() {
