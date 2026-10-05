@@ -517,10 +517,8 @@ final class SectionController {
     }
 
     private func menuBarHeight(of screen: NSScreen) -> CGFloat {
-        let height = screen.frame.maxY - screen.visibleFrame.maxY
-        if height > 0 { return height }
-        // With an auto-hiding menu bar, visibleFrame doesn't exclude it: use the Frost icon window's height instead.
-        return iconItem?.button?.window?.frame.height ?? 24
+        PanelPlacement.menuBarHeight(screenFrame: screen.frame, visibleFrame: screen.visibleFrame,
+                                     fallback: iconItem?.button?.window?.frame.height ?? 24)
     }
 
     // MARK: - Frost icon
