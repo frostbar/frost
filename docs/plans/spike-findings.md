@@ -455,6 +455,24 @@ Conclusions:
 - Menu owners and AXPress behavior for third-party or Control Center items (the safety rules forbid operating other
   apps' items).
 
+### Hiding the pointer during synthesized events (VM, macOS 26)
+
+Measured with `scripts/vm/guest-cursor-probe.swift` (`screencapture -C` stills and `screencapture -v -C` video, which
+draw the pointer only while it is visible):
+
+- `CGDisplayHideCursor` from an accessory process that is not active returns success but **does nothing**: the pointer
+  stays visible.
+- After setting the private connection property `SetsCursorInBackground` (`CGSSetConnectionProperty(cid, cid,
+  "SetsCursorInBackground", kCFBooleanTrue)`, what Ice does), the same call hides the pointer although the process is
+  not active; it stays hidden while it is warped and while synthesized HID / session mouse events (a ⌘-drag's
+  mouse-down / mouse-up) move it, and `CGDisplayShowCursor` brings it back at the new position. The hide count is
+  per connection; it ends with the process.
+- A ⌘-drag with the pointer hidden moves items exactly as before (lift 13–31 ms, release 37–61 ms).
+- Before: a forward showed the pointer over the snowflake (~50 ms) and then back on the tile (a right click went to
+  the item and back to the tile a second time); a move back after the linger showed it over the snowflake for ~60 ms.
+  After (`CursorDisposition`): a forward hides it from the mouse-down until the item has landed and shows it on the
+  item (one jump, tile → item); a move back hides it and puts it back after 63–84 ms, with no visible frame away.
+
 ---
 
 ## Multiple displays

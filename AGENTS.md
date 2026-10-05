@@ -68,7 +68,9 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
    framebuffer; capture it with `screencapture -D 2` inside the guest.
 3. **Safety constraints for synthesized events**: when moving items, the mouse-down must physically land on the center
    of Frost's own item and is routed to the target item by window ID through event field `0x33`. Never post a ⌘
-   mouse-down at the position of a third-party item. Restore the cursor position after every synthesized event.
+   mouse-down at the position of a third-party item. Hide the pointer while synthesized events move it
+   (`CursorConcealment`) and restore its position afterwards; the one exception is the Frost Bar's move out for a
+   forwarded click, which leaves the pointer on the moved item (`CursorDisposition.onMovedItem`).
 4. Do not call `NSStatusBar.removeStatusItem` on quit: it deletes the item's saved Preferred Position.
 5. **Never commit private keys or certificates** (the Sparkle EdDSA private key, the .p12 of "Frost Local
    Signing"). Do not casually change the release signing identity or `SUPublicEDKey`; see `docs/releasing.md` for

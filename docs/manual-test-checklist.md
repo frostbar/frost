@@ -145,6 +145,13 @@ For each item, record: environment (model / displays / macOS version) and result
   Reopening the Frost Bar moves it back at once (`ended early`); quitting during the linger restores it too (log
   `deferring termination`, then a ⌘-drag back to the original anchor; relaunch: the item is in its old section). It
   never moves while a mouse button is held.
+- [ ] **The pointer moves once on a forward and never visibly on background moves (user report: "the pointer jumps
+  to the menu bar and back")**: left-click, then right-click a tile: the pointer disappears briefly and reappears on
+  the item in the menu bar, where it stays (it never shows over the snowflake, and never goes back to the tile); the
+  item lingers while it rests there. Move the pointer away: about 2.5 s later the item moves back while the pointer
+  stays where it is, with no flash over the menu bar (log `⌘-drag … pointer away N ms`, ~60–90 ms in the VM, hidden
+  throughout). Same for layout editor drops and new-item placement. After every move, including quitting during a
+  linger, the pointer is visible. VM evidence: `guest-cursor-probe.swift forward` with `screencapture -v -C`.
 - [ ] **Snowflake click during a linger opens the Frost Bar in one click (user report: "after a right-click from the
   Frost Bar, clicking the snowflake again seems to do nothing")**: right-click (and, separately, left-click) the
   `FIDual` tile, close its menu with Esc (or leave it open), then click the snowflake once while the item still

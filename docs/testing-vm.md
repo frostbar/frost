@@ -117,6 +117,7 @@ sticks. Alternatively, disable SIP once with `tart run --recovery frost-test`, t
 | `guest-moveclick.swift …` | Frost's ⌘-drag move followed by a click (reproduces known risk (a)) |
 | `guest-axpress.swift pid [index]` | list / AXPress an app's menu bar extras |
 | `guest-click-latency.swift title tile [--ah] [--dwell s] [--runs n]` | Frost Bar click-to-menu latency: opens the panel with a HID click on the snowflake (⌥ with `--ah`), waits `--dwell` s, clicks the tile whose accessibility label contains `tile` (`--list` prints them), samples the window list every ~4 ms until the menu / popover appears, checks it is anchored at the item's final frame right of the snowflake, closes it and waits for the item to return; one JSON line per run plus a median / p90 summary |
+| `guest-cursor-probe.swift hide [--background] \| trace s [file] \| forward tile left\|right file` | pointer facts: whether an inactive process can hide the pointer (with / without `SetsCursorInBackground`; PNGs in `/tmp/cursor-hide-*.png`); a 10 ms trace of the pointer position; a scripted Frost Bar forward (open, rest on the tile, click, Esc, move away, wait for the move back) with a 5 ms pointer trace and event markers. Pair it with `screencapture -v -C -x -V 12 out.mov` to see whether the pointer was visible |
 | `set-display-profile.swift [icc \| --reset]` | assign a ColorSync profile to the guest display (e.g. the host's "Color LCD", for wide-gamut freeze-frame checks) or reset it |
 
 VNC key mapping (Apple's VNC server): VNC `alt` = ⌘, `meta` = ⌥, `super` = nothing.
