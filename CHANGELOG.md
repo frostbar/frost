@@ -6,12 +6,25 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-05
+
+### Added
+- Icons hidden behind the notch now get real images: while you aren't using the menu bar, Frost briefly moves one
+  such icon out under a still image of the menu bar, captures it and puts it straight back (needs Screen Recording).
+
 ### Changed
+- When you open an icon from the Frost Bar, the pointer moves to it once and stays there, instead of jumping to the
+  menu bar and back. The pointer is hidden while Frost moves icons in the background.
 - Screen Recording is now optional: with Accessibility alone, the Frost Bar, the layout editor, moving icons and
   keeping them in their sections all work, and icons are shown as their app's icon (or a system symbol) with a short
   label where it helps. Grant Screen Recording to see real images of the icons; a small hint offers it.
 - Icons are identified by their Accessibility attributes instead of their window titles. Remembered sections, known
   icons and cached images are moved over automatically.
+
+### Fixed
+- An icon moved out for a background capture is always put back, also when you hold the mouse button for a long
+  time or quit Frost meanwhile; the still image of the menu bar stays up until it's back.
+- Images captured before a Light/Dark Mode switch are refreshed, and failed captures are retried later.
 
 ## [0.2.0] - 2026-10-05
 
