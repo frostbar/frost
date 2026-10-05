@@ -65,9 +65,6 @@ struct FrostBarActions {
     var refresh: @MainActor () -> Void
     var openOnboarding: @MainActor () -> Void
     var openSettings: @MainActor () -> Void
-
-    /// No-op actions (for offscreen rendering / previews).
-    static let none = FrostBarActions(activate: { _, _ in }, refresh: {}, openOnboarding: {}, openSettings: {})
 }
 
 /// Size constants and panel size calculations. All sizes are determined here (independent of the text's ideal

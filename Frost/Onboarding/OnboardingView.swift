@@ -28,9 +28,6 @@ struct OnboardingActions {
     var dismiss: @MainActor () -> Void
     /// Closes onboarding and opens the Layout tab of the settings window.
     var openLayoutEditor: @MainActor () -> Void
-
-    static let none = OnboardingActions(grantAccessibility: {}, grantScreenRecording: {}, relaunch: {},
-                                        dismiss: {}, openLayoutEditor: {})
 }
 
 /// Root view of the onboarding window: reads permission state from `AppModel`.
