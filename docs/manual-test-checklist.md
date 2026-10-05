@@ -47,8 +47,14 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] The later / done buttons, the close button and Esc (when not everything is granted) close onboarding; after
   that, relaunching Frost no longer opens onboarding automatically.
 - [ ] After closing onboarding, revoke Accessibility in System Settings → open the **About** tab of the Settings
-  window: within about 1 second the status changes to a "grant" button; clicking it opens onboarding (it does not
-  trigger the system permission prompt directly).
+  window: within about 1 second the status changes to a "grant" button; clicking it shows the system permission
+  prompt / Accessibility pane directly (no onboarding window). Granting flips the row to "Granted" within about 1
+  second.
+- [ ] Without Screen Recording, click the **About** tab's Screen Recording "grant" button: the Screen Recording pane
+  opens and the row changes to a relaunch note with a relaunch button. Turn Frost on, then either click the relaunch
+  button or choose System Settings' "Quit & Reopen": Frost comes back with the Settings window open on **About**,
+  Screen Recording granted. The same works from onboarding (onboarding reappears). An ordinary ⌘Q and a later launch
+  (more than a minute later, or without a pending request) reopen no window.
 
 ## 2. Main menu and shortcuts (Frost has no visible menu bar menu)
 
@@ -114,7 +120,8 @@ For each item, record: environment (model / displays / macOS version) and result
   refreshes stop (log `user away (screenLocked)` / `(displaysAsleep)`); after unlocking, editing resumes once the
   window is key (log `user back`).
 - [ ] Revoke Accessibility: the editor shows an "Accessibility Required" placeholder that updates as permissions
-  change; its button opens the onboarding window. Revoking only Screen Recording does **not** show the placeholder
+  change; its button requests Accessibility directly (no onboarding window). With Accessibility only, the footer's
+  Screen Recording link requests it and then offers a relaunch (Frost comes back on the Layout tab). Revoking only Screen Recording does **not** show the placeholder
   (see "Accessibility only").
 - [ ] **Known risk (b)**: when moving an item hidden under the notch, the menu bar briefly collapses and then
   restores. Confirm it doesn't flicker excessively, the layout is correct afterwards, and editing state is restored.
