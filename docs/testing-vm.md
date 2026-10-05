@@ -118,6 +118,8 @@ sticks. Alternatively, disable SIP once with `tart run --recovery frost-test`, t
 | `guest-axpress.swift pid [index]` | list / AXPress an app's menu bar extras |
 | `guest-click-latency.swift title tile [--ah] [--dwell s] [--runs n]` | Frost Bar click-to-menu latency: opens the panel with a HID click on the snowflake (⌥ with `--ah`), waits `--dwell` s, clicks the tile whose accessibility label contains `tile` (`--list` prints them), samples the window list every ~4 ms until the menu / popover appears, checks it is anchored at the item's final frame right of the snowflake, closes it and waits for the item to return; one JSON line per run plus a median / p90 summary |
 | `guest-cursor-probe.swift hide [--background] \| trace s [file] \| forward tile left\|right file` | pointer facts: whether an inactive process can hide the pointer (with / without `SetsCursorInBackground`; PNGs in `/tmp/cursor-hide-*.png`); a 10 ms trace of the pointer position; a scripted Frost Bar forward (open, rest on the tile, click, Esc, move away, wait for the move back) with a 5 ms pointer trace and event markers. Pair it with `screencapture -v -C -x -V 12 out.mov` to see whether the pointer was visible |
+| `guest-menubar-probe.swift seconds out` | a 10 ms log of Frost's freeze-frame windows (whole bar or not), drag-image windows (layer 500), the pointer and the status item order, written whenever one changes; for checking the background capture of items behind the notch against a recording |
+| `guest-interrupt.swift x y delayMs holdMs [timeout] [right]` | waits for the background capture's whole-bar freeze frame, then presses a real HID mouse button at (x, y) for `holdMs` (a click on the frozen snowflake, a button held on the desktop) |
 | `set-display-profile.swift [icc \| --reset]` | assign a ColorSync profile to the guest display (e.g. the host's "Color LCD", for wide-gamut freeze-frame checks) or reset it |
 
 VNC key mapping (Apple's VNC server): VNC `alt` = ⌘, `meta` = ⌥, `super` = nothing.
@@ -194,6 +196,15 @@ timing. Evidence (recordings, logs, analysis scripts) goes under `build/vm-shots
   number of on-screen status items), then compare frames left of the snowflake: no frame may show the expansion, and
   every expansion must happen while the freeze frame is on screen. Turn on the clock's seconds to see that the area
   right of the snowflake stays live.
+- **Background capture of items behind the notch**: emulate the notch with many items (`vm-fake-items.sh launch A 30`:
+  with the Hidden section full, the items that don't fit stay off screen when expanded), delete the image cache, launch
+  Frost, open the Frost Bar once (it records them) and close it, park the pointer on the desktop. Then run
+  `guest-menubar-probe` and `screencapture -v -C -x -R0,0,<width>,700` side by side for a minute (both over SSH) and
+  compare every frame with the last one, left of the system items: the recording is H.264, so count only pixels off
+  by more than ~40 levels (glyph edges differ by up to ~50 between key frames). A real problem shows hundreds to
+  thousands of such pixels: an item moving, the snowflake shifting, the lifted item's drag image, or the pointer
+  appearing on the menu bar. `dump-status-windows` before and after must list the same order; the parked pointer may
+  only blink (hidden for each ⌘-drag). `guest-interrupt` tests a click on the frozen snowflake and a held button.
 - **Timing**: don't grab the VNC framebuffer while timing or recording; it slows the guest (clock skips, refresh
   cycles show 0.5–0.8 s outliers). `screencapture -v` only emits frames when the screen changes, so use a probe that
   captures the clock's own window to check that the clock ticks on time. Measure CPU from the cumulative CPU time in

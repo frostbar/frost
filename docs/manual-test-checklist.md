@@ -223,6 +223,21 @@ For each item, record: environment (model / displays / macOS version) and result
   image from the disk cache), and the rest refresh every second as usual (log `captured 17 of 40 item(s)`), at the
   same pace. If none of the panel's items fit, it stops expanding (`paused: nothingToCapture`) until the set / order of
   menu bar items or the display configuration changes, or the refresh button is clicked.
+- [ ] **Background capture of items behind the notch** (same setup, image cache deleted:
+  `rm -rf ~/Library/Caches/dev.frost.Frost/items`, then relaunch): open the Frost Bar once (log `N item(s) behind the
+  notch`), close it, park the pointer on the desktop and wait: about every 3 s one of them is captured (log
+  `background capture of item <id> (missing): captured, back in its exact slot; … total ~0.6–1 s`), never in the first
+  20 s after launch. Reopen the Frost Bar: those tiles now show real images instead of app icons, also after a
+  relaunch (disk cache). Record the menu bar meanwhile (VM: `screencapture -v -C`, compare every frame left of the
+  system items with a frame at rest): no frame shows an item moving, the snowflake shifting, the lifted item's drag
+  image or the pointer; the pointer stays where it was; `dump-status-windows` before and after lists the same order.
+- [ ] **Background capture yields to the user**: it waits (log `background capture waits (<reason>)`, once per reason)
+  while the Frost Bar or the layout editor is open, the menu bar is expanded, a menu is open, a mouse button is held,
+  the pointer is over the menu bar, or the mouse / keyboard was used in the last second. During one: click the frozen
+  snowflake — the item moves back at once (log `a click on the frozen menu bar`, `interrupted, back in its exact
+  slot`) and the Frost Bar opens right after (`handling a Frost icon click taken by a background capture's freeze
+  frame`); press and hold the mouse on the desktop — it moves back once the button is released; neither leaves an item
+  in the Visible section. An interrupted item is retried about 10 s later; a failed one backs off (1, 2, 4… min).
 - [ ] **CPU**: with the panel open for 30 s, Frost's average CPU is well below 15% (about 3–5% measured in the VM); back
   to 0 after closing.
 - [ ] The image cache stays fresh: after expanding the Hidden section in In Menu Bar mode, opening the layout editor,
@@ -482,6 +497,11 @@ local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
   item updates in the Visible section) appear slightly later; the snowflake and everything to its right (clock,
   Control Center) are unaffected. The freeze frame passes clicks through, but no refresh happens while the pointer is
   over that part of the menu bar or a mouse button is held (a cycle in progress ends early).
+- Items behind the notch are captured by moving them out in the background (one at a time, ~1 s each, under a
+  whole-menu-bar freeze frame, while the user isn't using the menu bar). Meanwhile the clock pauses for that second, a
+  click on the menu bar left of (and on) the snowflake is taken by the freeze frame (on the snowflake it is replayed
+  afterwards; elsewhere the user clicks again), and a menu can't be opened over it. Images of such items that change
+  are refreshed only every ~10 minutes; one that turned out not to change isn't recaptured during that run.
 - While an item is changing width (e.g. the digits of a text item changing), the system occasionally takes about
   0.5 s to apply Frost's collapse length change, and that cycle's freeze frame stays up for about 0.7 s (still no
   visible expansion).

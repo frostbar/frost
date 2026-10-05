@@ -94,8 +94,10 @@ Frost has to be relaunched after granting Screen Recording; onboarding offers a 
 ## Known limitations
 
 - With several displays, Frost manages the menu bar you last clicked; the other displays show macOS's copies of it.
-- Icons behind the notch can't be captured: Frost shows their app icon (or a cached image), and the menu bar briefly
-  collapses while such an icon is moved.
+- macOS doesn't draw icons behind the notch, so Frost gets their images with a short background capture: while you
+  aren't using the menu bar, it moves one such icon next to the snowflake under a still image of the menu bar and puts
+  it straight back. Until then they show their app icon, and images that change (a timer, a temperature) are only
+  refreshed occasionally. The menu bar also briefly collapses while such an icon is moved in the layout editor.
 - Frost has no global hotkeys, hover or scroll triggers, menu bar styling, or icon search.
 
 ## Build from source
