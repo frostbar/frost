@@ -406,7 +406,7 @@ public enum ItemClicker {
     /// Also sets field `0x33 = windowID` (the same windowID routing ItemMover uses): measured that with
     /// position-only routing, the click is swallowed if the point is covered by a higher-level window (e.g. the
     /// lock screen's Shield window); with 0x33 it still reaches the target item.
-    /// Called on a background thread; the cursor is restored afterwards.
+    /// Called on a background thread; the cursor is restored afterwards (and hidden meanwhile when it was elsewhere).
     static func postClick(at point: CGPoint, windowID: CGWindowID, kind: ForwardedClick = .primary) {
         SyntheticEventGate.posting { postClickNow(at: point, windowID: windowID, kind: kind) }
     }
@@ -414,7 +414,17 @@ public enum ItemClicker {
     private static func postClickNow(at point: CGPoint, windowID: CGWindowID, kind: ForwardedClick) {
         let source = CGEventSource(stateID: .hidSystemState)
         let savedCursor = CGEvent(source: nil)?.location
-        defer { if let savedCursor { CGWarpMouseCursorPosition(savedCursor) } }
+        // A click away from the pointer (closing a presentation, the click-outside fallback) warps it there and back:
+        // hidden meanwhile. A click where the pointer rests (a forwarded click) leaves it visible.
+        let concealment = CursorPlacement.hidesDuringClick(at: point, cursor: savedCursor)
+            ? CursorConcealment.begin() : nil
+        defer {
+            if let concealment {
+                concealment.end(warpingTo: savedCursor)
+            } else if let savedCursor {
+                CGWarpMouseCursorPosition(savedCursor)
+            }
+        }
         // Send a lone mouse-up first: the windowID-routed mouse-down of a ⌘-drag move can leave the dragged item
         // in a "pressed" state, and the first synthetic click after that only ends the state without triggering
         // the action (known risk (a); measured in a VM: after a move, Spotlight swallows the first synthetic click

@@ -134,8 +134,9 @@ extension FrostBarController {
         do {
             forwardTrace?.mark("moveStart")
             // Click as soon as the item has reached its final frame (the windows left of it may still be sliding, which
-            // doesn't move it or its menu; see `LandingDetector`).
-            try await mover.move(id, to: .rightOf(controls.icon), until: .itemLanded)
+            // doesn't move it or its menu; see `LandingDetector`). The pointer stays hidden during the ⌘-drag and then
+            // appears on the item: it visibly moves once, from the tile to the menu bar, and stays there.
+            try await mover.move(id, to: .rightOf(controls.icon), until: .itemLanded, cursor: .onMovedItem)
             forwardTrace?.mark("moved")
             let outcome = try await clickAndWait(id, click: click, strayBaseline: beforeMove, handOff: handOff)
             // A presentation still on screen (timed out / abandoned) isn't the user's to keep using: move back now.
@@ -294,6 +295,11 @@ extension FrostBarController {
         let fallback = OutsideClickFallback(item: item, baseline: baseline)
         // Every exit path (closed, abandoned, timed out, cancelled, error) removes the mouse monitors.
         defer { fallback?.stop() }
+        // The pointer rests on the item from now on (the move out usually put it there already): it doesn't jump back
+        // to the tile, and it keeps the linger going until the user moves away.
+        if let point = CursorPlacement.restingPoint(forClickOn: item.frame, cursor: CGEvent(source: nil)?.location) {
+            CGWarpMouseCursorPosition(point)
+        }
         forwardTrace?.mark("click")
         try await ItemClicker.click(item, kind: click)
         forwardTrace?.mark("clicked")

@@ -145,17 +145,20 @@ public final class ItemMover {
     /// the menu bar while moving).
     /// Must be called inside `transaction` (`assert(isBusy)` in debug). Throws `CancellationError` when the task
     /// is cancelled.
-    /// `completion`: see `Completion`.
+    /// `completion`: see `Completion`. `cursor`: where the pointer ends up (`CursorDisposition`); it is hidden while
+    /// the ⌘-drag moves it either way.
     public func move(_ itemID: CGWindowID, to destination: MoveDestination,
-                     until completion: Completion = .settled) async throws {
-        try await move(itemID, to: destination, attempts: maxAttempts, checkingControls: true, completion: completion)
+                     until completion: Completion = .settled, cursor: CursorDisposition = .restore) async throws {
+        try await move(itemID, to: destination, attempts: maxAttempts, checkingControls: true, completion: completion,
+                       cursor: cursor)
     }
 
     /// - `checkingControls`: after each attempt, check the order of Frost's controls (see `controlsInOrder`); if
     ///   disturbed, move the icon back to `.rightOf(H)` once and throw `.controlsDisturbed` (no further retries:
     ///   retrying would just keep dragging the icon).
     private func move(_ itemID: CGWindowID, to destination: MoveDestination, attempts: Int,
-                      checkingControls: Bool, completion: Completion = .settled) async throws {
+                      checkingControls: Bool, completion: Completion = .settled,
+                      cursor disposition: CursorDisposition = .restore) async throws {
         assert(isBusy, "ItemMover.move must be called inside transaction")
         for attempt in 1...max(1, attempts) {
             try Task.checkCancellation()
@@ -191,8 +194,11 @@ public final class ItemMover {
             defer { syntheticDragActive(false) }
             let posted = await Task.detached {
                 Self.postCommandDrag(windowID: itemID, mouseDown: down, plannedMouseUp: up, release: release,
-                                     watching: known)
+                                     watching: known, cursor: disposition)
             }.value
+            // A move out left the pointer hidden at the drop point: it reappears once the item has landed (below). On
+            // every other way out of this attempt (an error, cancellation, a retry) it goes back where it was.
+            defer { posted.concealment?.end(warpingTo: posted.savedCursor) }
             FrostLog.mover.info("""
                 ⌘-drag of \(itemID, privacy: .public) to \(String(describing: destination), privacy: .public) \
                 (attempt \(attempt, privacy: .public)): \(posted.description, privacy: .public)
@@ -219,6 +225,11 @@ public final class ItemMover {
                     timeout: Self.remainingSettleTimeout(settleTimeout, elapsed: elapsed), snapshot: snapshot,
                     satisfied: satisfied)
                 milestone("settled", .now)
+            }
+            if let concealment = posted.concealment {
+                let landed = result.satisfied ? snapshot()[itemID] : nil
+                concealment.end(warpingTo: CursorPlacement.finalPosition(
+                    disposition, saved: posted.savedCursor, landedItemFrame: landed, displayBounds: menuBarDisplayBounds))
             }
             if checkingControls, let controls = controlWindows(), itemID != controls.icon,
                !Self.controlsInOrder(controls, windows: StatusWindowParser.windows(withIDs: controls.all),
@@ -408,11 +419,19 @@ public final class ItemMover {
         var downAt: ContinuousClock.Instant?
         var liftedAt: ContinuousClock.Instant?
         var releasedAt: ContinuousClock.Instant?
+        /// Where the pointer was before the drag.
+        var savedCursor: CGPoint?
+        /// For a move out (`CursorDisposition.onMovedItem`): the pointer is still hidden at the drop point; the caller
+        /// ends this once the item has landed. nil: the drag already put the pointer back and showed it.
+        var concealment: CursorConcealment?
+        /// How long the pointer was away from `savedCursor` (hidden), for background moves (ms).
+        var awayFor: Int?
 
         var description: String {
             let lift = liftedAfter.map { "lifted after \($0) ms" } ?? "not seen lifted"
             return "\(lift), released after \(releasedAfter) ms at x \(Int(mouseUp.x)) (planned \(Int(plannedMouseUp.x)))"
                 + (interrupted ? ", cut short by the user's mouse button" : "")
+                + (awayFor.map { ", pointer away \($0) ms" } ?? "")
         }
     }
 
@@ -428,19 +447,23 @@ public final class ItemMover {
     /// Posts the mouse-down on the Frost icon, waits until `release` says the item has been lifted (and, if the target
     /// may slide, that the menu bar has stopped moving), then posts the mouse-up at the target's position at that moment
     /// (`plannedMouseUp`, computed from the frames before the drag, if the item was never seen lifted). Posts the mouse-up early if the user presses a
-    /// mouse button meanwhile, so a ⌘-drag never overlaps the user's own for long. The cursor is restored afterwards.
+    /// mouse button meanwhile, so a ⌘-drag never overlaps the user's own for long. The pointer is hidden from before
+    /// the mouse-down; with `.restore` it is put back and shown right after the mouse-up, with `.onMovedItem` it stays
+    /// hidden at the drop point (`PostedDrag.concealment`) until the caller puts it on the landed item.
     nonisolated static func postCommandDrag(windowID: CGWindowID, mouseDown down: CGPoint, plannedMouseUp: CGPoint,
-                                            release: DragRelease, watching known: Set<CGWindowID>) -> PostedDrag {
+                                            release: DragRelease, watching known: Set<CGWindowID>,
+                                            cursor disposition: CursorDisposition = .restore) -> PostedDrag {
         // Tracked so quitting never exits between the mouse-down and the mouse-up / cursor restore.
         SyntheticEventGate.posting {
             postCommandDragNow(windowID: windowID, mouseDown: down, plannedMouseUp: plannedMouseUp, release: release,
-                               watching: known)
+                               watching: known, cursor: disposition)
         }
     }
 
     private nonisolated static func postCommandDragNow(windowID: CGWindowID, mouseDown down: CGPoint,
                                                        plannedMouseUp: CGPoint, release: DragRelease,
-                                                       watching known: Set<CGWindowID>) -> PostedDrag {
+                                                       watching known: Set<CGWindowID>,
+                                                       cursor disposition: CursorDisposition) -> PostedDrag {
         let source = CGEventSource(stateID: .hidSystemState)
         // Same as Ice: don't suppress local (the user's) mouse and keyboard events while posting synthetic ones.
         if let session = CGEventSource(stateID: .combinedSessionState) {
@@ -451,7 +474,12 @@ public final class ItemMover {
             session.localEventsSuppressionInterval = 0
         }
         let savedCursor = CGEvent(source: nil)?.location
-        defer { if let savedCursor { CGWarpMouseCursorPosition(savedCursor) } }
+        let clock = ContinuousClock()
+        let hiddenAt = clock.now
+        let concealment = CursorConcealment.begin()
+        var report = PostedDrag(releasedAfter: 0, mouseUp: plannedMouseUp, plannedMouseUp: plannedMouseUp,
+                                savedCursor: savedCursor)
+        let keepsHidden = !CursorPlacement.restoresRightAfterDrag(disposition)
 
         func event(_ type: CGEventType, _ point: CGPoint) -> CGEvent? {
             guard let e = CGEvent(mouseEventSource: source, mouseType: type,
@@ -460,10 +488,11 @@ public final class ItemMover {
             e.setIntegerValueField(windowIDField, value: Int64(windowID))
             return e
         }
-        var report = PostedDrag(releasedAfter: 0, mouseUp: plannedMouseUp, plannedMouseUp: plannedMouseUp)
-        guard let downEvent = event(.leftMouseDown, down) else { return report }
+        guard let downEvent = event(.leftMouseDown, down) else {
+            concealment.end()
+            return report
+        }
 
-        let clock = ContinuousClock()
         let start = clock.now
         func elapsed() -> Int { Int((clock.now - start) / .milliseconds(1)) }
         var release = release
@@ -489,6 +518,12 @@ public final class ItemMover {
         event(.leftMouseUp, up)?.post(tap: .cgSessionEventTap)
         report.releasedAt = clock.now
         usleep(20_000)
+        if keepsHidden {
+            report.concealment = concealment
+        } else {
+            concealment.end(warpingTo: savedCursor)
+            report.awayFor = Int((clock.now - hiddenAt) / .milliseconds(1))
+        }
         return report
     }
 }
