@@ -19,8 +19,8 @@ For each item, record: environment (model / displays / macOS version) and result
   `tccutil reset Accessibility dev.frost.Frost`, `tccutil reset ScreenCapture dev.frost.Frost`).
 - [ ] Logs: every "log `…`" below is checked in the unified log (Frost uses `os.Logger`, subsystem `dev.frost.Frost`;
   it no longer uses `NSLog`, because stderr is `/dev/null` when launchd starts it):
-  `log stream --info --style compact --predicate 'subsystem == "dev.frost.Frost"'`, or afterwards
-  `log show --last 10m --info …`. At least one line should appear after launch (e.g.
+  `/usr/bin/log stream --info --style compact --predicate 'subsystem == "dev.frost.Frost"'`, or afterwards
+  `/usr/bin/log show --last 10m --info …` (in zsh a bare `log` is a builtin). At least one line should appear after launch (e.g.
   `managing the menu bar of display …`).
 
 ## 1. First launch and permission onboarding
@@ -312,7 +312,7 @@ how the freeze frame and click forwarding behave on the external display.
 
 Preparation: connect the external display, note the arrangement and each display's resolution in System Settings →
 Displays → Arrange; leave "Displays have separate Spaces" at its default (on). Logs:
-`log stream --info --predicate 'subsystem == "dev.frost.Frost"' --style compact | grep -E 'managing|icon moved|could not be told|captured|replica'`.
+`/usr/bin/log stream --info --predicate 'subsystem == "dev.frost.Frost"' --style compact | grep -E 'managing|icon moved|could not be told|captured|replica'`.
 Window list (read-only): `swift scripts/vm/dump-status-windows.swift --all` (columns: y, then x, width, height,
 on-screen, windowID, title; real windows are titled with their autosave name, replicas with a bundle ID or nothing).
 

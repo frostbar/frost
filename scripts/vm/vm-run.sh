@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # (Re)launch /Applications/Frost.app inside the VM's logged-in GUI session.
 #   scripts/vm/vm-run.sh                         # plain launch
-#   scripts/vm/vm-run.sh -e FROST_DEBUG=1 -- --some-arg value
+#   scripts/vm/vm-run.sh -e FROST_TEST_FRAME_PROBE=1 -- --some-arg value
 # Options:
 #   -e KEY=VALUE   environment variable for the app (repeatable; `open --env`
 #                  ignores single-character names, so use KEY of 2+ chars)

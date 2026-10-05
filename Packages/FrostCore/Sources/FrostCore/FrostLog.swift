@@ -4,7 +4,8 @@ import os
 ///
 /// Not `NSLog`: when Frost is launched by launchd (login item, Finder, `open`), stderr is `/dev/null`, and `NSLog`
 /// output can't be found in the unified log on real hardware. To view:
-/// `log show --last 10m --info --predicate 'subsystem == "dev.frost.Frost"'` (or `log stream`).
+/// `/usr/bin/log show --last 10m --info --predicate 'subsystem == "dev.frost.Frost"'` (or `log stream`; in zsh a bare
+/// `log` is a builtin).
 ///
 /// Privacy: diagnostic values such as window IDs, timings, displays, bundle IDs and errors use `.public`; values that
 /// may contain user content (menu bar item titles / AX descriptions, and cache file names derived from them) use

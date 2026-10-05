@@ -1,5 +1,6 @@
-// Run inside the guest: the same synthetic click Frost's ItemClicker.postClick sends
-// (left down/up, clickState 1, session tap, field 0x33 = windowID; 30 ms apart).
+// Run inside the guest: a synthetic left click like Frost's ItemClicker.postClick (down/up, clickState 1,
+// field 0x33 = windowID; 30 ms apart). Posted to the session tap; HIDTAP=1 posts to the HID tap, as Frost does.
+// (Frost also sends a lone mouse-up first and supports right / Option clicks.)
 //   /tmp/guest-click <x> <y> <windowID> [downUpDelayMs]     (points)
 import CoreGraphics
 import Foundation
