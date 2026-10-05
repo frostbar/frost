@@ -239,11 +239,43 @@ public final class ItemImageCapturer {
     /// `diskWriteInterval` (see `flushDiskCache()`).
     @discardableResult
     public func capture(_ items: [MenuBarItem]) async -> Set<CGWindowID> {
-        guard CGPreflightScreenCaptureAccess() else { return [] }
+        await captureReporting(items).obtained
+    }
+
+    /// What one `captureReporting` call did with each item.
+    public struct CaptureReport: Equatable, Sendable {
+        /// Items a new capture was stored for (it differs from the previous one, or there was none).
+        public var changed: Set<CGWindowID> = []
+        /// Items whose new capture is pixel-identical to the stored one (left as is).
+        public var unchanged: Set<CGWindowID> = []
+        /// Items ScreenCaptureKit returned an image for (including blank ones that were discarded): what `capture`
+        /// returns.
+        public var obtained: Set<CGWindowID> = []
+        /// The appearance changed meanwhile: the round's results were thrown away (nothing failed).
+        public var discarded = false
+
+        public init(changed: Set<CGWindowID> = [], unchanged: Set<CGWindowID> = [], obtained: Set<CGWindowID> = [],
+                    discarded: Bool = false) {
+            self.changed = changed
+            self.unchanged = unchanged
+            self.obtained = obtained
+            self.discarded = discarded
+        }
+
+        /// Whether `id` was captured successfully in this round (changed or not). A failed or blank capture leaves the
+        /// previous image in place, so the cache alone can't tell.
+        public func succeeded(_ id: CGWindowID) -> Bool { changed.contains(id) || unchanged.contains(id) }
+    }
+
+    /// `capture`, reporting per item whether the round succeeded and whether the image changed.
+    public func captureReporting(_ items: [MenuBarItem]) async -> CaptureReport {
+        guard CGPreflightScreenCaptureAccess() else { return CaptureReport() }
         let startGeneration = generation
         let appearance = Self.currentAppearance
         let targets = items.filter(\.isOnScreen)
-        guard let content = await contentCache.content(containing: Set(targets.map(\.windowID))) else { return [] }
+        guard let content = await contentCache.content(containing: Set(targets.map(\.windowID))) else {
+            return CaptureReport()
+        }
         let windows = Dictionary(content.windows.map { ($0.windowID, $0) }, uniquingKeysWith: { a, _ in a })
         let scale = menuBarScale
         let strip = await captureStrip(targets, windows: windows, displays: content.displays, scale: scale)
@@ -282,7 +314,7 @@ public final class ItemImageCapturer {
                 fresh[item.windowID] = image
             }
         }
-        guard generation == startGeneration else { return [] }
+        guard generation == startGeneration else { return CaptureReport(discarded: true) }
         // Copy and classify off the main thread (a first round after opening the Frost Bar replaces every tile).
         let inputs = items.compactMap { item in
             fresh[item.windowID].map { image in
@@ -294,7 +326,8 @@ public final class ItemImageCapturer {
                 Self.prepareFresh(input.image, previous: input.previous).map { (input.id, $0) }
             }, uniquingKeysWith: { a, _ in a })
         }.value
-        guard generation == startGeneration else { return [] }
+        guard generation == startGeneration else { return CaptureReport(discarded: true) }
+        var report = CaptureReport(obtained: Set(fresh.keys))
         var toSave: [(key: ItemImageCacheKey, value: DiskWrite)] = []
         let counts = Dictionary(items.compactMap(\.identity).map { ($0, 1) }, uniquingKeysWith: +)
         for item in items {
@@ -305,7 +338,11 @@ public final class ItemImageCapturer {
                 continue
             }
             // Pixel-identical to the existing capture: leave it as is.
-            guard case .changed(let capture) = result else { continue }
+            guard case .changed(let capture) = result else {
+                report.unchanged.insert(item.windowID)
+                continue
+            }
+            report.changed.insert(item.windowID)
             store(capture.image, tone: capture.tone, style: capture.style, template: capture.template, scale: scale,
                   for: item.windowID)
             pixels[item.windowID] = capture.bytes
@@ -337,7 +374,7 @@ public final class ItemImageCapturer {
             Task.detached(priority: .utility) { Self.write(toSave, to: diskCache) }
         }
         pruneIfDue()
-        return Set(fresh.keys)
+        return report
     }
 
     /// Writes the held-back captures to the disk cache now (the Frost Bar closed, the layout editor stopped, Frost is

@@ -219,4 +219,35 @@ import CoreGraphics
         let other = CGRect(x: 2000, y: 943, width: 30, height: 39)
         #expect(Policy.shiftingRegion(of: strip, iconFrames: [other]) == nil)
     }
+
+    // MARK: Outcome of an operation
+
+    @Test func outcomeComesFromThisRoundsCaptureResult() {
+        // A failed refresh of an item that already has an image is a failure, not "captured, unchanged".
+        #expect(Policy.outcome(of: .failed, hadPrevious: true, moveFailed: false) == .failed)
+        #expect(Policy.outcome(of: .succeeded(changed: false), hadPrevious: true, moveFailed: false)
+                == .captured(changed: false))
+        #expect(Policy.outcome(of: .succeeded(changed: true), hadPrevious: true, moveFailed: false)
+                == .captured(changed: true))
+        #expect(Policy.outcome(of: .succeeded(changed: true), hadPrevious: false, moveFailed: false)
+                == .captured(changed: nil))
+        // A capture stands even when moving back failed (that is retried on its own).
+        #expect(Policy.outcome(of: .succeeded(changed: false), hadPrevious: true, moveFailed: true)
+                == .captured(changed: false))
+        #expect(Policy.outcome(of: .notAttempted, hadPrevious: true, moveFailed: false) == .interrupted)
+        #expect(Policy.outcome(of: .notAttempted, hadPrevious: true, moveFailed: true) == .failed)
+        #expect(Policy.outcome(of: .discarded, hadPrevious: true, moveFailed: false) == .interrupted)
+    }
+
+    @Test func aFailedRefreshBacksOffInsteadOfMarkingTheItemStatic() {
+        var policy = policy(obscured: [1])
+        let first = ready + Policy.staleAge
+        policy.record(.captured(changed: nil), for: 1, now: ready)
+        // The refresh fails (the old image stays cached).
+        policy.record(Policy.outcome(of: .failed, hadPrevious: true, moveFailed: false), for: 1, now: first)
+        #expect(policy.records[1]?.isDynamic == nil)
+        #expect(policy.records[1]?.failures == 1)
+        #expect(policy.need(1, needsImage: false, now: first + .seconds(1)) == nil)
+        #expect(policy.need(1, needsImage: false, now: first + Policy.retryDelay(afterFailures: 1)) == .refresh)
+    }
 }

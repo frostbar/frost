@@ -278,6 +278,30 @@ public struct ObscuredCapturePolicy: Sendable {
         }
     }
 
+    /// What capturing the moved-out item did in one operation (from this round's own result, never from the cache: a
+    /// failed capture leaves the previous image in place).
+    public enum CaptureAttempt: Sendable, Equatable {
+        /// Not captured: interrupted before, or the move out failed.
+        case notAttempted
+        /// The appearance changed during the capture and its result was thrown away.
+        case discarded
+        /// ScreenCaptureKit returned nothing usable (an error, or a blank image).
+        case failed
+        /// Captured; `changed`: the pixels differ from the image stored before.
+        case succeeded(changed: Bool)
+    }
+
+    /// How an operation ended. `hadPrevious`: a current image was compared with (nil `changed` without one: the first
+    /// capture of a missing image tells nothing about whether it changes). `moveFailed`: moving it out or back failed.
+    public static func outcome(of capture: CaptureAttempt, hadPrevious: Bool, moveFailed: Bool) -> Outcome {
+        switch capture {
+        case .succeeded(let changed): .captured(changed: hadPrevious ? changed : nil)
+        case .failed: .failed
+        case .discarded: moveFailed ? .failed : .interrupted
+        case .notAttempted: moveFailed ? .failed : .interrupted
+        }
+    }
+
     /// Back-off after `failures` consecutive failures (1 = the first): `retryBase` doubled per failure, capped.
     public static func retryDelay(afterFailures failures: Int) -> Duration {
         let doublings = max(0, min(failures - 1, 16))

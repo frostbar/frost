@@ -151,8 +151,9 @@ extension FrostBarController {
             app.obscuredCapture.record(.notApplicable, for: id, now: .now)
             return
         }
-        // Compared with the new capture to learn whether the image changes (not a capture from another appearance).
-        let previous = needing.contains(id) ? nil : app.capturer.images[id]
+        // Whether the new capture is compared with a current one, to learn whether the image changes (not a missing
+        // image, nor a capture from another appearance).
+        let hadPrevious = !needing.contains(id) && app.capturer.images[id] != nil
         let transactionsBefore = mover.transactionCount
         interceptedClick = nil
         guard let screenshot = await MenuBarFreezeFrame.capture(
@@ -188,8 +189,8 @@ extension FrostBarController {
                     freeze.remove()
                     timing.overlay = clock.now - shown
                 }
-                var captured = false
-                var failed = false
+                var attempt: ObscuredCapturePolicy.CaptureAttempt = .notAttempted
+                var moveFailed = false
                 if !shouldAbortObscuredCapture {
                     do {
                         mark = clock.now
@@ -200,16 +201,17 @@ extension FrostBarController {
                         timing.landed = clock.now - mark
                         if !shouldAbortObscuredCapture {
                             mark = clock.now
-                            await app.capturer.capture([item])
+                            // This round's own result: a failed capture keeps the previous image in the cache.
+                            let report = await app.capturer.captureReporting([item])
                             timing.capture = clock.now - mark
-                            captured = app.capturer.images[id] != nil && app.capturer.missing([item]).isEmpty
-                            if !captured { failed = true }
+                            attempt = report.discarded ? .discarded
+                                : report.succeeded(id) ? .succeeded(changed: report.changed.contains(id)) : .failed
                         }
                     } catch is CancellationError {
                         // Interrupted by the user (`moveOutUnlessInterrupted`): not a failure.
                     } catch {
                         FrostLog.capture.error("background capture of item \(id, privacy: .public): moving it out failed (\(error, privacy: .public))")
-                        failed = true
+                        moveFailed = true
                     }
                 }
                 // Move back (also when the move out failed: `move` finds the item in place and returns). Waits until
@@ -219,7 +221,7 @@ extension FrostBarController {
                 let restoreError = await restore(plan, controls: controls, until: .settled)
                 timing.moveBack = clock.now - mark
                 if let restoreError {
-                    failed = true
+                    moveFailed = true
                     if case ItemMoveError.controlsDisturbed = restoreError {
                         FrostLog.capture.error("background capture of item \(id, privacy: .public): Frost's controls were disturbed; not retrying")
                     } else {
@@ -232,12 +234,7 @@ extension FrostBarController {
                         == Self.sectionOrder(before)
                 }
                 try? await Task.sleep(for: MenuBarFreezeFrame.settleDelay)
-                if captured {
-                    let current = app.capturer.images[id]
-                    outcome = .captured(changed: previous.map { $0 !== current })
-                } else if failed {
-                    outcome = .failed
-                }
+                outcome = ObscuredCapturePolicy.outcome(of: attempt, hadPrevious: hadPrevious, moveFailed: moveFailed)
             }
         } catch {
             // `.busy` / `.shuttingDown`: another transaction started first or Frost is quitting; nothing was moved.
