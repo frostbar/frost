@@ -22,8 +22,8 @@ final class AppModel {
 
     /// Opens the settings window on the given tab (nil keeps the current tab). Set by AppDelegate.
     @ObservationIgnored var showSettings: (_ tab: SettingsTab?) -> Void = { _ in }
-    /// Opens the permissions onboarding window. Set by AppDelegate. Used by the "Permissions Required" placeholder
-    /// and the grant buttons on the About tab.
+    /// Opens the permissions onboarding window. Set by AppDelegate. Used on first launch and by the Frost Bar's grant
+    /// buttons; Settings requests permissions directly.
     @ObservationIgnored var openOnboarding: () -> Void = {}
     /// Shows or hides the Frost Bar. Set by AppDelegate.
     @ObservationIgnored var toggleFrostBar: (_ includeAlwaysHidden: Bool) -> Void = { _ in }

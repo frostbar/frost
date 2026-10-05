@@ -282,7 +282,8 @@ final class LayoutEditorModel {
             obscured: obscured, errorMessage: errorMessage,
             isRetrying: isActive && fullRefreshSession == session,
             permissions: .init(accessibility: model.permissions.accessibility,
-                               screenRecording: model.permissions.screenRecording),
+                               screenRecording: model.permissions.screenRecording,
+                               screenRecordingNeedsRelaunch: model.permissions.screenRecordingNeedsRelaunch),
             showsScreenRecordingHint: model.preferences.showsScreenRecordingHint(model.permissions.capabilities))
     }
 
@@ -483,10 +484,14 @@ final class LayoutEditorModel {
         }
     }
 
-    // MARK: - Onboarding
+    // MARK: - Permissions
 
-    func openOnboarding() {
-        model.openOnboarding()
+    func grantAccessibility() {
+        model.permissions.requestAccessibility()
+    }
+
+    func grantScreenRecording() {
+        model.permissions.requestScreenRecording()
     }
 
     func dismissScreenRecordingHint() {
@@ -500,6 +505,8 @@ struct LayoutEditorState {
     struct Permissions: Equatable {
         var accessibility: Bool
         var screenRecording: Bool
+        /// Screen Recording was requested and takes effect after a relaunch.
+        var screenRecordingNeedsRelaunch = false
     }
 
     var phase: LayoutEditorModel.Phase
@@ -532,6 +539,8 @@ struct LayoutEditorState {
 /// Actions sent by the editor view.
 struct LayoutEditorActions {
     var drop: @MainActor (_ windowID: CGWindowID, _ section: MenuBarSection, _ index: Int) -> Void
-    var openOnboarding: @MainActor () -> Void
+    var grantAccessibility: @MainActor () -> Void
+    var grantScreenRecording: @MainActor () -> Void
+    var relaunch: @MainActor () -> Void
     var dismissScreenRecordingHint: @MainActor () -> Void = {}
 }

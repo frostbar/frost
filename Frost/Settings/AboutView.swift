@@ -15,15 +15,16 @@ struct AboutView: View {
                 GlassCard {
                     PermissionRow(symbol: "accessibility", tint: .blue, title: String(localized: "Accessibility"),
                                   subtitle: String(localized: "Required. Used to move icons between sections and to click icons in the Frost Bar."),
-                                  isGranted: permissions.accessibility) {
-                        model.openOnboarding()
+                                  status: permissions.accessibility ? .granted : .notGranted) {
+                        permissions.requestAccessibility()
                     }
                     Divider()
                         .padding(.leading, SettingRow<EmptyView>.textInset)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", tint: .pink, title: String(localized: "Screen Recording"),
                                   subtitle: String(localized: "Optional. Shows real images of icons in the Frost Bar and the layout editor; without it, they appear as app icons."),
-                                  isGranted: permissions.screenRecording) {
-                        model.openOnboarding()
+                                  status: permissions.screenRecording ? .granted
+                                      : permissions.screenRecordingNeedsRelaunch ? .needsRelaunch : .notGranted) {
+                        permissions.requestScreenRecording()
                     }
                 }
 
@@ -35,6 +36,7 @@ struct AboutView: View {
             .padding(.bottom, 20)
             .animation(.snappy, value: permissions.accessibility)
             .animation(.snappy, value: permissions.screenRecording)
+            .animation(.snappy, value: permissions.screenRecordingNeedsRelaunch)
         }
         .scrollBounceBehavior(.basedOnSize)
         // Granting access in System Settings does not necessarily reactivate Frost, so poll while visible.
@@ -73,22 +75,36 @@ struct AboutView: View {
 }
 
 private struct PermissionRow: View {
+    enum Status {
+        case notGranted
+        /// Requested, but it takes effect only after a relaunch (Screen Recording).
+        case needsRelaunch
+        case granted
+    }
+
     let symbol: String
     let tint: Color
     let title: String
     let subtitle: String
-    let isGranted: Bool
+    let status: Status
     let grant: () -> Void
 
     var body: some View {
-        SettingRow(symbol: symbol, tint: tint, title: title, subtitle: subtitle) {
-            if isGranted {
+        SettingRow(symbol: symbol, tint: tint, title: title,
+                   subtitle: status == .needsRelaunch
+                       ? String(localized: "Turn on Frost in System Settings, then relaunch.") : subtitle) {
+            switch status {
+            case .granted:
                 Label("Granted", systemImage: "checkmark.circle.fill")
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.green)
                     .font(.callout.weight(.medium))
                     .transition(.blurReplace)
-            } else {
+            case .needsRelaunch:
+                Button("Relaunch") { AppRelauncher.relaunch() }
+                    .buttonStyle(.borderedProminent)
+                    .transition(.blurReplace)
+            case .notGranted:
                 Button("Grant Access", action: grant)
                     .buttonStyle(.borderedProminent)
                     .transition(.blurReplace)

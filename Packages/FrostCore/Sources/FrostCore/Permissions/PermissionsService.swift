@@ -7,6 +7,11 @@ import Observation
 public final class PermissionsService {
     public private(set) var accessibility = false
     public private(set) var screenRecording = false
+    /// The user asked for Screen Recording in this process (onboarding, About, the layout editor). A new grant only
+    /// shows in `CGPreflightScreenCaptureAccess` after a relaunch, so the UI offers one meanwhile.
+    public private(set) var screenRecordingRequested = false
+    /// Screen Recording was requested but isn't in effect yet: Frost has to relaunch once it is turned on.
+    public var screenRecordingNeedsRelaunch: Bool { screenRecordingRequested && !screenRecording }
     /// What the current permissions allow (`PermissionCapabilities`): gate features on these, not on "all granted".
     public var capabilities: PermissionCapabilities {
         PermissionCapabilities(accessibility: accessibility, screenRecording: screenRecording)
@@ -47,6 +52,7 @@ public final class PermissionsService {
     }
 
     public func requestScreenRecording() {
+        screenRecordingRequested = true
         _ = CGRequestScreenCaptureAccess()
         openSettings(anchor: "Privacy_ScreenCapture")
     }

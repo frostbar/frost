@@ -23,9 +23,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menus = MainMenu.make(target: self)
         NSApp.mainMenu = menus.menu
         NSApp.windowsMenu = menus.windowsMenu
-        // Open onboarding on first launch, or after onboarding asked to relaunch.
-        let resumeOnboarding = OnboardingWindowController.consumeResumeRequest()
-        if resumeOnboarding || !model.preferences.hasCompletedOnboarding {
+        // Reopen the window the user was granting Screen Recording in before the relaunch, and open onboarding on
+        // first launch.
+        let resume = RelaunchResume.consume()
+        if case .settings(let rawTab) = resume {
+            model.openSettings(tab: SettingsTab(rawValue: rawTab) ?? .about)
+        }
+        if resume == .onboarding || !model.preferences.hasCompletedOnboarding {
             model.openOnboarding()
         }
     }
@@ -82,6 +86,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Captures held back by the disk cache's write throttle (dynamic icons) are written now, so the next launch
         // starts from the newest ones.
         model?.capturer.flushDiskCache(synchronously: true)
+        recordWindowToResume()
+    }
+
+    /// Screen Recording takes effect only in a new process: if the user is waiting on that grant (Frost's Relaunch
+    /// button, or System Settings' "Quit & Reopen" quitting Frost), the next launch reopens the window they were in.
+    private func recordWindowToResume() {
+        guard let model else { return }
+        var visible: [(window: NSWindow, resume: ResumeWindow)] = []
+        if let window = OnboardingWindowController.window { visible.append((window, .onboarding)) }
+        if let settings = SettingsWindowController.current {
+            visible.append((settings.window, .settings(tab: settings.tab.rawValue)))
+        }
+        let ordered = NSApp.orderedWindows
+        let frontToBack = visible
+            .filter { $0.window.isVisible && !$0.window.isMiniaturized }
+            .sorted { (ordered.firstIndex(of: $0.window) ?? .max) < (ordered.firstIndex(of: $1.window) ?? .max) }
+            .map(\.resume)
+        guard let window = RelaunchResume.windowToRestore(
+            screenRecordingPending: model.permissions.screenRecordingNeedsRelaunch,
+            visibleFrontToBack: frontToBack) else { return }
+        RelaunchResume.record(window)
+        FrostLog.app.notice("will reopen \(window.storedValue, privacy: .public) after the relaunch")
     }
 
     private static let terminationGrace: Duration = .seconds(6)

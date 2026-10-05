@@ -24,6 +24,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         controller.show()
     }
 
+    /// The settings window, if it has been created (it is reused, so it may be closed), and its selected tab.
+    static var current: (window: NSWindow, tab: SettingsTab)? {
+        guard let shared else { return nil }
+        let index = shared.tabs.selectedTabViewItemIndex
+        guard SettingsTab.allCases.indices.contains(index) else { return nil }
+        return (shared.window, SettingsTab.allCases[index])
+    }
+
     /// Size of the tab content area below the toolbar (the same for every tab): tall enough for every tab's content
     /// without scrolling at the default text size, in English and zh-Hans. The tallest is Behavior in English while
     /// permissions are missing (its display mode card then adds a notice): 566 pt measured in the VM.

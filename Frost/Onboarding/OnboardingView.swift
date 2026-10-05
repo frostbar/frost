@@ -37,13 +37,12 @@ struct OnboardingActions {
 /// Root view of the onboarding window: reads permission state from `AppModel`.
 struct OnboardingRootView: View {
     @Environment(AppModel.self) private var model
-    let session: OnboardingSession
     let actions: OnboardingActions
 
     var body: some View {
         OnboardingView(state: OnboardingState(accessibility: model.permissions.accessibility,
                                               screenRecording: model.permissions.screenRecording,
-                                              screenRecordingRequested: session.screenRecordingRequested,
+                                              screenRecordingRequested: model.permissions.screenRecordingRequested,
                                               firstRunPlacementPending: firstRunPlacementPending),
                        actions: actions)
     }

@@ -10,7 +10,9 @@ struct LayoutEditorView: View {
     var body: some View {
         LayoutEditorContent(state: editor.state, actions: LayoutEditorActions(
             drop: { id, section, index in Task { await editor.drop(id, into: section, at: index) } },
-            openOnboarding: { editor.openOnboarding() },
+            grantAccessibility: { editor.grantAccessibility() },
+            grantScreenRecording: { editor.grantScreenRecording() },
+            relaunch: { AppRelauncher.relaunch() },
             dismissScreenRecordingHint: { editor.dismissScreenRecordingHint() }))
     }
 }
@@ -44,7 +46,7 @@ struct LayoutEditorContent: View {
             Group {
                 switch state.phase {
                 case .needsPermission:
-                    PermissionPlaceholder(permissions: state.permissions, openOnboarding: actions.openOnboarding)
+                    PermissionPlaceholder(permissions: state.permissions, grant: actions.grantAccessibility)
                 case .loading:
                     ProgressView()
                         .controlSize(.large)
@@ -108,7 +110,9 @@ struct LayoutEditorContent: View {
         let offscreen = state.obscured.count
         VStack(spacing: 8) {
             if state.showsScreenRecordingHint {
-                ScreenRecordingNotice(grant: actions.openOnboarding, dismiss: actions.dismissScreenRecordingHint)
+                ScreenRecordingNotice(needsRelaunch: state.permissions.screenRecordingNeedsRelaunch,
+                                      grant: actions.grantScreenRecording, relaunch: actions.relaunch,
+                                      dismiss: actions.dismissScreenRecordingHint)
                     .transition(.opacity)
             }
             if offscreen > 0 {
@@ -583,7 +587,8 @@ private struct EditorPlaceholder<Actions: View>: View {
 
 private struct PermissionPlaceholder: View {
     let permissions: LayoutEditorState.Permissions
-    let openOnboarding: () -> Void
+    /// Requests Accessibility (the system prompt and System Settings).
+    let grant: () -> Void
 
     var body: some View {
         EditorPlaceholder(symbol: "lock.shield", tint: .orange, title: "Accessibility Required",
@@ -593,7 +598,7 @@ private struct PermissionPlaceholder: View {
                     status("Accessibility", granted: permissions.accessibility)
                     status("Screen Recording (optional)", granted: permissions.screenRecording)
                 }
-                Button("Grant Access", action: openOnboarding)
+                Button("Grant Access", action: grant)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
             }
@@ -613,24 +618,39 @@ private struct PermissionPlaceholder: View {
     }
 }
 
-/// Screen Recording isn't granted: tiles show app icons. A footer line offering real images (opens onboarding), with
-/// a close button that hides it for good.
+/// Screen Recording isn't granted: tiles show app icons. A footer line offering real images (requests Screen
+/// Recording; once requested, offers the relaunch it needs), with a close button that hides it for good.
 private struct ScreenRecordingNotice: View {
+    let needsRelaunch: Bool
     let grant: () -> Void
+    let relaunch: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
-            Button(action: grant) {
+            if needsRelaunch {
                 Label {
-                    Text("Grant Screen Recording to see real icons")
+                    Text("Turn on Frost in System Settings, then relaunch.")
                 } icon: {
-                    Image(systemName: "rectangle.dashed.badge.record")
-                        .foregroundStyle(.pink)
+                    Image(systemName: "arrow.clockwise")
+                        .foregroundStyle(.orange)
                 }
+                Button("Relaunch", action: relaunch)
+                    .buttonStyle(.link)
+                    // The footer's secondary style would make it look like plain text.
+                    .foregroundStyle(.tint)
+            } else {
+                Button(action: grant) {
+                    Label {
+                        Text("Grant Screen Recording to see real icons")
+                    } icon: {
+                        Image(systemName: "rectangle.dashed.badge.record")
+                            .foregroundStyle(.pink)
+                    }
+                }
+                .buttonStyle(.link)
+                .accessibilityHint("Opens System Settings")
             }
-            .buttonStyle(.link)
-            .accessibilityHint("Opens the permissions window")
             Button(action: dismiss) {
                 Image(systemName: "xmark.circle.fill")
                     .symbolRenderingMode(.hierarchical)

@@ -1,14 +1,5 @@
 import AppKit
-import Observation
 import SwiftUI
-
-/// Onboarding state that must survive closing and reopening the window.
-@Observable
-@MainActor
-final class OnboardingSession {
-    /// The user clicked Grant for Screen Recording (the relaunch notice shows until the grant takes effect).
-    var screenRecordingRequested = false
-}
 
 /// The permissions onboarding window (a reused singleton), styled like the settings window: transparent title bar,
 /// content extending under it, blurred background, 520x560, centered.
@@ -26,18 +17,10 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         controller.show()
     }
 
-    /// Written before relaunching: the new process reopens onboarding so the user sees the result and the next step.
-    private static let resumeAfterRelaunchKey = "resumeOnboardingAfterRelaunch"
-
-    /// Reads and clears the resume-onboarding-after-relaunch flag.
-    static func consumeResumeRequest(defaults: UserDefaults = .standard) -> Bool {
-        guard defaults.bool(forKey: resumeAfterRelaunchKey) else { return false }
-        defaults.removeObject(forKey: resumeAfterRelaunchKey)
-        return true
-    }
+    /// The onboarding window, if it has been created (it is reused, so it may be closed).
+    static var window: NSWindow? { shared?.window }
 
     private let model: AppModel
-    private let session = OnboardingSession()
     let window: NSWindow
     private var hasBeenShown = false
     private var isPolling = false
@@ -57,19 +40,15 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
 
         let actions = OnboardingActions(
             grantAccessibility: { [weak self] in self?.model.permissions.requestAccessibility() },
-            grantScreenRecording: { [weak self] in
-                guard let self else { return }
-                self.session.screenRecordingRequested = true
-                self.model.permissions.requestScreenRecording()
-            },
-            relaunch: { [weak self] in self?.relaunch() },
+            grantScreenRecording: { [weak self] in self?.model.permissions.requestScreenRecording() },
+            relaunch: { AppRelauncher.relaunch() },
             dismiss: { [weak self] in self?.window.close() },
             openLayoutEditor: { [weak self] in
                 guard let self else { return }
                 self.window.close()
                 self.model.openSettings(tab: .layout)
             })
-        let root = OnboardingRootView(session: session, actions: actions)
+        let root = OnboardingRootView(actions: actions)
             .environment(model)
             .background(VisualEffectBackground().ignoresSafeArea())
             .ignoresSafeArea()
@@ -107,29 +86,5 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             model.permissions.stopPolling()
         }
         model.preferences.hasCompletedOnboarding = true
-    }
-
-    /// Relaunches Frost: a shell child process waits for this process to exit, then `open`s the app bundle (opening it
-    /// directly would just activate the still-running old instance).
-    /// launchd adopts the child once this process exits; it waits at most 10 seconds.
-    private func relaunch() {
-        let defaults = UserDefaults.standard
-        defaults.set(true, forKey: Self.resumeAfterRelaunchKey)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = [
-            "-c",
-            #"i=0; while kill -0 "$0" 2>/dev/null && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done; exec /usr/bin/open "$1""#,
-            String(ProcessInfo.processInfo.processIdentifier),
-            Bundle.main.bundlePath,
-        ]
-        do {
-            try process.run()
-        } catch {
-            defaults.removeObject(forKey: Self.resumeAfterRelaunchKey)
-            NSSound.beep()
-            return
-        }
-        NSApp.terminate(nil)
     }
 }
