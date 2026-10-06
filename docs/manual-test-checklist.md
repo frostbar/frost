@@ -40,8 +40,10 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] The Accessibility card is tagged **Required** and the Screen Recording card **Optional**.
 - [ ] Once Accessibility is granted (Screen Recording still missing): the "all set" message and the done / "open layout
   editor" buttons appear already; the Frost Bar and the layout editor work (see "Accessibility only" below).
-- [ ] Click the **Grant Access** button on the Screen Recording card: the same (system prompt first, then the pane
-  directly). The card shows "Needs Relaunch" instead of the button, a note below says Frost must be relaunched, and
+- [ ] Click the **Grant Access** button on the Screen Recording card: only the system prompt when Frost has no
+  Screen Recording entry yet (fresh TCC, `tccutil reset`, removed with "−": also after a relaunch); the pane opens
+  directly (about 2 s later, Frost listed) only when the system stays silent (Frost already listed and denied, new
+  process). Never both. The card shows "Needs Relaunch" instead of the button, a note below says Frost must be relaunched, and
   **Relaunch** is the prominent default button (Return) while "Open Layout Editor" is not shown. The description
   mentions the purple recording dot.
 - [ ] Click the relaunch button: Frost quits and relaunches within about 1 second, the onboarding window reappears,
