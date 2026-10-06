@@ -351,6 +351,10 @@ For each item, record: environment (model / displays / macOS version) and result
   **Launch at login** work; an inline error appears if enabling launch at login fails. Switching the display mode
   changes its one-line explanation instantly: the row keeps its height and the rows below don't move; no overlapping
   text.
+- [ ] Layout footer: the Screen Recording notice, the "N icons are off-screen" note and the ⌘-drag tip are separate
+  lines that can all show at once and never overlap or cross-fade into each other. The off-screen note appears only
+  after the count has stayed above zero for about 5 s and leaves 10 s after it dropped to zero: with FakeItems'
+  `live` mode (an icon hidden 4 s of every 20 s) the footer and the window height stay still for minutes.
 - [ ] About tab: the real app icon (not a symbol), "Frost" and the version; **Updates** (automatic checks; a row
   "Last checked: today at 15:58" / "Never checked" with **Check for Updates…** trailing, updating after a check) and
   **Permissions** (Accessibility and Screen Recording with Granted / Grant Access / Open System
