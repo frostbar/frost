@@ -53,7 +53,8 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
 - `docs/plans/`: the design document and `spike-findings.md` (measured macOS 26 behavior; read it before changing
   low-level code).
 - `docs/manual-test-checklist.md` (including "Known limitations"), `docs/testing-vm.md` (including "Verification
-  techniques"), `docs/releasing.md` (releases, signing and keys).
+  techniques"), `docs/releasing.md` (releases, signing and keys), `docs/ux-journeys.md` (end-to-end user journeys,
+  walked from a clean state).
 
 ## Hard rules
 
@@ -191,6 +192,11 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   main thread. Use one-shot effects only.
 
 ## Code conventions
+
+- **Walk the user journeys, not just the features**: after changing a user-facing flow (permissions, onboarding,
+  Settings, the Frost Bar, the snowflake menu, updates), walk the affected journeys in `docs/ux-journeys.md` in the VM
+  from a clean state, granting permissions through the real System Settings switches. Look for friction (extra
+  clicks, lost windows, lingering prompts, stale state, dead ends), not only failures. New flows get a journey.
 
 - Pure logic goes into FrostCore, tests first (TDD); keep the system-call parts thin.
 - Log with `FrostLog.<category>` (`os.Logger`, subsystem `dev.frost.Frost`), not `NSLog` (on a real Mac Frost is

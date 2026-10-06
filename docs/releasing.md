@@ -157,7 +157,8 @@ Sparkle.framework, not by launching Frost.
    OpenSSL (OpenSSL 3 is looked up: `$OPENSSL`, Homebrew's `openssl@3`, then `PATH`; the system's LibreSSL can't
    verify Ed25519), and writes `appcast.xml` and `release-notes.md`. The version bump stays uncommitted in
    `project.yml` and `Frost/Resources/Info.plist` (the script says so); at the end it prints how to publish.
-4. Optionally test the update in the VM (below).
+4. Walk all journeys in [`ux-journeys.md`](ux-journeys.md) on this build and add a line to its run log; fix
+   High findings before publishing. Optionally test the update in the VM (below).
 5. Publish, on branch `RELEASE_BRANCH` with `gh auth login` done:
 
    ```sh
