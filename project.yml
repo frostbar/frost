@@ -44,8 +44,8 @@ targets:
       properties:
         CFBundleName: Frost
         CFBundleDisplayName: Frost
-        CFBundleShortVersionString: "0.3.0"
-        CFBundleVersion: "5"
+        CFBundleShortVersionString: "0.3.1"
+        CFBundleVersion: "6"
         LSUIElement: true
         # Let Sparkle-provided UI (update windows etc.) use the user's system language even when Frost itself has no
         # localization for it (Frost ships English and Simplified Chinese).
