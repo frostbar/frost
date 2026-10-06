@@ -20,13 +20,17 @@ release notes on GitHub and in the in-app update window.
   "Grant Access" everywhere.
 - While a relaunch is pending, the welcome window shows it on the Screen Recording card and makes Relaunch the default
   button.
+- While a relaunch is pending, the Screen Recording note also offers **Open System Settings** next to **Relaunch**
+  (onboarding, About, the layout editor footer and the Frost Bar hint), so denying the system prompt no longer means
+  relaunching first to get back to the pane. In the Frost Bar the two actions share a second line under the sentence.
 
 ### Added
 - The Behavior tab's Accessibility notice has a Grant Access button, and the Frost icon's menu offers Grant Access…
   while Accessibility is missing.
 
 ### Fixed
-- The system permission prompt no longer lingers behind System Settings and reappears after you granted.
+- The system permission prompt no longer lingers behind System Settings and reappears after you granted. Frost
+  recognizes it by more than the one process name it uses today, so the pane is not opened on top of it either.
 - Clicking the Frost icon right after granting Accessibility opens the Frost Bar instead of expanding the menu bar.
 
 ## [0.3.0] - 2026-10-05

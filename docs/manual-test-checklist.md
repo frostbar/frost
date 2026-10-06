@@ -16,7 +16,10 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] Reset the first-launch state: `defaults delete dev.frost.Frost` (clears preferences, `hasCompletedOnboarding` and
   the seeded `NSStatusItem Preferred Position` values).
 - [ ] Remove Frost's Accessibility and Screen Recording grants in System Settings → Privacy & Security (or
-  `tccutil reset Accessibility dev.frost.Frost`, `tccutil reset ScreenCapture dev.frost.Frost`).
+  `tccutil reset Accessibility dev.frost.Frost`, `tccutil reset ScreenCapture dev.frost.Frost`). Removing a row with
+  "−" asks for the admin password ("Modify Settings"); the running Frost keeps reporting the permission it had until
+  it is relaunched (macOS decides ad hoc trust once per process), so relaunch it before checking what the app shows.
+  Frost re-adds itself to the Accessibility list (switch off) as soon as it uses the AX API again after the relaunch.
 - [ ] Logs: every "log `…`" below is checked in the unified log (Frost uses `os.Logger`, subsystem `dev.frost.Frost`;
   it no longer uses `NSLog`, because stderr is `/dev/null` when launchd starts it):
   `/usr/bin/log stream --info --style compact --predicate 'subsystem == "dev.frost.Frost"'`, or afterwards
@@ -46,6 +49,11 @@ For each item, record: environment (model / displays / macOS version) and result
   process). Never both. The card shows "Needs Relaunch" instead of the button, a note below says Frost must be relaunched, and
   **Relaunch** is the prominent default button (Return) while "Open Layout Editor" is not shown. The description
   mentions the purple recording dot.
+- [ ] Deny the system prompt (or close it): the note's **Open System Settings** link opens Privacy & Security →
+  Screen & System Audio Recording with Frost listed — one click back to the pane, without relaunching first. The same
+  link sits next to **Relaunch** on the About tab's Screen Recording row, in the layout editor's footer notice and in
+  the Frost Bar's hint (there the sentence and the two actions stack, since they don't fit side by side in a panel
+  that narrow). In English and Simplified Chinese, Light and Dark Mode, nothing truncates or overlaps.
 - [ ] Click the relaunch button: Frost quits and relaunches within about 1 second, the onboarding window reappears,
   and Screen Recording shows as granted.
 - [ ] Once Accessibility is granted: an "all set" message appears; the bottom buttons change to a done button plus an
@@ -58,9 +66,9 @@ For each item, record: environment (model / displays / macOS version) and result
   prompt / Accessibility pane directly (no onboarding window). Granting flips the row to "Granted" within about 1
   second.
 - [ ] Without Screen Recording, click the **About** tab's Screen Recording "grant" button: the Screen Recording pane
-  opens and the row changes to a relaunch note with a relaunch button. Turn Frost on, then either click the relaunch
-  button or choose System Settings' "Quit & Reopen": Frost comes back with the Settings window open on **About**,
-  Screen Recording granted. The same works from onboarding (onboarding reappears). An ordinary ⌘Q and a later launch
+  opens and the row changes to a relaunch note with an "open system settings" link and a relaunch button. Turn Frost
+  on, then either click the relaunch button or choose System Settings' "Quit & Reopen": Frost comes back with the
+  Settings window open on **About**, Screen Recording granted. The same works from onboarding (onboarding reappears). An ordinary ⌘Q and a later launch
   (more than a minute later, or without a pending request) reopen no window.
 
 ## 2. Main menu and shortcuts (Frost has no visible menu bar menu)
@@ -461,7 +469,7 @@ Evidence goes under `build/vm-shots/no-screen-recording/`.
 - [ ] Short text items (a seconds counter, a percentage) read in full on their tiles, in the Frost Bar and the layout
   editor.
 - [ ] A small "Grant Screen Recording to see real icons" row sits above the footer; clicking it closes the panel and
-  requests directly (no onboarding window; after a request it offers **Relaunch**); its close button hides it for good (also in the layout editor), `screenRecordingHintDismissed`.
+  requests directly (no onboarding window; after a request it offers **Relaunch** and **Open System Settings**); its close button hides it for good (also in the layout editor), `screenRecordingHintDismissed`.
 - [ ] Clicking a tile opens the item's menu / popover; right-click or Control-click opens its secondary menu; the item
   moves back afterwards.
 - [ ] The layout editor shows the same fallback tiles and the same hint in its footer; drags between sections work;
