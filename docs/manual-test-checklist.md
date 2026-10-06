@@ -34,7 +34,7 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] Click the **Grant Access** button on the Accessibility card (first time, `defaults delete dev.frost.Frost` and no
   TCC row): only the system prompt appears, nothing opens behind it; its "Open System Settings" button opens Privacy &
   Security → Accessibility with Frost listed. Once the switch is on, no stray prompt remains, also after a relaunch.
-  Later requests (the key `permissionAskedAccessibility` is set) open the pane directly without a prompt. After turning
+  A second click shows the prompt again (Accessibility prompts on every call). After turning
   the switch on in System Settings, the card turns into a green checkmark within
   about 1 second (the checkmark bounces once), without switching back to Frost.
 - [ ] The Accessibility card is tagged **Required** and the Screen Recording card **Optional**.
