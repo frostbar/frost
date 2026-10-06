@@ -85,17 +85,20 @@ struct OnboardingView: View {
                 VStack(spacing: 12) {
                     PermissionCard(symbol: "accessibility", tint: .blue, title: "Accessibility", tag: "Required",
                                    detail: "Used to move icons between sections and to click icons in the Frost Bar.",
-                                   isGranted: state.accessibility, grant: actions.grantAccessibility)
+                                   status: state.accessibility ? .granted : .notGranted,
+                                   grant: actions.grantAccessibility)
                     PermissionCard(symbol: "rectangle.dashed.badge.record", tint: .pink, title: "Screen Recording",
                                    tag: "Optional",
                                    detail: "Shows real images of icons. Without it, they appear as app icons.",
-                                   isGranted: state.screenRecording, grant: actions.grantScreenRecording)
+                                   status: state.screenRecording ? .granted
+                                       : state.needsRelaunch ? .needsRelaunch : .notGranted,
+                                   grant: actions.grantScreenRecording)
                 }
             }
 
             ZStack {
                 if state.needsRelaunch {
-                    RelaunchNotice(relaunch: actions.relaunch)
+                    RelaunchNotice()
                         .transition(.blurReplace.combined(with: .move(edge: .top)))
                 } else if state.isReady {
                     NextStepNotice()
@@ -148,7 +151,17 @@ struct OnboardingView: View {
                 .foregroundStyle(.secondary)
                 .labelStyle(.titleAndIcon)
             Spacer(minLength: 8)
-            if state.isReady {
+            if state.needsRelaunch {
+                // The next step is the relaunch, so it is the default button whatever else is ready.
+                Button(state.isReady ? "Done" : "Not Now", action: actions.dismiss)
+                    .buttonStyle(.glass)
+                    .controlSize(.large)
+                    .keyboardShortcut(.cancelAction)
+                Button("Relaunch", action: actions.relaunch)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .keyboardShortcut(.defaultAction)
+            } else if state.isReady {
                 Button("Done", action: actions.dismiss)
                     .buttonStyle(.glass)
                     .controlSize(.large)
@@ -178,8 +191,16 @@ private struct PermissionCard: View {
     /// "Required" / "Optional", shown next to the title.
     let tag: LocalizedStringKey
     let detail: LocalizedStringKey
-    let isGranted: Bool
+    enum Status {
+        case notGranted
+        /// Requested, but it takes effect only after a relaunch (Screen Recording).
+        case needsRelaunch
+        case granted
+    }
+
+    let status: Status
     let grant: () -> Void
+    private var isGranted: Bool { status == .granted }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -206,8 +227,13 @@ private struct PermissionCard: View {
                 if isGranted {
                     GrantedCheckmark()
                         .transition(.scale(scale: 0.4).combined(with: .opacity))
+                } else if status == .needsRelaunch {
+                    Label("Needs Relaunch", systemImage: "arrow.clockwise")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.orange)
+                        .transition(.blurReplace)
                 } else {
-                    Button("Grant", action: grant)
+                    Button("Grant Access", action: grant)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                         .transition(.blurReplace)
@@ -219,7 +245,8 @@ private struct PermissionCard: View {
         .padding(.horizontal, 18)
         .glassEffect(isGranted ? .regular.tint(.green.opacity(0.12)) : .regular, in: .rect(cornerRadius: 22))
         .accessibilityElement(children: .combine)
-        .accessibilityValue(isGranted ? Text("Granted") : Text("Not granted"))
+        .accessibilityValue(isGranted ? Text("Granted") : status == .needsRelaunch ? Text("Needs Relaunch")
+                                                                                  : Text("Not granted"))
     }
 }
 
@@ -240,8 +267,6 @@ private struct GrantedCheckmark: View {
 
 /// After requesting Screen Recording: Frost must be relaunched for it to take effect.
 private struct RelaunchNotice: View {
-    let relaunch: () -> Void
-
     var body: some View {
         HStack(spacing: 12) {
             SymbolBadge(symbol: "arrow.clockwise", tint: .orange, diameter: 32)
@@ -254,9 +279,6 @@ private struct RelaunchNotice: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Relaunch", action: relaunch)
-                .buttonStyle(.glass)
-                .tint(.orange)
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 16)

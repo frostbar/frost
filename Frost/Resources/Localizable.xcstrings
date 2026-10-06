@@ -737,6 +737,16 @@
         }
       }
     },
+    "Needs Relaunch" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要重新启动"
+          }
+        }
+      }
+    },
     "No Hidden Icons" : {
       "localizations" : {
         "zh-Hans" : {
