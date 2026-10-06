@@ -139,6 +139,11 @@ jobs:
             exit 1
           fi
 
+      # `.lazy` chains with closures (`map` / `compactMap` / `filter` / `flatMap`) may run a closure more than once per
+      # element; the script explains the rule and its `// lint: lazy-ok (<reason>)` marker. Same as `make lint`.
+      - name: No lazy sequence chains in Swift sources
+        run: scripts/lint/lazy-chains.sh
+
       - name: shellcheck
         run: |
           curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/shellcheck.tar.xz" \

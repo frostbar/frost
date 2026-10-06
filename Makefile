@@ -1,7 +1,7 @@
 DERIVED := build/DerivedData
 APP := $(DERIVED)/Build/Products/Debug/Frost.app
 
-.PHONY: gen build release ci-build install test-core run clean dist sparkle-public-key dmg-background vm-up vm-deploy vm-run vm-shot vm-logs vm-down
+.PHONY: gen build release ci-build install test-core lint run clean dist sparkle-public-key dmg-background vm-up vm-deploy vm-run vm-shot vm-logs vm-down
 
 gen:
 	xcodegen generate --quiet
@@ -45,6 +45,10 @@ install: release
 
 test-core:
 	cd Packages/FrostCore && swift test
+
+# The Swift source lint checks of CI's Lint job (.github/workflows/ci.yml): lazy sequence chains (see the script).
+lint:
+	scripts/lint/lazy-chains.sh
 
 run: build
 	-pkill -x Frost
