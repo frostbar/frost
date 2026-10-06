@@ -109,7 +109,7 @@ import Testing
 
     @Test func aPointerRestingOnTheItemDoesNotHoldItOutForLong() {
         let timing = ForwardLinger.Timing.standard
-        #expect(timing.idleCap <= .seconds(15))
+        #expect(timing.idleCap <= .seconds(10))
     }
 
     @Test func thePointerRegionIsTheItemFrameWithASmallMargin() {

@@ -152,7 +152,7 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] **The item lingers after its menu closes (user report: "after clicking a hidden icon via the Frost Bar, I can't
   right-click it in the menu bar")**: click a tile, then right-click the item in the menu bar: the item stays where it
   is and (on a second right click if the first one only closed the menu) its right-click menu opens there. With the
-  pointer resting on the item it stays out (up to 10 s without a click, log `linger ... over (idle)`); picking a menu
+  pointer resting on the item it stays out (up to 5 s without a click, log `linger ... over (idle)`); picking a menu
   entry or moving the pointer off the item (a few points of margin; elsewhere on the menu bar doesn't count) moves it
   back to its original slot about 0.75 s later (`over (pointer left)`), so the snowflake is back where it was and
   clicking its usual spot opens the Frost Bar, not the forwarded item's menu.

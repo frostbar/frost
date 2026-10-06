@@ -37,7 +37,7 @@ public struct ForwardLinger: Sendable {
             self.presentationCap = presentationCap
         }
 
-        public static let standard = Timing(leaveDelay: .milliseconds(750), idleCap: .seconds(10), openTimeout: .seconds(1),
+        public static let standard = Timing(leaveDelay: .milliseconds(750), idleCap: .seconds(5), openTimeout: .seconds(1),
                                             presentationCap: .seconds(60))
     }
 
