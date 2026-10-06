@@ -21,7 +21,7 @@ struct AboutView: View {
                     Divider()
                         .padding(.leading, SettingRow<EmptyView>.textInset)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", tint: .pink, title: String(localized: "Screen Recording"),
-                                  subtitle: String(localized: "Optional. Shows real images of icons in the Frost Bar and the layout editor; without it, they appear as app icons."),
+                                  subtitle: String(localized: "Optional. Shows real images of icons in the Frost Bar and the layout editor; without it, they appear as app icons. macOS shows a purple dot in the menu bar while Frost captures them."),
                                   status: permissions.screenRecording ? .granted
                                       : permissions.screenRecordingNeedsRelaunch ? .needsRelaunch : .notGranted) {
                         permissions.requestScreenRecording()

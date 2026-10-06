@@ -838,12 +838,12 @@
         }
       }
     },
-    "Optional. Shows real images of icons in the Frost Bar and the layout editor; without it, they appear as app icons." : {
+    "Optional. Shows real images of icons in the Frost Bar and the layout editor; without it, they appear as app icons. macOS shows a purple dot in the menu bar while Frost captures them." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可选。在 Frost Bar 与布局编辑器中显示图标的真实图像；未授权时，图标以所属应用的图标显示。"
+            "value" : "可选。在 Frost Bar 与布局编辑器中显示图标的真实图像；未授权时，图标以所属应用的图标显示。捕获图标时，macOS 会在菜单栏显示紫色圆点。"
           }
         }
       }
@@ -1051,12 +1051,12 @@
         }
       }
     },
-    "Shows real images of icons. Without it, they appear as app icons." : {
+    "Shows real images of icons. Without it, they appear as app icons. macOS shows a purple dot in the menu bar while Frost captures them." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示图标的真实图像。未授权时，图标以所属应用的图标显示。"
+            "value" : "显示图标的真实图像。未授权时，图标以所属应用的图标显示。捕获图标时，macOS 会在菜单栏显示紫色圆点。"
           }
         }
       }

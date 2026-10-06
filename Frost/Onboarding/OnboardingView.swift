@@ -89,7 +89,7 @@ struct OnboardingView: View {
                                    grant: actions.grantAccessibility)
                     PermissionCard(symbol: "rectangle.dashed.badge.record", tint: .pink, title: "Screen Recording",
                                    tag: "Optional",
-                                   detail: "Shows real images of icons. Without it, they appear as app icons.",
+                                   detail: "Shows real images of icons. Without it, they appear as app icons. macOS shows a purple dot in the menu bar while Frost captures them.",
                                    status: state.screenRecording ? .granted
                                        : state.needsRelaunch ? .needsRelaunch : .notGranted,
                                    grant: actions.grantScreenRecording)
