@@ -8,8 +8,8 @@
 ///   always listed whenever the user lands there.
 /// - Screen Recording (`CGRequestScreenCaptureAccess`) prompts only for the first request of a process, and only while
 ///   the permission has no entry; otherwise it is silent. A silent call means the app is already listed, so the pane
-///   is opened. Whether the prompt appeared is read from its window (`isPromptWindow`): wait up to `promptTimeout`
-///   for it, then open the pane.
+///   is opened. Whether the prompt appeared is read from the window list (`promptVisible(baseline:current:)`): wait up
+///   to `promptTimeout` for it, then open the pane.
 public enum PermissionRequest {
     /// How long to wait for the system prompt after the Screen Recording request before concluding it was silent.
     public static let promptTimeout: Duration = .seconds(2)
@@ -28,8 +28,15 @@ public enum PermissionRequest {
         return elapsed >= promptTimeout ? .openSettings : .keepWaiting
     }
 
-    /// The system's permission prompts are windows of this process ("Screen Recording" / "Accessibility Access").
+    /// Owner names the system's permission prompt has used. Measured in the VM (macOS 26): the prompt is a window of
+    /// `universalAccessAuthWarn` ("Screen Recording" / "Accessibility Access"). A window of one of these processes is
+    /// the prompt; `promptVisible(baseline:current:)` adds a fallback for a renamed process.
+    public static let promptOwnerNames: Set<String> = ["universalAccessAuthWarn"]
+
+    /// Whether the prompt is one of the windows of this owner (the name rule on its own; the fallback needs the
+    /// window list, see `promptVisible(baseline:current:)`).
     public static func isPromptWindow(ownerName: String?) -> Bool {
-        ownerName == "universalAccessAuthWarn"
+        guard let ownerName else { return false }
+        return promptOwnerNames.contains(ownerName)
     }
 }

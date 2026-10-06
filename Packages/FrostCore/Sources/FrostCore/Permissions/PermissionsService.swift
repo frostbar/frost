@@ -71,12 +71,15 @@ public final class PermissionsService {
     /// listed and the pane is opened directly (`PermissionRequest`).
     public func requestScreenRecording() {
         screenRecordingRequested = true
+        // The windows on screen right before the request: what appears afterwards is what the request caused
+        // (`PermissionRequest.promptVisible`).
+        let baseline = Self.windowSnapshots()
         _ = CGRequestScreenCaptureAccess()
         promptTask?.cancel()
         promptTask = Task { [weak self] in
             let start = ContinuousClock.now
             while !Task.isCancelled {
-                let visible = Self.isPermissionPromptOnScreen()
+                let visible = PermissionRequest.promptVisible(baseline: baseline, current: Self.windowSnapshots())
                 switch PermissionRequest.decide(elapsed: ContinuousClock.now - start, promptVisible: visible) {
                 case .promptShown: return
                 case .openSettings:
@@ -98,9 +101,23 @@ public final class PermissionsService {
 
     @ObservationIgnored private var promptTask: Task<Void, Never>?
 
-    private static func isPermissionPromptOnScreen() -> Bool {
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        return windows.contains { PermissionRequest.isPromptWindow(ownerName: $0[kCGWindowOwnerName as String] as? String) }
+    /// The on-screen windows, with each owner's executable resolved (the window list doesn't carry it): the raw
+    /// material of `PermissionRequest.promptVisible`.
+    private static func windowSnapshots() -> [WindowSnapshot] {
+        let infos = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        var paths: [pid_t: String?] = [:]
+        return infos.compactMap { info in
+            guard let rawPID = info[kCGWindowOwnerPID as String] as? Int else { return nil }
+            let pid = pid_t(rawPID)
+            let path: String?
+            if let known = paths[pid] {
+                path = known
+            } else {
+                path = NSRunningApplication(processIdentifier: pid)?.executableURL?.path
+                paths[pid] = path
+            }
+            return WindowSnapshot(windowInfo: info, ownerExecutablePath: path)
+        }
     }
 
     @ObservationIgnored private var pollers = 0
