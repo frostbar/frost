@@ -109,10 +109,11 @@ struct LayoutEditorContent: View {
         .padding(.bottom, 18)
     }
 
-    /// Footer: offers Screen Recording while tiles show app icons (until the user closes that), then explains the badge
-    /// when some items are off-screen, otherwise shows a tip.
+    /// Footer, one line each, never swapped in place: offers Screen Recording while tiles show app icons (until the user
+    /// closes that), notes the off-screen icons (once their count is stable, see `ObscuredNoteGate`), and always shows
+    /// the tip.
     @ViewBuilder private var footer: some View {
-        let offscreen = state.obscured.count
+        let offscreen = state.obscuredNoteCount
         VStack(spacing: 8) {
             if state.showsScreenRecordingHint {
                 ScreenRecordingNotice(needsRelaunch: state.permissions.screenRecordingNeedsRelaunch,
@@ -129,19 +130,18 @@ struct LayoutEditorContent: View {
                     Image(systemName: "eye.trianglebadge.exclamationmark")
                         .foregroundStyle(.orange)
                 }
-            } else {
-                Label {
-                    Text("You can also ⌘-drag icons right in the menu bar. Icons with a lock are fixed by the system.")
-                } icon: {
-                    Image(systemName: "lightbulb")
-                        .foregroundStyle(.yellow)
-                }
+                .transition(.opacity)
+            }
+            Label {
+                Text("You can also ⌘-drag icons right in the menu bar. Icons with a lock are fixed by the system.")
+            } icon: {
+                Image(systemName: "lightbulb")
+                    .foregroundStyle(.yellow)
             }
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .center)
-        .contentTransition(.opacity)
         // The error toast floats in the same spot: make room while it is shown.
         .opacity(state.errorMessage == nil ? 1 : 0)
         .animation(.snappy, value: offscreen)

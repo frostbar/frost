@@ -66,6 +66,11 @@ final class LayoutEditorModel {
     /// This activation has entered editing and the menu bar has settled (a full refresh before that would read a menu
     /// bar that is still rearranging).
     private var hasSettled = false
+    /// Holds back the footer's "icons are off-screen" note until the count is stable (see `ObscuredNoteGate`); fed by
+    /// every refresh.
+    @ObservationIgnored private var obscuredGate = ObscuredNoteGate()
+    /// The count the footer's note shows (0: no note).
+    private var obscuredNoteCount = 0
     /// Incremented on each activation; async completions compare it with their captured value to discard results
     /// from an earlier session.
     @ObservationIgnored private var session = 0
@@ -115,6 +120,8 @@ final class LayoutEditorModel {
     private func activate() {
         isActive = true
         hasSettled = false
+        obscuredGate.reset()
+        obscuredNoteCount = 0
         session += 1
         let permissions = model.permissions
         permissions.refresh()
@@ -279,6 +286,19 @@ final class LayoutEditorModel {
         }
     }
 
+    /// Items that still don't fit after the menu bar expanded for editing (behind the notch).
+    private func obscuredItems(in items: [MenuBarItem]) -> Set<CGWindowID> {
+        let displayBounds = model.scanner.menuBarDisplay?.frame ?? CGDisplayBounds(CGMainDisplayID())
+        return Set(items.filter { ItemMover.isObscured($0, displayBounds: displayBounds) }.map(\.windowID))
+    }
+
+    /// Feeds the footer note's gate with the current count (once per refresh), outside of view evaluation.
+    private func updateObscuredNote() {
+        let count = hasSettled ? obscuredItems(in: layout.values.flatMap { $0 }).count : 0
+        let shown = obscuredGate.update(rawCount: count, now: ProcessInfo.processInfo.systemUptime)
+        if shown != obscuredNoteCount { obscuredNoteCount = shown }
+    }
+
     var state: LayoutEditorState {
         let layout = layout
         let items = layout.values.flatMap { $0 }
@@ -294,15 +314,12 @@ final class LayoutEditorModel {
         }
         let uncaptured = items.filter { model.capturer.images[$0.windowID] == nil }
         let fallbackLabels = ItemFallbackAppearance.labels(for: uncaptured)
-        let displayBounds = model.scanner.menuBarDisplay?.frame ?? CGDisplayBounds(CGMainDisplayID())
-        let obscured = hasSettled
-            ? Set(items.filter { ItemMover.isObscured($0, displayBounds: displayBounds) }.map(\.windowID))
-            : []
+        let obscured = hasSettled ? obscuredItems(in: items) : []
         return LayoutEditorState(
             phase: phase, layout: layout, images: model.capturer.images, imageSizes: model.capturer.sizes,
             tones: model.capturer.tones, names: names, accessibilityLabels: labels, fallbackLabels: fallbackLabels,
             appIcons: icons, pending: pending,
-            obscured: obscured, errorMessage: errorMessage,
+            obscured: obscured, obscuredNoteCount: hasSettled ? obscuredNoteCount : 0, errorMessage: errorMessage,
             isRetrying: isActive && fullRefreshSession == session,
             permissions: .init(accessibility: model.permissions.accessibility,
                                screenRecording: model.permissions.screenRecording,
@@ -351,6 +368,7 @@ final class LayoutEditorModel {
     }
 
     private func commitLayout() {
+        updateObscuredNote()
         let reconciled = LayoutReconciler.reconcile(live: model.layout, previous: previous,
                                                     separatorsOnScreen: separatorsOnScreen)
         guard !reconciled.isEmpty, Self.ids(reconciled) != Self.ids(previous) else { return }
@@ -555,6 +573,9 @@ struct LayoutEditorState {
     /// Items that still don't fit after the menu bar expanded for editing (e.g. behind the notch). Empty until the
     /// menu bar has settled, so items that are merely pushed out while it expands never flash the "doesn't fit" badge.
     var obscured: Set<CGWindowID>
+    /// How many off-screen icons the footer's note mentions: `obscured.count` once it has been stable for a while, 0
+    /// while the note is hidden (a blinking icon must not make the footer flicker).
+    var obscuredNoteCount = 0
     var errorMessage: String?
     /// An automatic retry (full refresh) is in progress: shows progress when the menu bar can't be read or the
     /// separators can't be found.
