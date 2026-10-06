@@ -6,6 +6,12 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-06
+
+### Fixed
+- Frost 0.3.1 could crash at launch after updating from 0.3.0 while moving cached icon images over to their new names.
+  Relaunching got a bit further each time. 0.3.2 starts normally and keeps your layout.
+
 ## [0.3.1] - 2026-10-06
 
 ### Changed
