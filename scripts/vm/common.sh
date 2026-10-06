@@ -112,3 +112,33 @@ vm_vncdo() {
   hostport="$(sed -E 's#vnc://[^@]*@##; s#/$##' <<<"$url")"
   PYTHONWARNINGS=ignore "$VM_VENV/bin/vncdo" -s "${hostport%:*}::${hostport##*:}" -p "$pass" "$@"
 }
+
+# Install a Frost.app bundle from the host as the guest's $GUEST_APP (quits Frost first). tar (without AppleDouble
+# files) keeps symlinks and _CodeSignature intact, so the signature stays valid; checked in the guest afterwards.
+vm_install_app() {
+  local app="$1" name tar="/tmp/frost-install-$$.tar"
+  name="$(basename "$app")"
+  COPYFILE_DISABLE=1 tar -C "$(dirname "$app")" -cf "$tar" "$name"
+  vm_scp "$tar" ":$tar"
+  rm -f "$tar"
+  vm_ssh "pkill -x Frost; sleep 0.5; rm -rf '$GUEST_APP' /tmp/frost-install && mkdir /tmp/frost-install \
+    && tar -C /tmp/frost-install -xf '$tar' && rm -f '$tar' && mv '/tmp/frost-install/$name' '$GUEST_APP' \
+    && rm -rf /tmp/frost-install && { xattr -dr com.apple.quarantine '$GUEST_APP' 2>/dev/null; true; } \
+    && codesign --verify --deep --strict '$GUEST_APP'"
+}
+
+# Install Frost.app from a release DMG on the host as the guest's $GUEST_APP (quits Frost first): mounted in the guest
+# and copied with ditto, like a drag to Applications (the copy carries no quarantine attribute: scp doesn't add one).
+vm_install_dmg() {
+  local dmg="$1" remote="/tmp/frost-install-$$.dmg"
+  vm_scp "$dmg" ":$remote"
+  vm_ssh "pkill -x Frost; sleep 0.5; mnt=\$(mktemp -d) \
+    && hdiutil attach -quiet -nobrowse -readonly -noautoopen -mountpoint \"\$mnt\" '$remote' || exit 1; \
+    test -d \"\$mnt/Frost.app\" && rm -rf '$GUEST_APP' && ditto \"\$mnt/Frost.app\" '$GUEST_APP'; rc=\$?; \
+    hdiutil detach -quiet \"\$mnt\"; rm -f '$remote'; test \$rc = 0 && codesign --verify --deep --strict '$GUEST_APP'"
+}
+
+# The designated requirement of the guest's $GUEST_APP (what TCC matches its grants against).
+vm_designated_requirement() {
+  vm_ssh "codesign -d -r- '$GUEST_APP' 2>&1 | sed -n 's/^designated => //p'"
+}

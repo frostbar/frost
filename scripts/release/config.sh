@@ -71,5 +71,10 @@ SPARKLE_KEY_FILE="${SPARKLE_KEY_FILE:-}"
 DERIVED_DATA="$FROST_ROOT/build/DerivedData"
 SPARKLE_BIN="$DERIVED_DATA/SourcePackages/artifacts/sparkle/Sparkle/bin"
 RELEASE_ROOT="$FROST_ROOT/build/release"
+# The VM upgrade test (scripts/vm/vm-upgrade-test.sh, `make vm-upgrade-test`) keeps the downloaded releases and each
+# run's evidence here, and writes a pass marker per tested release DMG: release.sh --publish refuses to publish unless
+# the marker matches the DMG it built and the current source (docs/releasing.md, "Making a release").
+UPGRADE_TEST_DIR="$FROST_ROOT/build/upgrade-test"
+UPGRADE_TEST_MARKERS="$UPGRADE_TEST_DIR/passed"
 # dmgbuild runs through uv (brew install uv), at a pinned version.
 DMGBUILD=(uvx --quiet --from "dmgbuild==1.6.7" dmgbuild)

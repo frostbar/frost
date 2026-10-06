@@ -199,6 +199,13 @@ before. When you fix a finding, add it to "Watch for" so the next run checks it.
 
 **Start:** the previous release installed, with a layout arranged.
 
+Automated by `make vm-upgrade-test` ([`testing-vm.md`](testing-vm.md), "Upgrade test"): it runs the previous release
+on a seeded layout with FakeItems until it has stored its state, installs the build over it and checks that it keeps
+running without a crash, keeps every icon in its section, keeps the settings, migrates the cached images, doesn't
+re-key remembered sections after the first minute, and opens no window by itself. Releases can't be published without
+it (`releasing.md`, "Making a release"). Walk the steps below by hand for what it doesn't cover: the Sparkle path, the
+look of the Frost Bar, prompts.
+
 1. Install the new build over it: no permission is asked for again, onboarding doesn't reappear, and the layout and
    settings are kept.
 2. If the Sparkle path can be exercised (see `releasing.md`, "Testing an update in the VM"), update through it

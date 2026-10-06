@@ -1,7 +1,7 @@
 DERIVED := build/DerivedData
 APP := $(DERIVED)/Build/Products/Debug/Frost.app
 
-.PHONY: gen build release ci-build install test-core lint run clean dist sparkle-public-key dmg-background vm-up vm-deploy vm-run vm-shot vm-logs vm-down
+.PHONY: gen build release ci-build install test-core lint run clean dist sparkle-public-key dmg-background vm-up vm-deploy vm-run vm-shot vm-logs vm-down vm-upgrade-test
 
 gen:
 	xcodegen generate --quiet
@@ -91,3 +91,10 @@ vm-logs:
 
 vm-down:
 	scripts/vm/vm-down.sh
+
+# Upgrade test: the previous release builds up real state, then the build under test runs on top of it
+# (docs/testing-vm.md, "Upgrade test"). BUILD: dev (default, make build), a DMG, a Frost.app or a release tag;
+# PREVIOUS: the release to upgrade from (default: the newest one older than BUILD).
+#   make vm-upgrade-test [PREVIOUS=v0.3.0] [BUILD=build/release/0.3.2/Frost-0.3.2.dmg]
+vm-upgrade-test:
+	scripts/vm/vm-upgrade-test.sh $(if $(PREVIOUS),--previous $(PREVIOUS)) $(if $(BUILD),--build $(BUILD))

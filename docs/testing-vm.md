@@ -21,6 +21,7 @@ make vm-run FROST_ENV="FROST_X=1 OTHER=2"
 make vm-shot SHOT=/tmp/a.png     # guest screen -> host PNG (default build/vm-shots/shot-<ts>.png)
 make vm-logs                     # stdout/stderr + unified log of the Frost process
 make vm-down                     # shut the VM down
+make vm-upgrade-test             # previous release's real data -> the current build over it (see "Upgrade test")
 ```
 
 Scripts (all in `scripts/vm/`, each has a usage header):
@@ -37,6 +38,8 @@ Scripts (all in `scripts/vm/`, each has a usage header):
 | `vm-fake-items.sh deploy\|launch [A\|B] [extra] [polite\|net\|live]\|quit\|reset\|log` | build / install / run the FakeItems test apps (`Tools/FakeItems`): `dev.frost.FakeItems` (9 items: menus, 2 popovers, a no-op, the ticking `FIClock`) and `dev.frost.FakeItemsB` (2 items); `extra` adds N more text items; `net` makes `FIClock` show network-speed-like text whose width changes every second (like a network-speed item); `live` adds `FILiveHelp` / `FILiveDesc` (a number in the AX help / description that changes every second) and `FIBlink` (hidden 4 s out of every 20 s), for identity stability tests; every click / menu / popover is logged to guest `/tmp/fakeitems.log` |
 | `vm-logs.sh [10m\|1h\|-f]` | `/tmp/frost-stdout.log` plus `log show --info --predicate 'subsystem == "dev.frost.Frost"'`; `-f` streams |
 | `vm-grant-tcc.sh [--grant\|--revoke\|--show] [accessibility\|screen\|post-event]...` | write/remove Frost's rows in the guest's system TCC.db (all three services by default; e.g. `--revoke screen` leaves Accessibility only, to test Frost without Screen Recording; relaunch Frost afterwards) |
+| `vm-upgrade-test.sh [--previous TAG] [--build dev\|DMG\|app\|TAG] [--no-build]` | the upgrade test (see "Upgrade test"); `make vm-upgrade-test [PREVIOUS=…] [BUILD=…]` |
+| `vm-crash-check.sh [--wait s] [--process name] SINCE` | the crash reports a process (default Frost) left in the guest since `SINCE` (guest clock: epoch seconds from `vm-exec.sh date +%s`, or `"YYYY-MM-DD HH:MM:SS"`), with exception, termination reason and the crashed thread's top frames; exit 1 if there is one. `--wait` waits that long for ReportCrash to write one |
 | `vm-down.sh` | `tart stop` (graceful, forced after 60 s) |
 
 Environment overrides: `FROST_VM` (VM name, default `frost-test`), `FROST_VM_USER` /
@@ -120,6 +123,8 @@ sticks. Alternatively, disable SIP once with `tart run --recovery frost-test`, t
 | `guest-cursor-probe.swift hide [--background] \| trace s [file] \| forward tile left\|right file` | pointer facts: whether an inactive process can hide the pointer (with / without `SetsCursorInBackground`; PNGs in `/tmp/cursor-hide-*.png`); a 10 ms trace of the pointer position; a scripted Frost Bar forward (open, rest on the tile, click, Esc, move away, wait for the move back) with a 5 ms pointer trace and event markers. Pair it with `screencapture -v -C -x -V 12 out.mov` to see whether the pointer was visible |
 | `guest-menubar-probe.swift seconds out` | a 10 ms log of Frost's freeze-frame windows (whole bar or not), drag-image windows (layer 500), the pointer and the status item order, written whenever one changes; for checking the background capture of items behind the notch against a recording |
 | `guest-interrupt.swift x y delayMs holdMs [timeout] [right]` | waits for the background capture's whole-bar freeze frame, then presses a real HID mouse button at (x, y) for `holdMs` (a click on the frozen snowflake, a button held on the desktop) |
+| `guest-sections.swift [--json]` | each status item's Frost section (always-hidden / hidden / visible) from the menu bar's geometry alone (order relative to Frost's three windows, found by title), so it compares any two Frost versions; `--json` adds Frost's control frames and its open normal windows. Used by the upgrade test |
+| `guest-frost-state.py` | Frost's persisted state as JSON: the image cache entries (key, title, PNG present), `itemTitles.v1`, the remembered sections, the seen icons and the short defaults. Used by the upgrade test |
 | `set-display-profile.swift [icc \| --reset]` | assign a ColorSync profile to the guest display (e.g. the host's "Color LCD", for wide-gamut freeze-frame checks) or reset it |
 
 VNC key mapping (Apple's VNC server): VNC `alt` = ⌘, `meta` = ⌥, `super` = nothing.
@@ -140,6 +145,81 @@ them out. Pass them with `make vm-run FROST_ENV="NAME=value"`.
 | `FROST_TEST_FRAME_PROBE=1` | `FrameProbe`: frame timing of settings tab switches, the Frost Bar's opens and the launch warm-up; the distributed notification `dev.frost.Frost.frameProbe` (object = label) starts an idle baseline (see "Verification techniques") |
 | `FROST_TEST_OBSCURED_RESTORE_PAUSE_MS=<ms>` | the background capture of items behind the notch pauses that long between the capture and the move back, so `guest-interrupt` can reliably hold a button while the item sits right of the Frost icon |
 | `FROST_LIVE_REFRESH_TRACE=1` | logs one timing line per live refresh round (not just the first) and items whose frame changed around a strip capture |
+
+## Upgrade test
+
+`make vm-upgrade-test` starts a build on top of **real data written by the previous release**, the path users take
+when they update. (0.3.1 crashed at launch for users coming from 0.3.0 while migrating cached icon images; every VM
+check before it had run on data written by the then-current build.)
+
+```sh
+make vm-upgrade-test                                       # newest older release -> make build (Debug)
+make vm-upgrade-test PREVIOUS=v0.3.0                       # from a given release
+make vm-upgrade-test BUILD=build/release/0.3.2/Frost-0.3.2.dmg   # a release candidate (required before publishing)
+make vm-upgrade-test BUILD=v0.3.1                          # a published release
+scripts/vm/vm-upgrade-test.sh --no-build                   # the existing Debug build; --help for the durations
+```
+
+It takes about four minutes plus the build, and exits 0 (passed), 1 (the build under test failed a check) or 2 (the
+test couldn't run: VM, download, or the previous release didn't reach the seeded state).
+
+1. **Build under test**: `dev` builds with `make build`; a DMG or a release tag (downloaded once with
+   `gh release download` to `build/upgrade-test/releases/<tag>/` and checked against GitHub's digest) is mounted on
+   the host to read its version. **Previous release**: `PREVIOUS`, else the newest published release (no drafts or
+   prereleases) whose version is lower than the build under test's.
+2. **Clean guest state**: quits Frost and FakeItems, deletes `dev.frost.Frost`'s defaults and
+   `~/Library/Caches/dev.frost.Frost`, and FakeItems' saved positions.
+3. **Seeding the layout without the UI**: release builds have no test hooks, and the old version's layout editor would
+   need fragile drags, so the layout is written as `NSStatusItem Preferred Position` values into Frost's and
+   FakeItems' defaults before anything launches (smaller is further right, `macos-behavior.md`): FIMenuA, FIStar and
+   FBTwo visible; FIWide, FIPopover, FIPercent, FIBolt, FIClock, FIDual, FIExtra0, FIExtra1, FILiveHelp, FILiveDesc and
+   FBLeaf hidden; FINoop, FIBeta, FIExtra2 and FIBlink always hidden. Frost's own positions are written too (so it
+   doesn't seed its first-run placement), plus `hasCompletedOnboarding`, `displayMode = frostBar` (the VM has no
+   notch) and `SUEnableAutomaticChecks = false` (the previous release would offer an update). FakeItems runs with
+   `extra 3` and `live`: digits in AX descriptions (FIExtra0…2) and live numbers (FILiveHelp / FILiveDesc) are what
+   changed identity keys between versions, and FIBlink is re-added at the far left every 20 s.
+4. **Previous release**: installed from its DMG, granted (below), launched next to FakeItems. After 15 s the
+   snowflake is clicked through VNC (input into the guest only), the Frost Bar stays open 8 s so live refresh captures
+   the Hidden items into the disk cache, and is closed again. At 60 s the test records the layout
+   (`guest-sections.swift`), Frost's stored state (`guest-frost-state.py`) and its log, checks that the seeded layout
+   is in place, that it remembered sections and cached images, and that it didn't crash, then quits it.
+5. **Build under test**: installed over it (a DMG like a drag to Applications, `make build`'s app like
+   `vm-deploy.sh`) and launched; after 15 s the Frost Bar is opened once the same way, and it runs for 105 s in total.
+6. **Checks** (each prints `ok` or `FAIL`):
+   - still running as the same process, and no crash report since its launch (`vm-crash-check.sh`); a crash prints the
+     report's exception and crashed thread;
+   - every item in the same section as under the previous release (retried for 30 s to ride out a re-added FIBlink
+     or an item mid-move), matched by window title, which is the same in every version;
+   - the cache migrated: for every test item the previous release had an image of (matched to its new identity key
+     through `itemTitles.v1`), an image exists under the new key, and none is left under an old key that changed. The
+     only exception is FILiveHelp / FILiveDesc: an image cached under a key with a live number can only be moved while
+     the item shows that number again, so a stale entry is expected and counted (the item is captured again under
+     its new key);
+   - no "moved N remembered section(s)" after the first 60 s (identity churn; 0.3.0 itself logs it every 15–20 s
+     because of the live items);
+   - the Frost Bar opened and refreshed its images (Accessibility and Screen Recording in effect after the upgrade);
+   - `displayMode`, `hasCompletedOnboarding` and Frost's Preferred Positions unchanged, and no Frost window open by
+     itself (onboarding didn't reappear).
+7. **Result**: a summary; the evidence of every run stays in `build/upgrade-test/runs/<time>/` (`output.txt`,
+   `checks.txt`, `old-` / `new-sections.json`, `-state.json`, `-log.txt`, `summary.txt`). A passing **DMG** writes the
+   marker `build/upgrade-test/passed/<version>-<build>.txt` (version, build, DMG SHA-256, CDHash, previous release, and
+   the commit and source identity from `build-info.txt` next to the DMG, which `release.sh` writes) that
+   `release.sh --publish` requires (`releasing.md`, "Making a release").
+
+**Permissions, release vs. dev builds.** TCC keeps one row per service and app, holding the code requirement it was
+granted to. Releases are Developer ID signed (designated requirement: Apple's anchor and the Team ID); `make build` is
+signed with "Frost Local Signing" (requirement: that certificate's hash). `vm-grant-tcc.sh` compiles the row's
+`csreq` from the app installed at that moment, so the test grants after installing the previous release, and again
+after installing the build under test **only when the designated requirement differs** (always for a dev build, as on
+a user's Mac where a different signature means asking again). A Developer ID release candidate after a Developer ID
+release keeps the previous release's rows untouched, so the test also shows that an update keeps its permissions;
+the "Frost Bar refreshed its images" check fails if it doesn't.
+
+The test leaves the build under test running with FakeItems; after testing a DMG, `make vm-deploy` puts the Debug build
+back. It doesn't cover the Sparkle update path (see `releasing.md`, "Testing an update in the VM"), Gatekeeper's
+first-launch prompt for a downloaded copy (the copy isn't quarantined), the look of the Frost Bar, or data the
+previous release only writes after user actions the test doesn't make (layout editor drops, ⌘-drags, items behind a
+notch).
 
 ## Notes
 

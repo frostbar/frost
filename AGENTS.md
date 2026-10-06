@@ -23,6 +23,7 @@ make build                         # xcodegen generates the project + xcodebuild
 make ci-build                      # unsigned universal Release build, the same command CI runs
 make lint                          # Swift source lint checks of CI's Lint job (lazy sequence chains)
 make vm-deploy && make vm-run      # deploy and run in the test VM (see below)
+make vm-upgrade-test               # previous release's real data, then this build over it (VM); required for releases
 scripts/release/release.sh 0.2.0   # package a release locally (DMG + appcast) without publishing; see docs/releasing.md
 ```
 
