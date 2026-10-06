@@ -317,6 +317,28 @@ Then drag Frost to Applications and open it: macOS shows only the usual "downloa
 with no trip to Privacy & Security. For the stapled ticket, repeat with the network disconnected before opening the
 DMG. (`stapler validate` on the app inside reports no ticket; that is expected, only the DMG is stapled.)
 
+## Commit signing
+
+Commits to the public repository are signed with an SSH key so GitHub shows them as "Verified". The key is used only
+for signing: on GitHub it is registered as a signing key, not an authentication key. The setup is per clone
+(`.git/config`; worktrees share it), so agents' commits and the release script's version-bump commit are signed too:
+
+```sh
+ssh-keygen -t ed25519 -N "" -C "frost commit signing" -f ~/.ssh/frost_signing_ed25519
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/frost_signing_ed25519.pub
+git config commit.gpgsign true
+# Local verification (git log --show-signature):
+echo "$(git config user.email) $(cat ~/.ssh/frost_signing_ed25519.pub)" >> ~/.config/git/allowed_signers
+git config gpg.ssh.allowedSignersFile ~/.config/git/allowed_signers
+# Register the public key on GitHub (needs the admin:ssh_signing_key scope):
+gh auth refresh -h github.com -s admin:ssh_signing_key
+gh ssh-key add ~/.ssh/frost_signing_ed25519.pub --type signing --title "Frost commit signing"
+```
+
+The key has no passphrase, so signing never waits for input. Tags are not signed: `tag.gpgsign` would make the release
+script's `git tag` wait for a message.
+
 ## Repository protection
 
 `frostbar/frost` uses two repository rulesets (Settings → Rules → Rulesets):
