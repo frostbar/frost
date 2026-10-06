@@ -332,8 +332,9 @@ For each item, record: environment (model / displays / macOS version) and result
   highlighted), the grouped Behavior and About forms, the glass bands of the layout editor and button hover / press
   effects look in Light and Dark Mode and on different wallpapers. The window background is the standard opaque one:
   a colorful wallpaper never tints it.
-- [ ] The window's height follows the selected tab (Behavior and About are as tall as their content, with no large
-  empty area; Layout has its own height). Switching tabs cross-fades the content (about 0.2 s) while the window
+- [ ] The window's height follows the selected tab (all three tabs are as tall as their content, with no large empty
+  area; the Layout tab grows and shrinks when the Screen Recording notice appears or is closed, without the section
+  bands moving). Switching tabs cross-fades the content (about 0.2 s) while the window
   animates to the new height with its top edge and the toolbar staying put: no flicker, no content jump, no layout
   pop, no stutter, also on the first visit to each tab and when clicking tabs in quick succession (the last clicked
   tab ends up shown cleanly). A notice appearing in a tab (Behavior's Accessibility notice) grows the window too. With System Settings → Accessibility → Display → Reduce motion on, switching is
@@ -350,8 +351,9 @@ For each item, record: environment (model / displays / macOS version) and result
   **Launch at login** work; an inline error appears if enabling launch at login fails. Switching the display mode
   changes its one-line explanation instantly: the row keeps its height and the rows below don't move; no overlapping
   text.
-- [ ] About tab: the real app icon (not a symbol), "Frost" and the version; **Updates** (automatic checks, **Check for
-  Updates…**) and **Permissions** (Accessibility and Screen Recording with Granted / Grant Access / Open System
+- [ ] About tab: the real app icon (not a symbol), "Frost" and the version; **Updates** (automatic checks; a row
+  "Last checked: today at 15:58" / "Never checked" with **Check for Updates…** trailing, updating after a check) and
+  **Permissions** (Accessibility and Screen Recording with Granted / Grant Access / Open System
   Settings + Relaunch) in grouped sections; nothing truncates in zh-Hans.
 - [ ] App icon: the icon is crisp in Finder, the About tab, Login Items and the System Settings privacy lists; on
   macOS 26 it is not placed inside a gray rounded "container" (the asset catalog icon matches the system icon shape).

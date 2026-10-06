@@ -9,7 +9,8 @@ release notes on GitHub and in the in-app update window.
 ### Changed
 - Redesigned Settings: Behavior and About use grouped sections like System Settings on a standard window background,
   with shorter descriptions and no per-row icons. The window's height follows each tab, animating when you switch, and
-  About shows the app icon. Update settings moved from Behavior to About.
+  About shows the app icon. Update settings moved from Behavior to About, with the time of the last check next to
+  **Check for Updates…**. The Layout tab no longer leaves a blank gap above its footer.
 
 ## [0.3.2] - 2026-10-06
 
