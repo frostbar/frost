@@ -817,6 +817,16 @@
         }
       }
     },
+    "Open System Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开系统设置"
+          }
+        }
+      }
+    },
     "Opens System Settings" : {
       "localizations" : {
         "zh-Hans" : {

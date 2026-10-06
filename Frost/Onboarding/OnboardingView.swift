@@ -27,6 +27,8 @@ struct OnboardingState: Equatable {
 struct OnboardingActions {
     var grantAccessibility: @MainActor () -> Void
     var grantScreenRecording: @MainActor () -> Void
+    /// Opens System Settings' Screen Recording pane (shown while a relaunch is pending, next to Relaunch).
+    var openScreenRecordingSettings: @MainActor () -> Void
     var relaunch: @MainActor () -> Void
     /// Closes onboarding (Not Now / Done).
     var dismiss: @MainActor () -> Void
@@ -98,7 +100,7 @@ struct OnboardingView: View {
 
             ZStack {
                 if state.needsRelaunch {
-                    RelaunchNotice()
+                    RelaunchNotice(openSettings: actions.openScreenRecordingSettings)
                         .transition(.blurReplace.combined(with: .move(edge: .top)))
                 } else if state.isReady {
                     NextStepNotice()
@@ -265,8 +267,12 @@ private struct GrantedCheckmark: View {
     }
 }
 
-/// After requesting Screen Recording: Frost must be relaunched for it to take effect.
+/// After requesting Screen Recording: Frost must be relaunched for it to take effect. A user who denied the prompt
+/// (or closed it without flipping the switch) still has to turn it on first, so the card also opens the pane — the
+/// footer's Relaunch stays the primary action.
 private struct RelaunchNotice: View {
+    let openSettings: () -> Void
+
     var body: some View {
         HStack(spacing: 12) {
             SymbolBadge(symbol: "arrow.clockwise", tint: .orange, diameter: 32)
@@ -277,6 +283,9 @@ private struct RelaunchNotice: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Button("Open System Settings", action: openSettings)
+                    .buttonStyle(.link)
+                    .font(.footnote)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

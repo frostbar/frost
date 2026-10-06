@@ -15,17 +15,16 @@ struct AboutView: View {
                 GlassCard {
                     PermissionRow(symbol: "accessibility", tint: .blue, title: String(localized: "Accessibility"),
                                   subtitle: String(localized: "Required. Used to move icons between sections and to click icons in the Frost Bar."),
-                                  status: permissions.accessibility ? .granted : .notGranted) {
-                        permissions.requestAccessibility()
-                    }
+                                  status: permissions.accessibility ? .granted : .notGranted,
+                                  grant: { permissions.requestAccessibility() })
                     Divider()
                         .padding(.leading, SettingRow<EmptyView>.textInset)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", tint: .pink, title: String(localized: "Screen Recording"),
                                   subtitle: String(localized: "Optional. Shows real images of icons in the Frost Bar and the layout editor; without it, they appear as app icons. macOS shows a purple dot in the menu bar while Frost captures them."),
                                   status: permissions.screenRecording ? .granted
-                                      : permissions.screenRecordingNeedsRelaunch ? .needsRelaunch : .notGranted) {
-                        permissions.requestScreenRecording()
-                    }
+                                      : permissions.screenRecordingNeedsRelaunch ? .needsRelaunch : .notGranted,
+                                  grant: { permissions.requestScreenRecording() },
+                                  openSettings: { permissions.openScreenRecordingSettings() })
                 }
 
                 Text("Hiding and showing icons doesn’t require any permissions.")
@@ -88,6 +87,8 @@ private struct PermissionRow: View {
     let subtitle: String
     let status: Status
     let grant: () -> Void
+    /// Opens System Settings' pane for this permission (only used while a relaunch is pending).
+    var openSettings: () -> Void = {}
 
     var body: some View {
         SettingRow(symbol: symbol, tint: tint, title: title,
@@ -101,9 +102,15 @@ private struct PermissionRow: View {
                     .font(.callout.weight(.medium))
                     .transition(.blurReplace)
             case .needsRelaunch:
-                Button("Relaunch") { AppRelauncher.relaunch() }
-                    .buttonStyle(.borderedProminent)
-                    .transition(.blurReplace)
+                // A user who denied the prompt (or closed it) still has to flip the switch first; this gets them to
+                // the pane without giving up the relaunch, which stays the primary action.
+                HStack(spacing: 8) {
+                    Button("Open System Settings", action: openSettings)
+                    Button("Relaunch") { AppRelauncher.relaunch() }
+                        .buttonStyle(.borderedProminent)
+                }
+                .fixedSize()
+                .transition(.blurReplace)
             case .notGranted:
                 Button("Grant Access", action: grant)
                     .buttonStyle(.borderedProminent)

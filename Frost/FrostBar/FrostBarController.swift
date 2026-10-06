@@ -343,6 +343,10 @@ final class FrostBarController {
                 self?.close(animated: false, reason: "granting Screen Recording")
                 self?.app.permissions.requestScreenRecording()
             },
+            openScreenRecordingSettings: { [weak self] in
+                self?.close(animated: false, reason: "opening System Settings")
+                self?.app.permissions.openScreenRecordingSettings()
+            },
             relaunch: { AppRelauncher.relaunch() },
             openSettings: { [weak self] in
                 self?.close(animated: false, reason: "settings opened")

@@ -80,13 +80,20 @@ public final class PermissionsService {
                 switch PermissionRequest.decide(elapsed: ContinuousClock.now - start, promptVisible: visible) {
                 case .promptShown: return
                 case .openSettings:
-                    self?.openSettings(anchor: "Privacy_ScreenCapture")
+                    self?.open(PrivacySettingsPane.screenRecording)
                     return
                 case .keepWaiting:
                     do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
                 }
             }
         }
+    }
+
+    /// Opens System Settings' Screen Recording pane (the row the user flips). Offered next to Relaunch while a
+    /// relaunch is pending: a user who denied the prompt or closed it can get back to the pane in one click, without
+    /// giving up the relaunch first (`screenRecordingNeedsRelaunch`).
+    public func openScreenRecordingSettings() {
+        open(PrivacySettingsPane.screenRecording)
     }
 
     @ObservationIgnored private var promptTask: Task<Void, Never>?
@@ -118,9 +125,8 @@ public final class PermissionsService {
         pollTask = nil
     }
 
-    private func openSettings(anchor: String) {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
-            NSWorkspace.shared.open(url)
-        }
+    private func open(_ pane: PrivacySettingsPane) {
+        guard let url = pane.url else { return }
+        NSWorkspace.shared.open(url)
     }
 }

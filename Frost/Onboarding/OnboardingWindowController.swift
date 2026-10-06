@@ -41,6 +41,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         let actions = OnboardingActions(
             grantAccessibility: { [weak self] in self?.model.permissions.requestAccessibility() },
             grantScreenRecording: { [weak self] in self?.model.permissions.requestScreenRecording() },
+            openScreenRecordingSettings: { [weak self] in self?.model.permissions.openScreenRecordingSettings() },
             relaunch: { AppRelauncher.relaunch() },
             dismiss: { [weak self] in self?.window.close() },
             openLayoutEditor: { [weak self] in

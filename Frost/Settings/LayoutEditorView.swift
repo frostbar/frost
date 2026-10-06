@@ -12,6 +12,7 @@ struct LayoutEditorView: View {
             drop: { id, section, index in Task { await editor.drop(id, into: section, at: index) } },
             grantAccessibility: { editor.grantAccessibility() },
             grantScreenRecording: { editor.grantScreenRecording() },
+            openScreenRecordingSettings: { editor.openScreenRecordingSettings() },
             relaunch: { AppRelauncher.relaunch() },
             dismissScreenRecordingHint: { editor.dismissScreenRecordingHint() }))
     }
@@ -111,7 +112,9 @@ struct LayoutEditorContent: View {
         VStack(spacing: 8) {
             if state.showsScreenRecordingHint {
                 ScreenRecordingNotice(needsRelaunch: state.permissions.screenRecordingNeedsRelaunch,
-                                      grant: actions.grantScreenRecording, relaunch: actions.relaunch,
+                                      grant: actions.grantScreenRecording,
+                                      openSettings: actions.openScreenRecordingSettings,
+                                      relaunch: actions.relaunch,
                                       dismiss: actions.dismissScreenRecordingHint)
                     .transition(.opacity)
             }
@@ -695,6 +698,7 @@ private struct PermissionPlaceholder: View {
 private struct ScreenRecordingNotice: View {
     let needsRelaunch: Bool
     let grant: () -> Void
+    let openSettings: () -> Void
     let relaunch: () -> Void
     let dismiss: () -> Void
 
@@ -707,6 +711,10 @@ private struct ScreenRecordingNotice: View {
                     Image(systemName: "arrow.clockwise")
                         .foregroundStyle(.orange)
                 }
+                // For a user who denied or closed the prompt: the pane in one click, without giving up the relaunch.
+                Button("Open System Settings", action: openSettings)
+                    .buttonStyle(.link)
+                    .foregroundStyle(.tint)
                 Button("Relaunch", action: relaunch)
                     .buttonStyle(.link)
                     // The footer's secondary style would make it look like plain text.

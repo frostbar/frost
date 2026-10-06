@@ -517,6 +517,11 @@ final class LayoutEditorModel {
         model.permissions.requestScreenRecording()
     }
 
+    /// The pane the user flips the switch in; next to Relaunch, so denying the prompt isn't a dead end.
+    func openScreenRecordingSettings() {
+        model.permissions.openScreenRecordingSettings()
+    }
+
     func dismissScreenRecordingHint() {
         model.preferences.screenRecordingHintDismissed = true
     }
@@ -564,6 +569,8 @@ struct LayoutEditorActions {
     var drop: @MainActor (_ windowID: CGWindowID, _ section: MenuBarSection, _ index: Int) -> Void
     var grantAccessibility: @MainActor () -> Void
     var grantScreenRecording: @MainActor () -> Void
+    /// Opens System Settings' Screen Recording pane (shown next to Relaunch while a relaunch is pending).
+    var openScreenRecordingSettings: @MainActor () -> Void = {}
     var relaunch: @MainActor () -> Void
     var dismissScreenRecordingHint: @MainActor () -> Void = {}
 }

@@ -72,6 +72,8 @@ struct FrostBarActions {
     var refresh: @MainActor () -> Void
     var grantAccessibility: @MainActor () -> Void
     var grantScreenRecording: @MainActor () -> Void
+    /// Opens System Settings' Screen Recording pane (shown next to Relaunch while a relaunch is pending).
+    var openScreenRecordingSettings: @MainActor () -> Void = {}
     var relaunch: @MainActor () -> Void
     var openSettings: @MainActor () -> Void
     /// The user closed the Screen Recording hint.
@@ -108,6 +110,13 @@ enum FrostBarMetrics {
     static let footerHeight: CGFloat = 30
     /// Height of the Screen Recording hint row above the footer (when shown).
     static let hintHeight: CGFloat = 40
+    /// While a relaunch is pending the hint stacks its two actions under the text (they don't fit beside it in a
+    /// panel this narrow), so it needs a second line.
+    static let relaunchHintHeight: CGFloat = 58
+    /// Height of the hint row in this state (`hintHeight` when it is a single line).
+    static func hintHeight(_ state: FrostBarState) -> CGFloat {
+        state.screenRecordingNeedsRelaunch ? relaunchHintHeight : hintHeight
+    }
     /// Content width of non-icon states (empty, no permissions, ...).
     static let statusWidth: CGFloat = 232
     /// Showing / hiding the Always Hidden section (⌥-click while open): a short fade and height change. The window
@@ -158,7 +167,7 @@ enum FrostBarMetrics {
 
     /// Visible height of the grids: scrolls when taller than the usable screen height.
     static func gridsViewportHeight(_ state: FrostBarState) -> CGFloat {
-        let chrome = footerHeight + (state.showsScreenRecordingHint ? hintHeight : 0)
+        let chrome = footerHeight + (state.showsScreenRecordingHint ? hintHeight(state) : 0)
         return min(gridsHeight(state), max(tileHeight + 2 * padding, state.maxHeight - chrome))
     }
 }
@@ -250,8 +259,9 @@ struct FrostBarContent: View {
             }
             if state.showsScreenRecordingHint {
                 ScreenRecordingHint(needsRelaunch: state.screenRecordingNeedsRelaunch, grant: actions.grantScreenRecording,
-                                    relaunch: actions.relaunch, dismiss: actions.dismissScreenRecordingHint)
-                    .frame(width: width + 2 * FrostBarMetrics.padding, height: FrostBarMetrics.hintHeight)
+                                    openSettings: actions.openScreenRecordingSettings, relaunch: actions.relaunch,
+                                    dismiss: actions.dismissScreenRecordingHint)
+                    .frame(width: width + 2 * FrostBarMetrics.padding, height: FrostBarMetrics.hintHeight(state))
                     .transition(.opacity)
             }
             footer
@@ -533,43 +543,77 @@ private struct SectionHeader: View {
 private struct ScreenRecordingHint: View {
     let needsRelaunch: Bool
     let grant: () -> Void
+    let openSettings: () -> Void
     let relaunch: () -> Void
     let dismiss: () -> Void
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button(action: needsRelaunch ? relaunch : grant) {
-                Label {
-                    Text(needsRelaunch ? "Turn on Frost in System Settings, then relaunch."
-                                       : "Grant Screen Recording to see real icons")
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: needsRelaunch ? "arrow.clockwise" : "rectangle.dashed.badge.record")
+        Group {
+            if needsRelaunch {
+                // The two actions don't fit next to the text in a panel this narrow; they get their own line, with
+                // Relaunch (the step that finishes the grant) last.
+                VStack(spacing: 2) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundStyle(.orange)
+                        Text("Turn on Frost in System Settings, then relaunch.")
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 4)
+                        dismissButton
+                    }
+                    HStack(spacing: 12) {
+                        Spacer(minLength: 0)
+                        Button("Open System Settings", action: openSettings)
+                        Button("Relaunch", action: relaunch)
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    // The panel's secondary style would otherwise make them look like plain text.
+                    .foregroundStyle(.tint)
                 }
-                .font(.caption)
-                .foregroundStyle(isHovered ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
+            } else {
+                HStack(spacing: 6) {
+                    Button(action: grant) {
+                        Label {
+                            Text("Grant Screen Recording to see real icons")
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: "rectangle.dashed.badge.record")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(isHovered ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { isHovered = $0 }
+                    .accessibilityHint("Opens System Settings")
+                    dismissButton
+                }
             }
-            .buttonStyle(.plain)
-            .onHover { isHovered = $0 }
-            .accessibilityHint(needsRelaunch ? "Relaunches Frost" : "Opens System Settings")
-            Button(action: dismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18, height: 18)
-                    .background(Color.primary.opacity(0.08), in: .circle)
-                    .contentShape(.circle)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Don’t show again")
         }
+        .font(.caption)
         .padding(.horizontal, FrostBarMetrics.padding + 6)
         .animation(.snappy(duration: 0.16), value: isHovered)
+    }
+
+    private var dismissButton: some View {
+        Button(action: dismiss) {
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+                .background(Color.primary.opacity(0.08), in: .circle)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Don’t show again")
     }
 }
 
