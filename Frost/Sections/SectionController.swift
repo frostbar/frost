@@ -564,6 +564,9 @@ final class SectionController {
             return
         }
         guard !isEditing else { return }
+        // The mode depends on Accessibility: read it now, a grant made in System Settings while Frost wasn't active
+        // may not have reached the cached value yet.
+        permissions.refresh()
         let mode = preferences.effectiveDisplayMode(for: screen, capabilities: permissions.capabilities)
         if mode == .frostBar {
             model?.toggleFrostBar(option)
