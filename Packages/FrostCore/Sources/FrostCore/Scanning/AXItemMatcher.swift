@@ -12,9 +12,12 @@ public struct AXItemInfo: Hashable, Sendable {
     public let identifier: String?
     /// The identity key among its app's items (`ItemIdentityKey`); nil for Frost's own windows.
     public let identityKey: String?
+    /// The identity key with the numbers in its text kept (`ItemIdentityKey.numberedKeys`); nil when it is the same as
+    /// `identityKey`.
+    public let numberedIdentityKey: String?
 
     public init(bundleID: String, pid: pid_t, frame: CGRect, description: String?, title: String? = nil,
-                identifier: String? = nil, identityKey: String? = nil) {
+                identifier: String? = nil, identityKey: String? = nil, numberedIdentityKey: String? = nil) {
         self.bundleID = bundleID
         self.pid = pid
         self.frame = frame
@@ -22,6 +25,7 @@ public struct AXItemInfo: Hashable, Sendable {
         self.title = title
         self.identifier = identifier
         self.identityKey = identityKey
+        self.numberedIdentityKey = numberedIdentityKey
     }
 }
 

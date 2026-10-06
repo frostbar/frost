@@ -40,6 +40,9 @@ public struct MenuBarItem: Identifiable, Hashable, Sendable {
     public let axIdentifier: String?
     /// The identity key derived from the owner's AX children (`ItemIdentityKey`); nil while ownership is unresolved.
     public let identityKey: String?
+    /// The identity key as versions before number normalization derived it (`ItemIdentityKey.numberedKeys`); nil when
+    /// it is the same as `identityKey`. Only used to migrate state remembered under it (`IdentityMigration`).
+    public let numberedIdentityKey: String?
     /// One of the two trailing windows of the menu bar, where macOS keeps the clock and the Control Center button
     /// (`SystemItemRules.trailingSlots`). Only used to recognize them when neither an AX identifier nor a title is
     /// known.
@@ -47,7 +50,8 @@ public struct MenuBarItem: Identifiable, Hashable, Sendable {
 
     public init(windowID: CGWindowID, frame: CGRect, isOnScreen: Bool, windowTitle: String,
                 bundleID: String?, pid: pid_t?, axDescription: String?, axTitle: String? = nil,
-                axIdentifier: String? = nil, identityKey: String? = nil, occupiesSystemSlot: Bool = false) {
+                axIdentifier: String? = nil, identityKey: String? = nil, numberedIdentityKey: String? = nil,
+                occupiesSystemSlot: Bool = false) {
         self.windowID = windowID
         self.frame = frame
         self.isOnScreen = isOnScreen
@@ -58,6 +62,7 @@ public struct MenuBarItem: Identifiable, Hashable, Sendable {
         self.axTitle = axTitle
         self.axIdentifier = axIdentifier
         self.identityKey = identityKey
+        self.numberedIdentityKey = numberedIdentityKey
         self.occupiesSystemSlot = occupiesSystemSlot
     }
 
@@ -72,7 +77,8 @@ public struct MenuBarItem: Identifiable, Hashable, Sendable {
     public func with(frame: CGRect, isOnScreen: Bool) -> MenuBarItem {
         MenuBarItem(windowID: windowID, frame: frame, isOnScreen: isOnScreen, windowTitle: windowTitle,
                     bundleID: bundleID, pid: pid, axDescription: axDescription, axTitle: axTitle,
-                    axIdentifier: axIdentifier, identityKey: identityKey, occupiesSystemSlot: occupiesSystemSlot)
+                    axIdentifier: axIdentifier, identityKey: identityKey, numberedIdentityKey: numberedIdentityKey,
+                    occupiesSystemSlot: occupiesSystemSlot)
     }
 
     /// The stable identity (owner + AX-derived key); nil while the owner is unresolved.

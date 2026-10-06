@@ -111,6 +111,108 @@ import Foundation
         #expect(IdentityMigration.plan(stored: [id("com.a", "desc:Status#0")], items: items).isEmpty)
     }
 
+    // MARK: Keys from before numbers were normalized
+
+    func item(_ windowID: CGWindowID, _ bundle: String, key: String, numbered: String?) -> MenuBarItem {
+        MenuBarItem(windowID: windowID, frame: CGRect(x: CGFloat(windowID) * 30, y: 0, width: 29, height: 24),
+                    isOnScreen: true, windowTitle: "", bundleID: bundle, pid: 1, axDescription: nil,
+                    identityKey: key, numberedIdentityKey: numbered)
+    }
+
+    @Test func aKeyWithLiveNumbersMovesToTheNormalizedKey() {
+        // Remembered with the reading at the time; the item now shows other numbers. The app has several items, so the
+        // sole-item rule can't help.
+        let items = [item(1, "com.a", key: "help:Left <n> RPM", numbered: "help:Left 5004 RPM"),
+                     item(2, "com.a", key: "desc:Other")]
+        let stored: Set = [id("com.a", "help:Left 4990 RPM"), id("com.a", "desc:Other")]
+        #expect(IdentityMigration.plan(stored: stored, items: items)
+                == [id("com.a", "help:Left 4990 RPM"): id("com.a", "help:Left <n> RPM")])
+    }
+
+    @Test func severalOldReadingsAllMoveToTheNormalizedKey() {
+        // Earlier versions re-seeded a live item of a multi-item app under each new reading.
+        let items = [item(1, "com.a", key: "desc:CPU <n>%", numbered: "desc:CPU 7%"), item(2, "com.a", key: "desc:B")]
+        let stored: Set = [id("com.a", "desc:CPU 40%"), id("com.a", "desc:CPU 41%"), id("com.a", "desc:B")]
+        #expect(IdentityMigration.plan(stored: stored, items: items)
+                == [id("com.a", "desc:CPU 40%"): id("com.a", "desc:CPU <n>%"),
+                    id("com.a", "desc:CPU 41%"): id("com.a", "desc:CPU <n>%")])
+    }
+
+    @Test func itemsThatNowShareATextTakeTheirExactOldKeys() {
+        // `Fan 1` and `Fan 2` had distinct keys; normalized they share a text and get occurrence suffixes. Their
+        // numbers didn't change, so each one's key in the earlier encoding is exactly what was stored.
+        let items = [item(1, "com.a", key: "desc:Fan <n>#0", numbered: "desc:Fan 1"),
+                     item(2, "com.a", key: "desc:Fan <n>#1", numbered: "desc:Fan 2")]
+        let stored: Set = [id("com.a", "desc:Fan 1"), id("com.a", "desc:Fan 2")]
+        #expect(IdentityMigration.plan(stored: stored, items: items)
+                == [id("com.a", "desc:Fan 1"): id("com.a", "desc:Fan <n>#0"),
+                    id("com.a", "desc:Fan 2"): id("com.a", "desc:Fan <n>#1")])
+    }
+
+    @Test func numberedKeysOfAnotherAppAreNotTaken() {
+        let items = [item(1, "com.a", key: "desc:CPU <n>%", numbered: "desc:CPU 7%")]
+        #expect(IdentityMigration.plan(stored: [id("com.b", "desc:CPU 40%"), id("com.b", "desc:X")], items: items)
+                .isEmpty)
+    }
+
+    @Test func conflictingSectionsOfOldReadingsAreDropped() {
+        // Two old readings of one item remembered in different sections: which is current can't be told, so neither
+        // is kept (the item's section is then seeded from where it is now). Agreeing ones collapse into one entry.
+        let new = id("com.a", "desc:CPU <n>%")
+        let plan = [id("com.a", "desc:CPU 40%"): new, id("com.a", "desc:CPU 41%"): new,
+                    id("com.a", "desc:GPU 1%"): id("com.a", "desc:GPU <n>%"),
+                    id("com.a", "desc:GPU 2%"): id("com.a", "desc:GPU <n>%")]
+        let values: [ItemIdentity: MenuBarSection] = [id("com.a", "desc:CPU 40%"): .hidden,
+                                                      id("com.a", "desc:CPU 41%"): .alwaysHidden,
+                                                      id("com.a", "desc:GPU 1%"): .hidden,
+                                                      id("com.a", "desc:GPU 2%"): .hidden]
+        #expect(IdentityMigration.apply(plan, to: values) == [id("com.a", "desc:GPU <n>%"): .hidden])
+    }
+
+    @Test(arguments: [false, true])
+    func liveNumbersCauseNoRekeying(appHasAnotherItem: Bool) {
+        // Regression: a fan-control-like item whose tooltip changes on every scan. Before, every full AX read gave it a
+        // new identity: as its app's only item, its remembered section was re-keyed ("moved 1 remembered section(s)")
+        // each time; next to another item, it was seeded again under each reading.
+        let readings = [(4990, 5012), (5004, 5010), (4987, 5020), (998, 1002), (12000, 9)]
+        var memory: [ItemIdentity: MenuBarSection] = [:]
+        var identities: Set<ItemIdentity> = []
+        for (left, right) in readings {
+            var children = [AXItemAttributes(help: "Left side - \(left) RPM\nRight side - \(right) RPM")]
+            if appHasAnotherItem { children.append(AXItemAttributes(description: "Other")) }
+            let keys = ItemIdentityKey.keys(for: children)
+            let numbered = ItemIdentityKey.numberedKeys(for: children)
+            let items = zip(keys, numbered).enumerated().map { index, pair in
+                item(CGWindowID(index + 1), "com.fan", key: pair.0, numbered: pair.1 == pair.0 ? nil : pair.1)
+            }
+            identities.insert(items[0].identity!)
+            if memory.isEmpty {
+                for identity in items.compactMap(\.identity) { memory[identity] = .alwaysHidden }
+            }
+            let plan = IdentityMigration.plan(stored: Set(memory.keys), items: items)
+            #expect(plan.isEmpty)
+            #expect(memory[items[0].identity!] == .alwaysHidden)
+        }
+        #expect(identities.count == 1)
+    }
+
+    @Test func anUpgradeMovesALiveKeyOnceAndThenLeavesItAlone() {
+        // Remembered by an earlier version under one reading; after the upgrade the first scan moves it to the
+        // normalized key, later scans (other readings) find it remembered.
+        var memory: [ItemIdentity: MenuBarSection] = [id("com.fan", "help:Left 4990 RPM"): .alwaysHidden,
+                                                      id("com.fan", "desc:Other"): .hidden]
+        var moves = 0
+        for reading in [5004, 5010, 4987] {
+            let items = [item(1, "com.fan", key: "help:Left <n> RPM", numbered: "help:Left \(reading) RPM"),
+                         item(2, "com.fan", key: "desc:Other")]
+            let plan = IdentityMigration.plan(stored: Set(memory.keys), items: items)
+            if !plan.isEmpty { moves += 1 }
+            memory = IdentityMigration.apply(plan, to: memory)
+        }
+        #expect(moves == 1)
+        #expect(memory == [id("com.fan", "help:Left <n> RPM"): .alwaysHidden, id("com.fan", "desc:Other"): .hidden])
+    }
+
     @Test func applyMovesValuesAndKeepsExistingEntries() {
         let plan = [legacy("com.a", "T"): id("com.a", "desc:A"), legacy("com.b", "U"): id("com.b", "desc:B")]
         let values: [ItemIdentity: MenuBarSection] = [legacy("com.a", "T"): .visible, legacy("com.b", "U"): .hidden,

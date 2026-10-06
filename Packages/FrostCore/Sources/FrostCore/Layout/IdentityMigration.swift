@@ -9,17 +9,25 @@ import Foundation
 /// - **Changed keys**: an item's AX description (part of its key) may change between launches.
 /// - **Earlier encoding**: keys written before descriptions were escaped (`ItemIdentityKey.unescapedEncoding`); only
 ///   descriptions containing `#` or `\` differ.
+/// - **Numbers**: keys written before numbers in descriptions and help texts were normalized
+///   (`ItemIdentityKey.numberedKeys`), possibly with a live reading that has changed since.
 ///
 /// For each current item with a resolved identity that isn't remembered yet (and that no other current item shares),
 /// a remembered identity of the same app is taken over when one of these holds (in this order):
 /// 0. Its key in the earlier encoding is remembered and no other current item had that key.
+/// 0a. Its key with numbers kept (`MenuBarItem.numberedIdentityKey`) is remembered and no other current item has that
+///     numbered key (items that now share a text, like `Fan 1` and `Fan 2`, keep their own entries).
+/// 0b. Remembered keys of the same app become its key once their numbers are normalized
+///     (`ItemIdentityKey.numberNormalizedEncoding`): the item's reading changed since. All of them map to it (an
+///     earlier version may have remembered a live item of a multi-item app under several readings; `apply` keeps their
+///     value only when they agree).
 /// 1. Its window title is known (Screen Recording) and matches a legacy identity's title, or the title last seen with a
 ///    remembered identity (`titles`).
 /// 2. It is the app's only current item and the app has exactly one remembered identity that no current item has (no
 ///    title needed: works with Accessibility alone).
 ///
-/// Each remembered identity is mapped at most once. Unmapped legacy identities stay as they are (they may map later,
-/// once titles become readable).
+/// Each remembered identity is mapped at most once, and only rule 0b maps several onto one identity. Unmapped legacy
+/// identities stay as they are (they may map later, once titles become readable).
 public enum IdentityMigration {
     public static let legacyPrefix = "title:"
 
@@ -47,6 +55,13 @@ public enum IdentityMigration {
                 .map { (identity, ItemIdentity(bundleID: identity.bundleID, key: $0)) }
         })
         let earlierCounts = Dictionary(earlier.values.map { ($0, 1) }, uniquingKeysWith: +)
+        let numbered = resolved.compactMap { entry in
+            entry.item.numberedIdentityKey.map { ItemIdentity(bundleID: entry.identity.bundleID, key: $0) }
+        }
+        let numberedCounts = Dictionary(numbered.map { ($0, 1) }, uniquingKeysWith: +)
+        let normalizedStored: [ItemIdentity: String] = Dictionary(uniqueKeysWithValues: available.compactMap { old in
+            ItemIdentityKey.numberNormalizedEncoding(of: old.key).map { (old, $0) }
+        })
         var plan: [ItemIdentity: ItemIdentity] = [:]
 
         func take(_ old: ItemIdentity, for new: ItemIdentity) {
@@ -58,6 +73,18 @@ public enum IdentityMigration {
         where identityCounts[identity] == 1 && !stored.contains(identity) && !plan.values.contains(identity) {
             if let old = earlier[identity], earlierCounts[old] == 1, available.contains(old) {
                 take(old, for: identity)
+                continue
+            }
+            if let key = item.numberedIdentityKey {
+                let old = ItemIdentity(bundleID: identity.bundleID, key: key)
+                if numberedCounts[old] == 1, available.contains(old) {
+                    take(old, for: identity)
+                    continue
+                }
+            }
+            let readings = available.filter { $0.bundleID == identity.bundleID && normalizedStored[$0] == identity.key }
+            if !readings.isEmpty {
+                for old in readings { take(old, for: identity) }
                 continue
             }
             let title = item.windowTitle
@@ -84,14 +111,17 @@ public enum IdentityMigration {
         return plan
     }
 
-    /// `values` with the keys `plan` maps moved to their new identities (an existing entry for the new identity wins).
-    public static func apply<Value>(_ plan: [ItemIdentity: ItemIdentity],
-                                    to values: [ItemIdentity: Value]) -> [ItemIdentity: Value] {
+    /// `values` with the keys `plan` maps moved to their new identities. An existing entry for the new identity wins;
+    /// when several old identities map to one new identity, their value moves only if they all have the same one
+    /// (otherwise which is current can't be told, and none is kept).
+    public static func apply<Value: Equatable>(_ plan: [ItemIdentity: ItemIdentity],
+                                               to values: [ItemIdentity: Value]) -> [ItemIdentity: Value] {
         guard !plan.isEmpty else { return values }
         var result = values
-        for (old, new) in plan {
-            guard let value = result.removeValue(forKey: old) else { continue }
-            if result[new] == nil { result[new] = value }
+        for (new, pairs) in Dictionary(grouping: plan, by: \.value) {
+            let moved = pairs.compactMap { result.removeValue(forKey: $0.key) }
+            guard result[new] == nil, let value = moved.first, moved.allSatisfy({ $0 == value }) else { continue }
+            result[new] = value
         }
         return result
     }

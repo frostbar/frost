@@ -56,13 +56,15 @@ public enum AXExtrasReader {
                 return (frame: frame(of: child), description: description, title: title, attributes: attributes)
             }
             let keys = ItemIdentityKey.keys(for: read.map(\.attributes))
-            for (child, key) in zip(read, keys) {
+            let numberedKeys = ItemIdentityKey.numberedKeys(for: read.map(\.attributes))
+            for (child, (key, numberedKey)) in zip(read, zip(keys, numberedKeys)) {
                 guard let frame = child.frame else { continue }
                 // Icon items usually describe themselves; text items (no image) often have only a title.
                 let description = (child.description?.isEmpty ?? true) ? child.title : child.description
                 result.append(AXItemInfo(bundleID: app.bundleID, pid: app.pid, frame: frame, description: description,
                                          title: child.title, identifier: child.attributes.identifier,
-                                         identityKey: key))
+                                         identityKey: key,
+                                         numberedIdentityKey: numberedKey == key ? nil : numberedKey))
             }
         }
         return result

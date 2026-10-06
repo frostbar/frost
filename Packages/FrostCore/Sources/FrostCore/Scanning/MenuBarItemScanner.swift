@@ -158,6 +158,7 @@ public final class MenuBarItemScanner {
                                windowTitle: window.title, bundleID: owner?.bundleID, pid: owner?.pid,
                                axDescription: owner?.description, axTitle: owner?.title,
                                axIdentifier: owner?.identifier, identityKey: owner?.identityKey,
+                               numberedIdentityKey: owner?.numberedIdentityKey,
                                occupiesSystemSlot: systemSlots.contains(window.windowID))
         }.filter { !StaleWindowFilter.isStale($0) }
         let live = Set(windows.map(\.windowID))
