@@ -6,38 +6,33 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-06
+
 ### Changed
-- A forwarded icon goes back about 0.75 s after the pointer leaves it (it used to wait 2.5 s while the pointer was
-  anywhere on the menu bar), so the Frost icon is back where you expect it. It stays out while its menu is open or the
-  pointer rests on it.
-- Grant Access buttons (Settings → About, the layout editor, the Frost Bar) ask for the permission right away instead
-  of opening the welcome window first. After granting Screen Recording, a Relaunch button appears in place, and Frost
-  reopens the window you were in after relaunching (also after System Settings' "Quit & Reopen").
+- Granting permissions takes fewer steps. Grant Access (Settings → About, the layout editor, the Behavior tab, the
+  Frost Bar) asks for the permission right away instead of opening the welcome window first.
+- After you turn on Screen Recording, **Relaunch** appears right where you granted it, next to **Open System
+  Settings** in case you closed or denied the system prompt. After relaunching, Frost reopens the window you were in,
+  also after System Settings' "Quit & Reopen".
+- An icon opened from the Frost Bar goes back about 0.75 s after the pointer leaves it (it used to wait while the
+  pointer was anywhere on the menu bar), so the snowflake is back where you expect it. It stays out while its menu is
+  open or the pointer rests on it.
 - Settings reopens on the tab you used last, and no longer expands the menu bar while Accessibility is missing.
-- Short text icons (a counter, a percentage) now show in full in the Frost Bar and the layout editor without Screen
-  Recording. Rows in the layout editor that overflow show edge fades and paging arrows.
-- The permission descriptions mention the purple dot macOS shows while Frost captures icons. The grant buttons read
-  "Grant Access" everywhere.
-- While a relaunch is pending, the welcome window shows it on the Screen Recording card and makes Relaunch the default
-  button.
-- While a relaunch is pending, the Screen Recording note also offers **Open System Settings** next to **Relaunch**
-  (onboarding, About, the layout editor footer and the Frost Bar hint), so denying the system prompt no longer means
-  relaunching first to get back to the pane. In the Frost Bar the two actions share a second line under the sentence.
+- Without Screen Recording, short text icons (a counter, a percentage) show in full. Rows in the layout editor that
+  don't fit show edge fades and paging arrows.
+- The Screen Recording description mentions the purple dot macOS shows while Frost captures icons.
 
 ### Added
-- The Behavior tab's Accessibility notice has a Grant Access button, and the Frost icon's menu offers Grant Access…
-  while Accessibility is missing.
+- While Accessibility is missing, the snowflake's menu offers **Grant Access…**.
 
 ### Fixed
-- The system permission prompt no longer lingers behind System Settings and reappears after you granted. Frost
-  recognizes it by more than the one process name it uses today, so the pane is not opened on top of it either.
-- Clicking the Frost icon right after granting Accessibility opens the Frost Bar instead of expanding the menu bar.
-- Icons with live numbers, such as fan speeds or temperatures in their tooltip, now keep their section reliably
-  instead of being treated as a different icon every few seconds.
+- The system permission prompt no longer lingers behind System Settings and reappears after you granted access.
+- Clicking the snowflake right after granting Accessibility opens the Frost Bar instead of expanding the menu bar.
+- Icons with live numbers, such as fan speeds or temperatures in their tooltip, keep their section reliably instead of
+  being treated as a different icon every few seconds.
 - An icon its app hides and shows again (for example one that blinks for unread messages) goes back to its section
   within a few seconds instead of staying in Always Hidden.
-- The Frost Bar no longer closes, and Frost no longer rescans the menu bar, when only the Dock changes size (for
-  example when an app's Dock icon appears).
+- The Frost Bar no longer closes, and Frost no longer rescans the menu bar, when only the Dock changes size.
 
 ## [0.3.0] - 2026-10-05
 
