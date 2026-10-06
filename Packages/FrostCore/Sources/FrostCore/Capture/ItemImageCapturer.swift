@@ -137,9 +137,8 @@ public final class ItemImageCapturer {
     struct CacheRequest: Sendable {
         let windowID: CGWindowID
         let key: ItemImageCacheKey
-        /// The key the entry had before identity keys existed (bundle ID + window title; needs the title, i.e.
-        /// Screen Recording, which captures need anyway): a hit there is moved to `key`.
-        let legacyKey: ItemImageCacheKey?
+        /// Keys the entry may still be stored under (`ItemImageCacheKey.earlierKeys`): the first hit is moved to `key`.
+        let earlierKeys: [ItemImageCacheKey]
         let pixelHeight: Int
         let scale: CGFloat
     }
@@ -166,10 +165,7 @@ public final class ItemImageCapturer {
                   counts[identity] == 1 else { return nil }
             let key = ItemImageCacheKey(identity: identity, appearance: appearance, scale: Int(scale))
             guard !diskMisses.contains(key) else { return nil }
-            let legacyKey = item.windowTitle.isEmpty ? nil : ItemImageCacheKey(
-                identity: IdentityMigration.legacy(bundleID: identity.bundleID, title: item.windowTitle),
-                appearance: appearance, scale: Int(scale))
-            return CacheRequest(windowID: item.windowID, key: key, legacyKey: legacyKey,
+            return CacheRequest(windowID: item.windowID, key: key, earlierKeys: key.earlierKeys(of: item),
                                 pixelHeight: Int((item.frame.height * scale).rounded()), scale: scale)
         }
     }
@@ -179,7 +175,7 @@ public final class ItemImageCapturer {
     nonisolated private static func prepare(_ request: CacheRequest, from diskCache: ItemImageDiskCache)
         -> PreparedCapture? {
         guard let cached = diskCache.load(request.key)
-                ?? request.legacyKey.flatMap({ diskCache.migrate(from: $0, to: request.key) }),
+                ?? request.earlierKeys.lazy.compactMap({ diskCache.migrate(from: $0, to: request.key) }).first,
               abs(cached.image.height - request.pixelHeight) <= 1,
               let copy = PixelCopy(cached.image), copy.hasVisiblePixels
         else { return nil }

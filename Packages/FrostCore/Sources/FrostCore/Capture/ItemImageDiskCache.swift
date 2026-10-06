@@ -31,6 +31,21 @@ public struct ItemImageCacheKey: Hashable, Sendable {
         "\(Self.sanitized(identity.bundleID))-\(Self.hash(identity))-\(appearance.rawValue)@\(scale)x"
     }
 
+    /// Keys an entry for `item` (whose identity this key has) may still be stored under, to move it from on a miss
+    /// (`ItemImageDiskCache.migrate`): the window title of entries from before identity keys existed (readable with
+    /// Screen Recording, which captures need anyway), then the key from before numbers in AX texts were normalized
+    /// (`MenuBarItem.numberedIdentityKey`; found only while the item shows the numbers it had then).
+    public func earlierKeys(of item: MenuBarItem) -> [ItemImageCacheKey] {
+        var identities: [ItemIdentity] = []
+        if !item.windowTitle.isEmpty {
+            identities.append(IdentityMigration.legacy(bundleID: identity.bundleID, title: item.windowTitle))
+        }
+        if let numbered = item.numberedIdentityKey {
+            identities.append(ItemIdentity(bundleID: identity.bundleID, key: numbered))
+        }
+        return identities.map { ItemImageCacheKey(identity: $0, appearance: appearance, scale: scale) }
+    }
+
     static let maxPrefixLength = 60
 
     static func sanitized(_ text: String) -> String {

@@ -237,6 +237,34 @@ import Foundation
         #expect(cache.prune(now: now).isEmpty)
     }
 
+    @Test func earlierKeysAreTheTitleAndTheNumberedKey() {
+        let item = MenuBarItem(windowID: 1, frame: .zero, isOnScreen: true, windowTitle: "Fan", bundleID: "com.a",
+                               pid: 1, axDescription: nil, identityKey: "desc:Fan <n>#0",
+                               numberedIdentityKey: "desc:Fan 1")
+        let current = ItemImageCacheKey(identity: item.identity!, appearance: .dark, scale: 2)
+        #expect(current.earlierKeys(of: item).map(\.identity)
+                == [IdentityMigration.legacy(bundleID: "com.a", title: "Fan"),
+                    ItemIdentity(bundleID: "com.a", key: "desc:Fan 1")])
+        #expect(current.earlierKeys(of: item).allSatisfy { $0.appearance == .dark && $0.scale == 2 })
+        let plain = MenuBarItem(windowID: 2, frame: .zero, isOnScreen: true, windowTitle: "", bundleID: "com.a",
+                                pid: 1, axDescription: nil, identityKey: "desc:B")
+        #expect(ItemImageCacheKey(identity: plain.identity!, appearance: .dark, scale: 2).earlierKeys(of: plain)
+                .isEmpty)
+    }
+
+    @Test func anEntryUnderANumberedKeyMovesToTheNormalizedKey() throws {
+        defer { cleanUp() }
+        let numbered = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", key: "desc:Fan 1"),
+                                         appearance: .dark, scale: 2)
+        let normalized = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", key: "desc:Fan <n>#0"),
+                                           appearance: .dark, scale: 2)
+        try cache.save(Self.sampleImage(), tone: .light, style: .monochrome(.light), for: numbered, now: now)
+        #expect(cache.load(normalized) == nil)
+        #expect(cache.migrate(from: numbered, to: normalized, now: now) != nil)
+        #expect(cache.load(normalized)?.style == .monochrome(.light))
+        #expect(cache.load(numbered) == nil)
+    }
+
     @Test func migrationWithoutALegacyEntryDoesNothing() throws {
         defer { cleanUp() }
         let legacy = ItemImageCacheKey(identity: IdentityMigration.legacy(bundleID: "com.example.App", title: "x"),
