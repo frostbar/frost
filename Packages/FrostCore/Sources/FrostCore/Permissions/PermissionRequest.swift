@@ -1,16 +1,35 @@
-/// How one "Grant Access" click is carried out. macOS lists an app under Privacy & Security only after the app has
-/// asked once through the system API, and that ask shows a system prompt whose own "Open System Settings" button leads
-/// the user there. Doing both at once (the prompt and opening the pane ourselves) leaves the prompt behind System
-/// Settings, where it resurfaces after the user already granted. So the first request per permission only asks (the
-/// prompt takes the user to Settings), and later ones, once the app is listed, open the pane directly with no prompt.
-public enum PermissionRequest: Equatable, Sendable {
-    /// Ask through the system API (it shows its prompt); nothing else.
-    case systemPrompt
-    /// Open the Privacy & Security pane directly.
-    case openSettings
+/// How one "Grant Access" click is carried out. macOS lists an app under Privacy & Security only after the app asked
+/// through the system API, and that ask shows a system prompt whose own "Open System Settings" button leads the user
+/// there. Opening the pane ourselves as well leaves the prompt behind System Settings, where it resurfaces after the
+/// user already granted. Measured in the VM (macOS 26):
+///
+/// - Accessibility (`AXIsProcessTrustedWithOptions` with the prompt option) shows its prompt on **every** call, also
+///   when the app is listed and denied. So it is the whole request: Frost never opens the pane itself, and the app is
+///   always listed whenever the user lands there.
+/// - Screen Recording (`CGRequestScreenCaptureAccess`) prompts only for the first request of a process, and only while
+///   the permission has no entry; otherwise it is silent. A silent call means the app is already listed, so the pane
+///   is opened. Whether the prompt appeared is read from its window (`isPromptWindow`): wait up to `promptTimeout`
+///   for it, then open the pane.
+public enum PermissionRequest {
+    /// How long to wait for the system prompt after the Screen Recording request before concluding it was silent.
+    public static let promptTimeout: Duration = .seconds(2)
 
-    /// `alreadyAsked`: Frost asked for this permission before (recorded when it did).
-    public static func step(alreadyAsked: Bool) -> PermissionRequest {
-        alreadyAsked ? .openSettings : .systemPrompt
+    public enum Decision: Equatable, Sendable {
+        case keepWaiting
+        /// The prompt is up: it takes the user to Settings itself.
+        case promptShown
+        /// No prompt appeared: open the Settings pane directly.
+        case openSettings
+    }
+
+    /// `elapsed` since the request; `promptVisible`: a prompt window is on screen.
+    public static func decide(elapsed: Duration, promptVisible: Bool) -> Decision {
+        if promptVisible { return .promptShown }
+        return elapsed >= promptTimeout ? .openSettings : .keepWaiting
+    }
+
+    /// The system's permission prompts are windows of this process ("Screen Recording" / "Accessibility Access").
+    public static func isPromptWindow(ownerName: String?) -> Bool {
+        ownerName == "universalAccessAuthWarn"
     }
 }

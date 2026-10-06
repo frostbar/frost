@@ -25,18 +25,11 @@ public final class PermissionsService {
 
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
     @ObservationIgnored private var accessibilityObserver: NSObjectProtocol?
-    @ObservationIgnored private let defaults: UserDefaults
-
-    private enum Key {
-        static let askedAccessibility = "permissionAskedAccessibility"
-        static let askedScreenRecording = "permissionAskedScreenRecording"
-    }
 
     /// Reads once at startup, then refreshes every time the app is activated (e.g. the user switches back from
     /// System Settings). Operations that need permissions (opening Frost Bar, showing the layout editor, before a
     /// move) should also call `refresh()` first.
-    public init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
+    public init() {
         refresh()
         activationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
@@ -67,28 +60,40 @@ public final class PermissionsService {
         if screenRecording != sr { screenRecording = sr }
     }
 
-    /// The first request shows the system prompt (its "Open System Settings" button leads to the pane and lists Frost
-    /// there); later ones open the pane directly (`PermissionRequest`).
+    /// Shows the system prompt (every call does); its "Open System Settings" button leads to the pane, with Frost
+    /// listed. The pane is never opened here as well (`PermissionRequest`).
     public func requestAccessibility() {
-        switch PermissionRequest.step(alreadyAsked: defaults.bool(forKey: Key.askedAccessibility)) {
-        case .systemPrompt:
-            defaults.set(true, forKey: Key.askedAccessibility)
-            let key = "AXTrustedCheckOptionPrompt" as CFString  // kAXTrustedCheckOptionPrompt
-            _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
-        case .openSettings:
-            openSettings(anchor: "Privacy_Accessibility")
+        let key = "AXTrustedCheckOptionPrompt" as CFString  // kAXTrustedCheckOptionPrompt
+        _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+    }
+
+    /// Asks through the system API; when no prompt shows up (it only prompts once per process), Frost is already
+    /// listed and the pane is opened directly (`PermissionRequest`).
+    public func requestScreenRecording() {
+        screenRecordingRequested = true
+        _ = CGRequestScreenCaptureAccess()
+        promptTask?.cancel()
+        promptTask = Task { [weak self] in
+            let start = ContinuousClock.now
+            while !Task.isCancelled {
+                let visible = Self.isPermissionPromptOnScreen()
+                switch PermissionRequest.decide(elapsed: ContinuousClock.now - start, promptVisible: visible) {
+                case .promptShown: return
+                case .openSettings:
+                    self?.openSettings(anchor: "Privacy_ScreenCapture")
+                    return
+                case .keepWaiting:
+                    do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+                }
+            }
         }
     }
 
-    public func requestScreenRecording() {
-        screenRecordingRequested = true
-        switch PermissionRequest.step(alreadyAsked: defaults.bool(forKey: Key.askedScreenRecording)) {
-        case .systemPrompt:
-            defaults.set(true, forKey: Key.askedScreenRecording)
-            _ = CGRequestScreenCaptureAccess()
-        case .openSettings:
-            openSettings(anchor: "Privacy_ScreenCapture")
-        }
+    @ObservationIgnored private var promptTask: Task<Void, Never>?
+
+    private static func isPermissionPromptOnScreen() -> Bool {
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return windows.contains { PermissionRequest.isPromptWindow(ownerName: $0[kCGWindowOwnerName as String] as? String) }
     }
 
     @ObservationIgnored private var pollers = 0
