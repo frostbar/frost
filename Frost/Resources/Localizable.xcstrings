@@ -564,22 +564,12 @@
         }
       }
     },
-    "Grant" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "授权"
-          }
-        }
-      }
-    },
     "Grant Access" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "去授权"
+            "value" : "授权"
           }
         }
       }
