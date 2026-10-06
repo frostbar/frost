@@ -11,6 +11,7 @@ CHANGELOG.md ──▶ scripts/release/release.sh <version> ──▶ build/rele
                    → DMG (dmgbuild) → [developer-id: sign, notarize, staple the DMG]
                    → Sparkle EdDSA signature → appcast.xml
                    → [--publish] commit, tag, push, gh release create
+                     (only after make vm-upgrade-test passed on the DMG a run without --publish built)
 ```
 
 Users' copies check `https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml` once a day, so the
@@ -157,9 +158,20 @@ Sparkle.framework, not by launching Frost.
    OpenSSL (OpenSSL 3 is looked up: `$OPENSSL`, Homebrew's `openssl@3`, then `PATH`; the system's LibreSSL can't
    verify Ed25519), and writes `appcast.xml` and `release-notes.md`. The version bump stays uncommitted in
    `project.yml` and `Frost/Resources/Info.plist` (the script says so); at the end it prints how to publish.
-4. Walk all journeys in [`ux-journeys.md`](ux-journeys.md) on this build; fix High findings before
+4. Run the **upgrade test** on this DMG in the VM ([`testing-vm.md`](testing-vm.md), "Upgrade test"):
+
+   ```sh
+   make vm-upgrade-test BUILD=build/release/0.2.0/Frost-0.2.0.dmg
+   ```
+
+   It installs the newest published release, lets it build up real state (sections, seen icons, the image cache),
+   installs this DMG over it and checks that it keeps running without a crash and keeps or migrates everything. On a
+   pass it writes `build/upgrade-test/passed/<version>-<build>.txt` (`UPGRADE_TEST_MARKERS` in `config.sh`) with the
+   DMG's SHA-256 and the source identity (commit plus uncommitted changes, i.e. the version bump) that `release.sh`
+   recorded in `build/release/<version>/build-info.txt`. Rebuilding the DMG invalidates it.
+5. Walk all journeys in [`ux-journeys.md`](ux-journeys.md) on this build; fix High findings before
    publishing. Optionally test the update in the VM (below).
-5. Publish, on branch `RELEASE_BRANCH` with `gh auth login` done:
+6. Publish, on branch `RELEASE_BRANCH` with `gh auth login` done:
 
    ```sh
    scripts/release/release.sh 0.2.0 --publish
@@ -167,9 +179,17 @@ Sparkle.framework, not by launching Frost.
 
    Before building, the preflight checks that `gh` is logged in, fetches `REMOTE_BRANCH` and requires the local
    branch to contain it (`git merge-base --is-ancestor`), and checks that the tag exists neither locally nor on the
-   remote (`git ls-remote --tags`). It then rebuilds, commits the version bump, tags `v0.2.0`, pushes branch and tag
-   with `git push --atomic` (both land or neither does), and runs
-   `gh release create v0.2.0 --verify-tag … Frost-0.2.0.dmg appcast.xml`.
+   remote (`git ls-remote --tags`). It **refuses to publish** unless the upgrade test passed for exactly this release
+   candidate: the marker for the version and build in `project.yml` must exist, name the SHA-256 of
+   `build/release/<version>/Frost-<version>.dmg`, and carry the current tree's source identity (so a commit or any
+   other change after the test needs a new candidate and a new test). It then rebuilds from those same sources, notes
+   whether the rebuilt app has the tested CDHash (the build isn't guaranteed to be bit-for-bit reproducible), commits
+   the version bump, tags `v0.2.0`, pushes branch and tag with `git push --atomic` (both land or neither does), and
+   runs `gh release create v0.2.0 --verify-tag … Frost-0.2.0.dmg appcast.xml`.
+
+   **Emergencies only**: `--skip-upgrade-test` publishes without the test. It prints a red warning before building
+   and again after publishing; run the upgrade test on the published DMG (`make vm-upgrade-test BUILD=v0.2.0`) right
+   after.
 
 The working tree must be clean, except for exactly the version bump a previous run of the script left in
 `project.yml` / `Info.plist` (so "build locally, inspect, then `--publish`" works; the bump is reused, keeping the

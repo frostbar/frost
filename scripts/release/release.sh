@@ -8,14 +8,17 @@
 #
 # Options:
 #   --publish            Publish (requires branch RELEASE_BRANCH, a clean working tree apart from this script's own
-#                        version bump, a logged-in gh, and a branch containing the remote one; pushes branch and tag
-#                        atomically).
+#                        version bump, a logged-in gh, a branch containing the remote one, and a passing VM upgrade
+#                        test of the DMG a previous run built from this tree; pushes branch and tag atomically).
+#   --skip-upgrade-test  Emergencies only, with --publish: publish without a passing upgrade test.
 #   --allow-dirty        Allow uncommitted changes (local test builds only; cannot be combined with --publish).
 #   --dry-run-notarize   developer-id mode only: run the signing and notarization preflight (identity in the keychain,
 #                        TEAM_ID, notary credentials), print the plan and exit without building or submitting.
 #
-# Artifacts go to build/release/<version>/: Frost.app, Frost-<version>.dmg, appcast.xml, release-notes.md
-# (developer-id: also notarization/ with the notary service's submission result and log).
+# Artifacts go to build/release/<version>/: Frost.app, Frost-<version>.dmg, appcast.xml, release-notes.md,
+# build-info.txt (version, commit and source identity, read by the upgrade test's marker) (developer-id: also
+# notarization/ with the notary service's submission result and log).
+# Before --publish: make vm-upgrade-test BUILD=build/release/<version>/Frost-<version>.dmg (docs/releasing.md).
 # Configuration: scripts/release/config.sh. Full procedure: docs/releasing.md.
 set -euo pipefail
 # Prefer the system BSD tools (Homebrew coreutils' stat / base64 / date take different arguments).
@@ -27,7 +30,7 @@ cd "$FROST_ROOT"
 # shellcheck source=scripts/lib/openssl.sh
 source "$FROST_ROOT/scripts/lib/openssl.sh"
 
-usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 note() { printf '\033[1;33mnote:\033[0m %s\n' "$*" >&2; }
@@ -89,9 +92,11 @@ VERSION=""
 PUBLISH=0
 ALLOW_DIRTY=0
 DRY_RUN_NOTARIZE=0
+SKIP_UPGRADE_TEST=0
 for arg in "$@"; do
   case "$arg" in
     --publish) PUBLISH=1 ;;
+    --skip-upgrade-test) SKIP_UPGRADE_TEST=1 ;;
     --allow-dirty) ALLOW_DIRTY=1 ;;
     --dry-run-notarize) DRY_RUN_NOTARIZE=1 ;;
     -h|--help) usage ;;
@@ -108,6 +113,7 @@ fi
 [[ -n $VERSION ]] || usage
 [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "version must look like 1.2.3 (got '$VERSION')"
 (( PUBLISH && ALLOW_DIRTY )) && fail "--allow-dirty cannot be combined with --publish"
+(( SKIP_UPGRADE_TEST && ! PUBLISH )) && fail "--skip-upgrade-test only applies to --publish"
 [[ $GITHUB_REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail "FROST_GITHUB_REPO in project.yml is not owner/repo: '$GITHUB_REPO'"
 
 TAG="v$VERSION"
@@ -220,6 +226,62 @@ if (( ! ALLOW_DIRTY )) && [[ -n $(git status --porcelain) ]]; then
   only_version_bump \
     || fail "the working tree has uncommitted changes (commit them, or pass --allow-dirty for a local test build)"
   echo "  uncommitted: only a version bump in project.yml / Info.plist from an earlier run (reused)"
+fi
+
+# ---- Upgrade test gate (--publish) -------------------------------------------------------------------------------
+# What a DMG was built from: the commit plus the uncommitted changes (for a release, exactly the version bump).
+# Recorded in build-info.txt next to the DMG; the upgrade test copies it into its pass marker.
+source_identity() {
+  { git rev-parse HEAD; git diff HEAD --binary --no-color --no-ext-diff; } | shasum -a 256 | cut -d' ' -f1
+}
+marker_value() { sed -n "s/^$1=//p" "$2" | head -1; }
+# Prints the pass marker of the DMG an earlier run built from the current tree, or why there is none (status 1).
+upgrade_test_marker() {
+  local version build marker dmg_sha
+  version=$(sed -n 's/^ *CFBundleShortVersionString: *"\(.*\)"/\1/p' project.yml)
+  build=$(sed -n 's/^ *CFBundleVersion: *"\(.*\)"/\1/p' project.yml)
+  if [[ $version != "$VERSION" ]]; then
+    echo "project.yml is at $version, so no release candidate of $VERSION was built from this tree yet"; return 1
+  fi
+  marker="$UPGRADE_TEST_MARKERS/$VERSION-$build.txt"
+  [[ -f $marker ]] || { echo "no upgrade test of Frost $VERSION (build $build) has passed ($marker is missing)"; return 1; }
+  [[ -f $DMG ]] || { echo "the release candidate $DMG is missing"; return 1; }
+  dmg_sha=$(shasum -a 256 "$DMG" | cut -d' ' -f1)
+  [[ $(marker_value dmg_sha256 "$marker") == "$dmg_sha" ]] || {
+    echo "the upgrade test passed for another DMG than $DMG (rebuilt since?)"; return 1; }
+  [[ $(marker_value source "$marker") == "$(source_identity)" ]] || {
+    echo "the tested DMG was built from other sources than the current tree (commit $(marker_value commit "$marker"))"
+    return 1; }
+  echo "$marker"
+}
+skip_banner() {
+  local bar line
+  bar=$(printf '%88s' '' | tr ' ' '!')
+  {
+    printf '\033[1;41;97m%s\033[0m\n' "$bar"
+    for line in "--skip-upgrade-test: PUBLISHING WITHOUT A PASSING UPGRADE TEST" \
+                "Nothing checked that this build starts on top of the previous release's data." \
+                "Run the upgrade test on it as soon as possible: make vm-upgrade-test BUILD=$TAG"; do
+      printf '\033[1;41;97m!!  %-82s!!\033[0m\n' "$line"
+    done
+    printf '\033[1;41;97m%s\033[0m\n' "$bar"
+  } >&2
+}
+TESTED_MARKER=""
+if (( PUBLISH )); then
+  if (( SKIP_UPGRADE_TEST )); then
+    skip_banner
+  elif verdict=$(upgrade_test_marker); then
+    TESTED_MARKER=$verdict
+    echo "  upgrade test: passed for $(marker_value dmg "$TESTED_MARKER") from $(marker_value previous "$TESTED_MARKER") \
+($(marker_value passed_at "$TESTED_MARKER"))"
+  else
+    fail "refusing to publish: $verdict.
+      Build the release candidate and run the upgrade test on it first:
+        scripts/release/release.sh $VERSION
+        make vm-upgrade-test BUILD=build/release/$VERSION/$DMG_NAME
+      (emergencies only: --skip-upgrade-test publishes without it)"
+  fi
 fi
 
 # The release notes are the "## [<version>]" section of CHANGELOG.md.
@@ -470,6 +532,25 @@ EOF
 xmllint --noout "$OUT/appcast.xml"
 echo "  $OUT/appcast.xml (valid XML)"
 
+# What this DMG was built from (the upgrade test copies it into its pass marker, which --publish checks).
+CDHASH=$(codesign -dvvv "$APP" 2>&1 | sed -n 's/^CDHash=//p' | head -1)
+{
+  echo "version=$VERSION"
+  echo "build=$build"
+  echo "commit=$(git rev-parse HEAD)"
+  echo "source=$(source_identity)"
+  echo "cdhash=$CDHASH"
+} > "$OUT/build-info.txt"
+if [[ -n $TESTED_MARKER ]]; then
+  # --publish rebuilds from the same sources as the tested DMG. Report whether the build reproduced the tested code.
+  if [[ $(marker_value cdhash "$TESTED_MARKER") == "$CDHASH" ]]; then
+    echo "  same CDHash as the DMG the upgrade test passed ($CDHASH)"
+  else
+    note "the rebuilt app's CDHash ($CDHASH) differs from the tested DMG's ($(marker_value cdhash "$TESTED_MARKER")):
+      same sources, but the build is not bit-for-bit reproducible"
+  fi
+fi
+
 # ---- Publish -----------------------------------------------------------------------------------
 GH_CMD=(gh release create "$TAG" --repo "$GITHUB_REPO" --verify-tag --title "Frost $VERSION"
         --notes-file "$OUT/release-notes.md" "$DMG" "$OUT/appcast.xml")
@@ -515,3 +596,4 @@ if ! "${GH_CMD[@]}"; then
       $(quote "${GH_CMD[@]}")"
 fi
 echo "Published: https://github.com/$GITHUB_REPO/releases/tag/$TAG"
+if (( SKIP_UPGRADE_TEST )); then skip_banner; fi
