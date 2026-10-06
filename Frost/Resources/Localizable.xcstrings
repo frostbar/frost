@@ -1031,12 +1031,32 @@
         }
       }
     },
+    "Show earlier icons" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示前面的图标"
+          }
+        }
+      }
+    },
     "Show hidden icons" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示方式"
+          }
+        }
+      }
+    },
+    "Show more icons" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示更多图标"
           }
         }
       }

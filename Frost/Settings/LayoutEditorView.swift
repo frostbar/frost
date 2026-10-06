@@ -181,11 +181,23 @@ extension MenuBarSection {
     }
 }
 
+/// Horizontal scroll geometry of a section band.
+private struct BandScroll: Equatable {
+    var offset: CGFloat = 0
+    var content: CGFloat = 0
+    var viewport: CGFloat = 0
+
+    var hasMoreBefore: Bool { offset > 1 }
+    var hasMoreAfter: Bool { viewport > 0 && offset + viewport < content - 1 }
+}
+
 private struct SectionBand: View {
     static let height: CGFloat = 60
     static let cornerRadius: CGFloat = 18
     static let contentInset: CGFloat = 12
     static let tileSpacing: CGFloat = 6
+    /// Width of the edge fade on a side with more tiles beyond it.
+    static let overflowFade: CGFloat = 36
 
     let section: MenuBarSection
     let items: [MenuBarItem]
@@ -196,6 +208,9 @@ private struct SectionBand: View {
     /// Frame of each tile in the band's content coordinate space (`.named(section)`, moves with horizontal scrolling).
     @State private var tileFrames: [CGWindowID: CGRect] = [:]
     @State private var viewportWidth: CGFloat = 0
+    /// Horizontal scroll state of the band, to show that more tiles lie beyond an edge and to page with the arrows.
+    @State private var scroll = BandScroll()
+    @State private var scrollPosition = ScrollPosition(edge: .leading)
 
     private var isTargeted: Bool { drag.targetSection == section }
 
@@ -261,17 +276,35 @@ private struct SectionBand: View {
         }
         .scrollIndicators(.never)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .scrollPosition($scrollPosition)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
-        // Fade both ends to hint at horizontal scrolling on overflow (at rest it only covers the insets, not tiles).
+        .onScrollGeometryChange(for: BandScroll.self) { geometry in
+            BandScroll(offset: geometry.contentOffset.x, content: geometry.contentSize.width,
+                       viewport: geometry.containerSize.width)
+        } action: { _, new in
+            scroll = new
+        }
+        // Fade both ends: at rest only over the insets, and over a wider stretch on the side where more tiles lie
+        // beyond the edge, so overflow is visible.
         .mask {
             HStack(spacing: 0) {
                 LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: Self.contentInset - 2)
+                    .frame(width: scroll.hasMoreBefore ? Self.overflowFade : Self.contentInset - 2)
                 Rectangle()
                 LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: Self.contentInset - 2)
+                    .frame(width: scroll.hasMoreAfter ? Self.overflowFade : Self.contentInset - 2)
             }
+            .animation(.snappy(duration: 0.2), value: scroll.hasMoreBefore)
+            .animation(.snappy(duration: 0.2), value: scroll.hasMoreAfter)
         }
+        .overlay(alignment: .leading) {
+            if scroll.hasMoreBefore { pagingArrow(forward: false).transition(.opacity) }
+        }
+        .overlay(alignment: .trailing) {
+            if scroll.hasMoreAfter { pagingArrow(forward: true).transition(.opacity) }
+        }
+        .animation(.snappy(duration: 0.2), value: scroll.hasMoreBefore)
+        .animation(.snappy(duration: 0.2), value: scroll.hasMoreAfter)
         .frame(height: Self.height)
         // Draw the glass in the background instead of wrapping the content in `.glassEffect`: views inside
         // `.glassEffect` never receive drops (VM test on macOS 26.6: the band's `onDrop` was never called until it
@@ -288,6 +321,28 @@ private struct SectionBand: View {
                 .allowsHitTesting(false)
         }
         .animation(.snappy(duration: 0.2), value: isTargeted)
+    }
+
+    /// A small arrow at an edge that has more tiles beyond it: scrolls the band by most of its width.
+    private func pagingArrow(forward: Bool) -> some View {
+        Button {
+            let step = max(scroll.viewport * 0.7, 80)
+            let target = forward ? scroll.offset + step : scroll.offset - step
+            withAnimation(.snappy) {
+                scrollPosition.scrollTo(x: min(max(0, target), max(0, scroll.content - scroll.viewport)))
+            }
+        } label: {
+            Image(systemName: forward ? "chevron.right" : "chevron.left")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .background(.thinMaterial, in: .circle)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 3)
+        .help(forward ? String(localized: "Show more icons") : String(localized: "Show earlier icons"))
+        .accessibilityLabel(forward ? "Show more icons" : "Show earlier icons")
     }
 
     /// A glowing 2 pt bar at the hover position (in the gap between two tiles). Hidden when the drop would not change
