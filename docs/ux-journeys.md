@@ -12,7 +12,7 @@ Settings disappeared after the Screen Recording relaunch. A user found both.
 
 ## When to run
 
-- **Before every release:** all journeys. Record the run in the [log](#run-log).
+- **Before every release:** all journeys.
 - **After changing a user-facing flow:** the journeys it touches (permissions, onboarding, Settings, the Frost Bar,
   the snowflake menu, updates). If a change adds a new entry point or flow, add or extend a journey in the same
   change.
@@ -228,8 +228,3 @@ a flow that isn't covered.
 To hand a run to an agent, point it to this file, `AGENTS.md` and `testing-vm.md`, name the journeys to walk, and ask
 for the report above without code changes.
 
-## Run log
-
-| Date | Build | Journeys | Result |
-| --- | --- | --- | --- |
-| 2026-10-06 | main after 0.3.0 | J1–J10 (J10 without Sparkle) | 2 High, 6 Medium, 4 Low: lingering system prompt, stale permissions on the snowflake click, grant buttons opening onboarding, dead-end notices, a shifted snowflake after forwarded clicks, the editor expanding the menu bar without permission, truncated text tiles. All fixed on main. |
