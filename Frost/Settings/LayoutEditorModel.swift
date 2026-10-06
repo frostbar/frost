@@ -70,6 +70,8 @@ final class LayoutEditorModel {
     /// from an earlier session.
     @ObservationIgnored private var session = 0
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    /// Waits for Accessibility while the tab is visible without it.
+    @ObservationIgnored private var permissionTask: Task<Void, Never>?
     @ObservationIgnored private var endEditingTask: Task<Void, Never>?
     @ObservationIgnored private var errorTask: Task<Void, Never>?
     /// The move task of the most recent drop. Rapid successive drops queue behind it (in drop order) instead of
@@ -117,6 +119,25 @@ final class LayoutEditorModel {
         let permissions = model.permissions
         permissions.refresh()
         permissions.startPolling()
+        // Without Accessibility there is nothing to edit (the tab only explains how to grant it): leave the menu bar
+        // alone, and start once the permission arrives while the tab is still visible.
+        guard permissions.canManageItems else {
+            permissionTask?.cancel()
+            permissionTask = Task { [weak self] in
+                while let self, self.isActive, !self.model.permissions.canManageItems {
+                    do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                }
+                guard let self, self.isActive, !Task.isCancelled else { return }
+                self.beginSession()
+            }
+            return
+        }
+        beginSession()
+    }
+
+    /// Enters editing and starts the refresh loop (the permission to manage items is there).
+    private func beginSession() {
+        let permissions = model.permissions
         // Show every item's disk-cached capture (the launch warm-up has usually loaded them already; anything else is
         // read off the main thread); items pushed off screen can't be captured until the menu bar has expanded.
         if permissions.screenRecording {
@@ -192,6 +213,8 @@ final class LayoutEditorModel {
         isWaitingForMover = false
         refreshTask?.cancel()
         refreshTask = nil
+        permissionTask?.cancel()
+        permissionTask = nil
         model.permissions.stopPolling()
         model.capturer.flushDiskCache()
         pending.removeAll()
