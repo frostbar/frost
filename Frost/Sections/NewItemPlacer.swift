@@ -19,7 +19,8 @@ import Observation
 ///
 /// Identities are derived from Accessibility attributes (`ItemIdentityKey`), so all of this works with Accessibility
 /// alone. Data persisted by versions that keyed items by window title (Screen Recording) is migrated as items are seen
-/// (`IdentityMigration`); the window title last seen with each identity is kept as an extra signal for that.
+/// (`IdentityMigration`); the window title last seen with each identity is kept as an extra signal for that. What is
+/// remembered, its persistence and that migration live in `ItemMemoryStore` (FrostCore).
 ///
 /// Observes only when the layout is trustworthy: Accessibility granted, not editing, no move transaction, no mouse
 /// button held (`UserMouseButtons`), and neither separator under the notch (collapsed or expanded). Moves only when the
@@ -34,53 +35,26 @@ final class NewItemPlacer {
     private let permissions: PermissionsService
     private let preferences: Preferences
     private let presence: UserPresenceMonitor
-    private let defaults: UserDefaults
-
-    /// Seen icons (`NewItemPlacement.encode`, version 2: AX-derived identities). Version 1 (`knownItemIdentities`,
-    /// keyed by window title) is read once as legacy identities and left in place.
-    private static let knownKey = "knownItemIdentities.v2"
-    private static let knownKeyV1 = "knownItemIdentities"
-    /// Frost's first run (AH seed just written) with no decision made yet: move existing Always Hidden icons to Hidden.
-    private static let firstRunKey = "firstRunPlacementPending"
-    /// The remembered section of each icon (`SectionKeeper.encode`); the suffix is the format version. Version 1 (keyed
-    /// by window title) is read once as legacy identities and left in place.
-    private static let sectionsKey = "itemSections.v2"
-    private static let sectionsKeyV1 = "itemSections.v1"
-    /// The window title last seen with each identity (`IdentityMigration.encodeTitles`).
-    private static let titlesKey = "itemTitles.v1"
-    /// Icons Frost moved out temporarily and must move back (`SectionKeeper.pendingReturns`; same format as the
-    /// remembered sections): written before the background capture moves an item out, removed once it is back.
-    private static let pendingReturnsKey = "pendingItemReturns.v1"
 
     /// Called by SectionController when it first writes the AH seed.
     static func markFirstRun(defaults: UserDefaults) {
-        defaults.set(true, forKey: firstRunKey)
+        ItemMemoryStore.markFirstRun(defaults: defaults)
     }
 
     /// First run: existing icons are still in Always Hidden and will move to Hidden once Accessibility is granted
     /// (onboarding shows a note based on this). Not observable: onboarding re-reads it when permissions change
     /// (the first decision only happens once Accessibility is granted).
-    var isFirstRunPlacementPending: Bool {
-        known == nil && defaults.bool(forKey: Self.firstRunKey)
-    }
+    var isFirstRunPlacementPending: Bool { store.isFirstRunPlacementPending }
     private static let debounce: Duration = .milliseconds(500)
     private static let retryDelay: Duration = .seconds(2)
     /// At most this many moves per move transaction; the rest follow after `retryDelay`, so a long batch (e.g. at login)
     /// never holds the mover for long.
     private static let maxMovesPerBatch = 5
 
-    /// Icons seen so far; nil means the first scan hasn't happened yet (seeded on the next decision).
-    private var known: Set<ItemIdentity>?
+    /// Seen icons, remembered sections, titles and pending returns (persisted).
+    private let store: ItemMemoryStore
     /// Windows already handled during this run (see `NewItemPlacement.decide`).
     private var considered: Set<CGWindowID> = []
-    /// The remembered sections and this run's observations.
-    private var keeper: SectionKeeper
-    /// The window title last seen with each identity (only readable with Screen Recording): lets remembered state
-    /// follow an item whose AX description changed (`IdentityMigration`).
-    private var titles: [ItemIdentity: String] = [:]
-    /// Returns recorded during this run (`notePendingReturn`); the ones loaded at launch are in `keeper`. Both are
-    /// persisted together.
-    private var runPendingReturns: [ItemIdentity: MenuBarSection] = [:]
     /// Identities already logged as ambiguous (logged once each).
     private var loggedAmbiguous: Set<ItemIdentity> = []
     /// A full ownership read happened before seeding (otherwise most icons have no owner yet and seeding is incomplete).
@@ -99,29 +73,7 @@ final class NewItemPlacer {
         self.permissions = permissions
         self.preferences = preferences
         self.presence = presence
-        self.defaults = defaults
-        known = defaults.data(forKey: Self.knownKey).flatMap { try? NewItemPlacement.decode($0) }
-            ?? defaults.data(forKey: Self.knownKeyV1).flatMap { try? NewItemPlacement.decodeLegacy($0) }
-        var memory: [ItemIdentity: MenuBarSection] = [:]
-        do {
-            if let data = defaults.data(forKey: Self.sectionsKey) {
-                memory = try SectionKeeper.decode(data)
-            } else if let data = defaults.data(forKey: Self.sectionsKeyV1) {
-                memory = try SectionKeeper.decodeLegacy(data)
-                FrostLog.newItems.notice("""
-                    read \(memory.count) remembered section(s) keyed by window title; they move to Accessibility-based \
-                    identities as the items are seen
-                    """)
-            }
-        } catch {
-            FrostLog.newItems.error("failed to read the remembered sections: \(error, privacy: .public)")
-        }
-        let pending = defaults.data(forKey: Self.pendingReturnsKey).flatMap { try? SectionKeeper.decode($0) } ?? [:]
-        if !pending.isEmpty {
-            FrostLog.newItems.notice("\(pending.count) item(s) Frost moved out temporarily before quitting go back")
-        }
-        keeper = SectionKeeper(memory: memory, pendingReturns: pending)
-        titles = defaults.data(forKey: Self.titlesKey).flatMap { try? IdentityMigration.decodeTitles($0) } ?? [:]
+        store = ItemMemoryStore(defaults: defaults)
     }
 
     func start() {
@@ -175,7 +127,7 @@ final class NewItemPlacer {
 
     private func evaluate() async {
         guard permissions.canManageItems else { return }
-        if known == nil, !refreshedForSeeding {
+        if store.known == nil, !refreshedForSeeding {
             await scanner.refreshOwnership()
             refreshedForSeeding = true
         }
@@ -191,25 +143,15 @@ final class NewItemPlacer {
         }
         let layout = SectionAssigner.layout(of: scanner.items, controls: controls)
         guard !layout.isEmpty else { return }
-        migrateIdentities(scanner.items)
+        store.migrateIdentities(scanner.items)
         let collapsed = sections.state == .collapsed
         var placements: [Placement] = []
 
         // New icons: only collapsed (on a crowded notched display while expanded, items that don't fit get placed left
         // of AH).
         if collapsed {
-            let firstRun = known == nil && defaults.bool(forKey: Self.firstRunKey)
-            // Items whose app still has title-keyed identities that couldn't be mapped (no Screen Recording) count as
-            // seen: whether one of them is new can't be told.
-            let presumed = known.map { IdentityMigration.presumedKnown(known: $0, items: scanner.items) } ?? []
-            let decision = NewItemPlacement.decide(layout: layout, known: known.map { $0.union(presumed) },
-                                                   considered: considered, firstRun: firstRun)
+            let decision = store.decideNewItems(layout: layout, items: scanner.items, considered: considered)
             considered = decision.considered
-            remember(decision.learned, seeding: known == nil)
-            defaults.removeObject(forKey: Self.firstRunKey)
-            if firstRun, !decision.toMove.isEmpty {
-                FrostLog.newItems.notice("first run: moving \(decision.toMove.count) pre-existing items from Always Hidden to Hidden")
-            }
             placements += decision.toMove.map { Placement(item: $0, section: .hidden, kind: .new) }
         }
 
@@ -238,12 +180,10 @@ final class NewItemPlacer {
         }
         guard separatorsTrusted else { return [] }
         let obscured = Set(items.filter { ItemMover.isObscured($0, displayBounds: displayBounds) }.map(\.windowID))
-        // Items that may still take over a title-keyed remembered section once titles are readable aren't seeded.
-        let awaiting = IdentityMigration.awaitingMigration(stored: Set(keeper.memory.keys), items: items)
-        let outcome = keeper.observe(layout: layout, obscured: obscured, movedByFrost: mover.takeMovedWindowIDs(),
-                                     skipping: skipping, awaitingMigration: awaiting,
-                                     restoreEnabled: preferences.keepItemSections,
-                                     canMove: collapsed && !mover.isShuttingDown)
+        let outcome = store.observeSections(layout: layout, items: items, obscured: obscured,
+                                            movedByFrost: mover.takeMovedWindowIDs(), skipping: skipping,
+                                            restoreEnabled: preferences.keepItemSections,
+                                            canMove: collapsed && !mover.isShuttingDown)
         for move in outcome.userMoves {
             FrostLog.newItems.notice("""
                 remembering \(move.identity.bundleID, privacy: .public) \
@@ -261,8 +201,6 @@ final class NewItemPlacer {
                 """)
         }
         loggedAmbiguous = outcome.ambiguous
-        if outcome.memoryChanged { saveSections() }
-        if outcome.pendingReturnsChanged { savePendingReturns() }
         return outcome.restores.map { Placement(item: $0.item, section: $0.to, kind: .restore) }
     }
 
@@ -271,35 +209,17 @@ final class NewItemPlacer {
     /// (`SectionKeeper.pendingReturns`). Returns the identity recorded (nil: unresolved or shared, nothing recorded).
     @discardableResult
     func notePendingReturn(of item: MenuBarItem, to section: MenuBarSection) -> ItemIdentity? {
-        guard let identity = item.identity,
-              scanner.items.filter({ $0.identity == identity }).count <= 1 else { return nil }
-        runPendingReturns[identity] = section
-        savePendingReturns()
-        return identity
+        store.notePendingReturn(of: item, to: section, among: scanner.items)
     }
 
     /// The item recorded by `notePendingReturn` is back (or gone).
     func clearPendingReturn(_ identity: ItemIdentity?) {
-        guard let identity, runPendingReturns.removeValue(forKey: identity) != nil else { return }
-        savePendingReturns()
-    }
-
-    private func savePendingReturns() {
-        let all = keeper.pendingReturns.merging(runPendingReturns) { _, run in run }
-        guard !all.isEmpty else {
-            defaults.removeObject(forKey: Self.pendingReturnsKey)
-            return
-        }
-        do {
-            defaults.set(try SectionKeeper.encode(all), forKey: Self.pendingReturnsKey)
-        } catch {
-            FrostLog.newItems.error("failed to save the items to move back: \(error, privacy: .public)")
-        }
+        store.clearPendingReturn(identity)
     }
 
     /// The user dropped `item` into `section` in the layout editor and the move succeeded: remember it.
     func recordDrop(_ item: MenuBarItem, in section: MenuBarSection) {
-        guard keeper.record(item, in: section, among: scanner.items) else {
+        guard store.record(item, in: section, among: scanner.items) else {
             FrostLog.newItems.notice("""
                 not remembering the section of dropped item \(item.windowID): \
                 its identity is unknown or shared with another item
@@ -310,7 +230,6 @@ final class NewItemPlacer {
             remembering \(item.bundleID ?? "?", privacy: .public) (\(item.identityKey ?? "?", privacy: .private)) \
             in \(section.rawValue, privacy: .public): dropped in the layout editor
             """)
-        saveSections()
     }
 
     private func move(_ placements: [Placement], controls: FrostControlWindows) async {
@@ -379,16 +298,11 @@ final class NewItemPlacer {
         }
         let newItems = attempted.filter { $0.kind == .new }.map(\.item)
         considered.formUnion(newItems.map(\.windowID))
-        remember(Set(newItems.compactMap(NewItemPlacement.identity(of:))), seeding: false)
-        var returnsChanged = false
-        for placement in attempted where placement.kind == .restore {
-            if keeper.restoreAttempted(placement.item.windowID, identity: placement.item.identity) { returnsChanged = true }
-        }
-        if returnsChanged { savePendingReturns() }
+        store.remember(Set(newItems.compactMap(NewItemPlacement.identity(of:))), seeding: false)
+        store.restoresAttempted(attempted.filter { $0.kind == .restore }.map(\.item))
         // A new icon Frost placed in Hidden belongs there until the user moves it.
-        let placedNew = moved.filter { $0.kind == .new }
-        for placement in placedNew { keeper.record(placement.item, in: placement.section, among: scanner.items) }
-        if !placedNew.isEmpty { saveSections() }
+        store.recordPlaced(moved.filter { $0.kind == .new }.map { (item: $0.item, section: $0.section) },
+                           among: scanner.items)
         if attempted.count < placements.count, !mover.isShuttingDown { schedule(after: Self.retryDelay) }
     }
 
@@ -400,63 +314,5 @@ final class NewItemPlacer {
         if isPaused { return "the Frost Bar is open or forwarding a click" }
         if isAway { return "the user is away" }
         return nil
-    }
-
-    private func remember(_ identities: Set<ItemIdentity>, seeding: Bool) {
-        guard seeding || !identities.isEmpty else { return }
-        let updated = (known ?? []).union(identities)
-        guard updated != known else { return }
-        known = updated
-        saveKnown(updated)
-    }
-
-    /// Moves remembered sections and seen icons stored under an older identity (keyed by window title, or an AX
-    /// description that has since changed) to the identities the current items have, and records the items' window
-    /// titles for the next time (`IdentityMigration`).
-    private func migrateIdentities(_ items: [MenuBarItem]) {
-        let memoryPlan = IdentityMigration.plan(stored: Set(keeper.memory.keys), titles: titles, items: items)
-        if keeper.rekey(memoryPlan) {
-            FrostLog.newItems.notice("moved \(memoryPlan.count) remembered section(s) to the items' current identities")
-            saveSections()
-        }
-        if let known {
-            let knownPlan = IdentityMigration.plan(stored: known, titles: titles, items: items)
-            let migrated = IdentityMigration.apply(knownPlan, to: known)
-            if migrated != known {
-                self.known = migrated
-                saveKnown(migrated)
-            }
-        }
-        let renamed = IdentityMigration.apply(memoryPlan, to: titles)
-        if let updated = IdentityMigration.updatedTitles(renamed, items: items) {
-            saveTitles(updated)
-        } else if renamed != titles {
-            saveTitles(renamed)
-        }
-    }
-
-    private func saveTitles(_ updated: [ItemIdentity: String]) {
-        titles = updated
-        do {
-            defaults.set(try IdentityMigration.encodeTitles(updated), forKey: Self.titlesKey)
-        } catch {
-            FrostLog.newItems.error("failed to save item titles: \(error, privacy: .public)")
-        }
-    }
-
-    private func saveKnown(_ identities: Set<ItemIdentity>) {
-        do {
-            defaults.set(try NewItemPlacement.encode(identities), forKey: Self.knownKey)
-        } catch {
-            FrostLog.newItems.error("failed to save known items: \(error, privacy: .public)")
-        }
-    }
-
-    private func saveSections() {
-        do {
-            defaults.set(try SectionKeeper.encode(keeper.memory), forKey: Self.sectionsKey)
-        } catch {
-            FrostLog.newItems.error("failed to save the remembered sections: \(error, privacy: .public)")
-        }
     }
 }
