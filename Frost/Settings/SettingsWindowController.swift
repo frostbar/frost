@@ -35,9 +35,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         return (shared.window, SettingsTab.allCases[index])
     }
 
-    /// Height of the Layout tab's content area below the toolbar: the three section bands, the hint and the Screen
-    /// Recording notice, which is the tallest state. The other tabs are as tall as their content.
-    static let layoutHeight: CGFloat = 466
+    /// Content height assumed before a tab has been laid out for the first time (about the editor's).
+    static let defaultContentHeight: CGFloat = 440
     /// Duration of the window's height animation on a tab switch (the content cross-fades alongside).
     static let resizeDuration: TimeInterval = 0.25
 
@@ -67,6 +66,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// Why the editor is paused although the window is open (see `PauseReason`); empty = not paused.
     private var pauseReasons: Set<PauseReason> = []
     private var observers: [NSObjectProtocol] = []
+    /// Pending window resize after the selected tab's content changed height (see `init`).
+    private var resizeTask: Task<Void, Never>?
 
     /// Situations in which nobody can see the editor, so the menu bar leaves editing mode (and the editor's refresh
     /// loop stops) like when the window is minimized.
@@ -113,9 +114,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
         for item in tabs.tabViewItems {
             (item.viewController as? SettingsTabContainerController)?.onHeightChange = { [weak self] container in
-                // A tab whose content changed height while shown (a notice appearing) resizes the window.
+                // A tab whose content changed height while shown (a notice appearing) resizes the window. SwiftUI
+                // reports every frame of its own animation, so wait for the height to settle and animate once.
                 guard let self, self.selectedContainer === container else { return }
-                self.resizeWindow(for: container, animated: true)
+                self.resizeTask?.cancel()
+                self.resizeTask = Task { [weak self] in
+                    do { try await Task.sleep(for: .milliseconds(80)) } catch { return }
+                    guard let self, self.selectedContainer === container else { return }
+                    self.resizeWindow(for: container, animated: true)
+                }
             }
         }
         if model.presence.isAway { pauseReasons.insert(.userAway) }
@@ -145,8 +152,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let controller: NSViewController
         switch tab {
         case .layout:
-            controller = hosting(SettingsPane(reporter: reporter, fixedHeight: layoutHeight) { LayoutEditorView() },
-                                 reporter, model, layoutEditor)
+            controller = hosting(SettingsPane(reporter: reporter) { LayoutEditorView() }, reporter, model, layoutEditor)
         case .behavior:
             controller = hosting(SettingsPane(reporter: reporter) { BehaviorView() }, reporter, model, layoutEditor)
         case .about:
@@ -167,7 +173,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let container = SettingsTabContainerController(content: controller, reporter: reporter) {
             controller.sizeThatFits(in: CGSize(width: SettingsPane<EmptyView>.width, height: 4000)).height
         }
-        container.view.frame.size = NSSize(width: SettingsPane<EmptyView>.width, height: layoutHeight)
+        container.view.frame.size = NSSize(width: SettingsPane<EmptyView>.width, height: defaultContentHeight)
         return container
     }
 
@@ -250,6 +256,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// animation runs on the window frame only: the tab's content is pinned to the top at its own height, so it is
     /// neither laid out again nor moved while the window grows or shrinks (the clipped part just appears or goes).
     private func resizeWindow(for container: SettingsTabContainerController, animated: Bool) {
+        resizeTask?.cancel()
         let chrome = window.frame.height - window.contentLayoutRect.height
         let height = (container.contentHeight + chrome).rounded()
         var frame = window.frame
@@ -349,7 +356,7 @@ private final class SettingsTabContainerController: NSViewController {
         self.content = content
         self.reporter = reporter
         self.measure = measure
-        heightConstraint = content.view.heightAnchor.constraint(equalToConstant: SettingsWindowController.layoutHeight)
+        heightConstraint = content.view.heightAnchor.constraint(equalToConstant: SettingsWindowController.defaultContentHeight)
         super.init(nibName: nil, bundle: nil)
         reporter.onChange = { [weak self] _ in
             guard let self else { return }
@@ -366,12 +373,12 @@ private final class SettingsTabContainerController: NSViewController {
         // The laid-out height once SwiftUI has reported it; the ideal height before the tab's first layout.
         if let reported = reporter.height { return reported.rounded(.up) }
         let height = measure()
-        return height.isFinite && height > 0 ? height.rounded(.up) : SettingsWindowController.layoutHeight
+        return height.isFinite && height > 0 ? height.rounded(.up) : SettingsWindowController.defaultContentHeight
     }
 
     override func loadView() {
         let view = NSView(frame: NSRect(origin: .zero, size: NSSize(width: SettingsPane<EmptyView>.width,
-                                                                    height: SettingsWindowController.layoutHeight)))
+                                                                    height: SettingsWindowController.defaultContentHeight)))
         addChild(content)
         let hosted = content.view
         hosted.translatesAutoresizingMaskIntoConstraints = false

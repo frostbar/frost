@@ -42,6 +42,10 @@ struct LayoutEditorContent: View {
         _drag = State(initialValue: initialDrag)
     }
 
+    /// Height of the placeholders (loading, permission needed, ...): about the editor's, so the window doesn't resize
+    /// when the editor appears.
+    private static let placeholderHeight: CGFloat = 420
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Group {
@@ -68,6 +72,8 @@ struct LayoutEditorContent: View {
                     editor
                 }
             }
+            // The window is as tall as this view's content: the editor needs no minimum, the placeholders do.
+            .frame(minHeight: state.phase == .ready ? nil : Self.placeholderHeight)
             .transition(.blurReplace)
 
             if let message = state.errorMessage {
@@ -96,8 +102,6 @@ struct LayoutEditorContent: View {
                 SectionBand(section: section, items: state.layout[section, default: []], state: state,
                             drag: $drag, onDrop: { id, index in actions.drop(id, section, index) })
             }
-
-            Spacer(minLength: 0)
 
             footer
         }

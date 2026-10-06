@@ -50,25 +50,19 @@ final class SettingsHeightReporter {
 /// Root of one settings tab: the content at the window's fixed width. It has no background of its own (the window's
 /// standard background lies behind all tabs), so only the content cross-fades.
 ///
-/// The window's height follows the selected tab: a tab either fills a fixed height (`fixedHeight`, the layout editor)
-/// or is as tall as its content, which it reports through `reporter` (also when the content changes while the tab is
-/// shown, e.g. a notice appearing). The content sits at the top of whatever space the window gives it, so resizing the
+/// The window's height follows the selected tab: a tab is as tall as its content, which it reports through `reporter`
+/// (also when the content changes while the tab is shown, e.g. a notice appearing). The content sits at the top of whatever space the window gives it, so resizing the
 /// window never moves or relayouts it.
 struct SettingsPane<Content: View>: View {
     static var width: CGFloat { 640 }
 
     let reporter: SettingsHeightReporter
-    var fixedHeight: CGFloat?
     @ViewBuilder var content: Content
 
     var body: some View {
-        Group {
-            if let fixedHeight {
-                content.frame(width: Self.width, height: fixedHeight)
-            } else {
-                content.frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reporter.report($0) }
+        content
+            .frame(width: Self.width)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reporter.report($0) }
     }
 }
