@@ -84,7 +84,7 @@ Frost has to be relaunched after granting Screen Recording; onboarding offers a 
 
 - Frost checks for updates once a day with [Sparkle](https://sparkle-project.org) and installs nothing without asking.
   When an update is available, a dot appears on the snowflake and its right-click menu shows **Update Available…**.
-  You can check manually or turn automatic checks off in **Settings → Behavior**. Updates are verified with an EdDSA
+  You can check manually or turn automatic checks off in **Settings → About**. Updates are verified with an EdDSA
   signature.
 - The update check is Frost's only network access: it downloads `appcast.xml` (and the update, if you accept it) from
   this repository's GitHub Releases. No analytics, no accounts.

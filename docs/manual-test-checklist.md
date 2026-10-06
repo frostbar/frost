@@ -329,10 +329,14 @@ For each item, record: environment (model / displays / macOS version) and result
 ## 6. Settings window appearance
 
 - [ ] **Known risk (d)**: how the transparent title bar, the toolbar tabs (Layout / Behavior / About, the selected one
-  highlighted), glass cards and button hover / press effects look in Light and Dark Mode and on different wallpapers.
-- [ ] Switching tabs cross-fades the content (about 0.2 s) over a background that stays still: no tint flicker, no
-  window resize, no stutter, also on the first visit to each tab and when clicking tabs in quick succession (the last
-  clicked tab ends up shown cleanly). With System Settings → Accessibility → Display → Reduce motion on, switching is
+  highlighted), the grouped Behavior and About forms, the glass bands of the layout editor and button hover / press
+  effects look in Light and Dark Mode and on different wallpapers. The window background is the standard opaque one:
+  a colorful wallpaper never tints it.
+- [ ] The window's height follows the selected tab (Behavior and About are as tall as their content, with no large
+  empty area; Layout has its own height). Switching tabs cross-fades the content (about 0.2 s) while the window
+  animates to the new height with its top edge and the toolbar staying put: no flicker, no content jump, no layout
+  pop, no stutter, also on the first visit to each tab and when clicking tabs in quick succession (the last clicked
+  tab ends up shown cleanly). A notice appearing in a tab (Behavior's Accessibility notice) grows the window too. With System Settings → Accessibility → Display → Reduce motion on, switching is
   instant. The window title follows the selected tab. Returning to Layout expands the menu bar only after the fade.
 - [ ] Switch the system between Light and Dark Mode: the Settings window, onboarding window and Frost Bar update
   immediately; images in the layout editor and Frost Bar refresh with the appearance (white / black glyphs never end
@@ -341,10 +345,14 @@ For each item, record: environment (model / displays / macOS version) and result
   Frost Bar doesn't resize unless an item's width really changed.
 - [ ] The snowflake in the menu bar matches the neighboring Wi‑Fi / Control Center / third-party icons in size and
   weight, and is vertically centered in both light and dark menu bars; it doesn't animate on expand / collapse.
-- [ ] Behavior tab: **Hide after** (the auto-hide delay), the display mode, **Keep icons in their sections** and
+- [ ] Behavior tab (sections **Menu Bar** and **General**, native switches, no per-row icons): **Show hidden icons**,
+  **Automatically rehide** with **Rehide delay** (dimmed while rehide is off), **Keep icons in their sections** and
   **Launch at login** work; an inline error appears if enabling launch at login fails. Switching the display mode
-  changes its explanation instantly: the card keeps its height (as tall as the longest explanation) and the cards
-  below don't move; no overlapping text.
+  changes its one-line explanation instantly: the row keeps its height and the rows below don't move; no overlapping
+  text.
+- [ ] About tab: the real app icon (not a symbol), "Frost" and the version; **Updates** (automatic checks, **Check for
+  Updates…**) and **Permissions** (Accessibility and Screen Recording with Granted / Grant Access / Open System
+  Settings + Relaunch) in grouped sections; nothing truncates in zh-Hans.
 - [ ] App icon: the icon is crisp in Finder, the About tab, Login Items and the System Settings privacy lists; on
   macOS 26 it is not placed inside a gray rounded "container" (the asset catalog icon matches the system icon shape).
 
@@ -490,9 +498,9 @@ Evidence goes under `build/vm-shots/no-screen-recording/`.
 Verify in the VM with two release builds that have different version numbers (`scripts/release/release.sh`); for a
 local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
 
-- [ ] **Automatically check for updates** in Settings → Behavior is on by default; after turning it off,
+- [ ] **Automatically check for updates** in Settings → About is on by default; after turning it off,
   `defaults read dev.frost.Frost SUEnableAutomaticChecks` is 0, and it is still off after a relaunch.
-- [ ] Right-click the snowflake → "Check for Updates…" (or the check-now button on the Behavior tab): when already up
+- [ ] Right-click the snowflake → "Check for Updates…" (or **Check for Updates…** on the About tab): when already up
   to date, Sparkle says so; while a check is in progress, the menu item and the button are disabled.
 - [ ] **Errors**: with an unreachable feed (`defaults write dev.frost.Frost SUFeedURL http://127.0.0.1:9/appcast.xml`),
   "Check for Updates…" shows Sparkle's "Update Error!" alert in front; clicking the snowflake while it is up brings it

@@ -140,7 +140,6 @@ them out. Pass them with `make vm-run FROST_ENV="NAME=value"`.
 | variable | effect |
 | --- | --- |
 | `FROST_TEST_DROP_REPLICA_CLICKS=1` | drops the click the VM redelivers to the snowflake after a click on its replica on another display, like a real Mac that loses it, so the `ReplicaClickDetector` fallback can be tested with left clicks (see "Notes") |
-| `FROST_TEST_SETTINGS_HEIGHT=<pt>` | overrides the settings window's content height (small: the tabs scroll; tall: measure each tab's full content) |
 | `FROST_TEST_NOTCH_PRIMARY_DISPLAY=1` | display mode Automatic treats the primary display as notched (the VM has no notch) |
 | `FROST_TEST_FRAME_PROBE=1` | `FrameProbe`: frame timing of settings tab switches, the Frost Bar's opens and the launch warm-up; the distributed notification `dev.frost.Frost.frameProbe` (object = label) starts an idle baseline (see "Verification techniques") |
 | `FROST_TEST_OBSCURED_RESTORE_PAUSE_MS=<ms>` | the background capture of items behind the notch pauses that long between the capture and the move back, so `guest-interrupt` can reliably hold a button while the item sits right of the Frost icon |
@@ -252,10 +251,11 @@ notch).
   to Frost's button (a real Mac does not), but not a right click. `FROST_TEST_DROP_REPLICA_CLICKS=1`
   (`make vm-run FROST_ENV="FROST_TEST_DROP_REPLICA_CLICKS=1"`) makes Frost drop the redelivered click so the
   replica-click fallback (`ReplicaClickDetector`) can be tested with left clicks too.
-- Settings window height: the window has one fixed size for every tab, tall enough for the tallest tab without
-  scrolling. `FROST_TEST_SETTINGS_HEIGHT=<pt>` (Debug builds) overrides the content height below the toolbar: a small
-  value (e.g. 360) makes the Behavior tab scroll, to check that nothing is drawn under the toolbar; a tall one (e.g.
-  820) shows each tab's full content, whose extent can then be read from the window's accessibility tree.
+- Settings window height: the window's height follows the selected tab (the Layout tab has a fixed height, the others
+  are as tall as their content) and animates on a tab switch. To drive a switch, click the toolbar tabs with HID-level
+  events from inside the guest (`guest-click.swift`, `HIDTAP=1`, window ID 0) and read the `frame-probe tab-<name>`
+  lines; record the window with `screencapture -v -R…` and split the movie with `ffmpeg` to check that the toolbar
+  and content never jump.
 - Display mode Automatic: the VM has no notch, so Automatic expands in the menu bar on every display.
   `FROST_TEST_NOTCH_PRIMARY_DISPLAY=1` (Debug builds) makes Automatic treat the primary display as notched: the Frost
   Bar on the main display and In Menu Bar on the virtual one, like a notched Mac with an external display.

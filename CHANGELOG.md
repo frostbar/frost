@@ -6,6 +6,11 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+### Changed
+- Redesigned Settings: Behavior and About use grouped sections like System Settings on a standard window background,
+  with shorter descriptions and no per-row icons. The window's height follows each tab, animating when you switch, and
+  About shows the app icon. Update settings moved from Behavior to About.
+
 ## [0.3.2] - 2026-10-06
 
 ### Fixed
