@@ -112,13 +112,17 @@ enum FrostBarMetrics {
     static let hintHeight: CGFloat = 40
     /// While a relaunch is pending the hint stacks its two actions under the text (they don't fit beside it in a
     /// panel this narrow), so it needs a second line.
-    static let relaunchHintHeight: CGFloat = 58
+    static let relaunchHintHeight: CGFloat = 62
     /// Height of the hint row in this state (`hintHeight` when it is a single line).
     static func hintHeight(_ state: FrostBarState) -> CGFloat {
         state.screenRecordingNeedsRelaunch ? relaunchHintHeight : hintHeight
     }
     /// Content width of non-icon states (empty, no permissions, ...).
     static let statusWidth: CGFloat = 232
+    /// Minimum content width while the relaunch hint is shown. At the narrowest grid the hint has room for neither
+    /// its sentence (it would truncate mid-sentence) nor its two actions side by side (they would wrap); `statusWidth`
+    /// is the width the panel already takes for its other text-only shapes.
+    static let relaunchHintWidth: CGFloat = statusWidth
     /// Showing / hiding the Always Hidden section (⌥-click while open): a short fade and height change. The window
     /// grows at once and shrinks after it (see `FrostBarController.reposition`).
     static let sectionAnimation: Animation = .snappy(duration: 0.24)
@@ -149,10 +153,13 @@ enum FrostBarMetrics {
                       rowHeight: tileHeight, lineSpacing: lineSpacing)
     }
 
-    /// Width of the grid area (panel content): the widest grid, at least `minColumns` tiles wide (room for the footer).
+    /// Width of the grid area (panel content): the widest grid, at least `minColumns` tiles wide (room for the footer),
+    /// and while a relaunch is pending at least `relaunchHintWidth` (the hint below the grid needs the room).
     static func contentWidth(_ state: FrostBarState) -> CGFloat {
         let widest = max(gridSize(state.hidden, state).width, gridSize(state.alwaysHidden, state).width)
-        return min(max(widest, rowWidth(columns: minColumns)), gridCap(state))
+        let grid = min(max(widest, rowWidth(columns: minColumns)), gridCap(state))
+        guard state.showsScreenRecordingHint, state.screenRecordingNeedsRelaunch else { return grid }
+        return max(grid, relaunchHintWidth)
     }
 
     /// Full height of the grids (excluding the footer).
