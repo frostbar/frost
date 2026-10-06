@@ -574,6 +574,16 @@
         }
       }
     },
+    "Grant Access…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授权…"
+          }
+        }
+      }
+    },
     "Grant Screen Recording to see real icons" : {
       "localizations" : {
         "zh-Hans" : {

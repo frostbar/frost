@@ -586,6 +586,19 @@ final class SectionController {
         guard let iconItem, let button = iconItem.button else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
+        permissions.refresh()
+        if !permissions.canManageItems {
+            // A reminder for users who chose "Not Now": the Frost Bar and the layout editor need Accessibility, and
+            // until then hidden icons expand in the menu bar.
+            let grant = NSMenuItem(
+                title: String(localized: "Grant Access…", comment: "Frost icon context menu item shown without Accessibility"),
+                action: #selector(grantAccessibility), keyEquivalent: "")
+            grant.target = self
+            grant.image = NSImage(systemSymbolName: "accessibility", accessibilityDescription: nil)
+            grant.toolTip = String(localized: "The Frost Bar needs the Accessibility permission.")
+            menu.addItem(grant)
+            menu.addItem(.separator())
+        }
         let settings = NSMenuItem(
             title: String(localized: "Settings…", comment: "Frost icon context menu item"),
             action: #selector(openSettings), keyEquivalent: ",")
@@ -651,6 +664,8 @@ final class SectionController {
     private static let highlightRestoreDelay: Duration = .milliseconds(300)
 
     @objc private func openSettings() { model?.openSettings() }
+
+    @objc private func grantAccessibility() { permissions.requestAccessibility() }
 
     @objc private func checkForUpdates() { model?.updates.checkForUpdates() }
 
