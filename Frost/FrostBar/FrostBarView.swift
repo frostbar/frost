@@ -56,6 +56,8 @@ struct FrostBarState {
     /// Accessibility is granted but Screen Recording isn't, and the user hasn't closed the hint: suggest granting it
     /// for real icon images.
     var showsScreenRecordingHint = false
+    /// Screen Recording was requested and takes effect after a relaunch: the hint offers Relaunch instead.
+    var screenRecordingNeedsRelaunch = false
 
     var items: [MenuBarItem] { hidden + alwaysHidden }
 }
@@ -68,7 +70,9 @@ struct FrostBarActions {
     /// (`FrostBarPanel.onSecondaryClick`): SwiftUI buttons don't report them.
     var hover: @MainActor (_ windowID: CGWindowID?) -> Void = { _ in }
     var refresh: @MainActor () -> Void
-    var openOnboarding: @MainActor () -> Void
+    var grantAccessibility: @MainActor () -> Void
+    var grantScreenRecording: @MainActor () -> Void
+    var relaunch: @MainActor () -> Void
     var openSettings: @MainActor () -> Void
     /// The user closed the Screen Recording hint.
     var dismissScreenRecordingHint: @MainActor () -> Void = {}
@@ -210,7 +214,7 @@ struct FrostBarContent: View {
             case .needsPermission:
                 StatusMessage(symbol: "lock.fill", tint: .orange, title: "Accessibility Required",
                               detail: "The Frost Bar needs the Accessibility permission.") {
-                    PillButton(title: "Grant Access", symbol: "arrow.up.forward", action: actions.openOnboarding)
+                    PillButton(title: "Grant Access", symbol: "arrow.up.forward", action: actions.grantAccessibility)
                 }
             case .loading:
                 HStack(spacing: 10) {
@@ -245,7 +249,8 @@ struct FrostBarContent: View {
                 }
             }
             if state.showsScreenRecordingHint {
-                ScreenRecordingHint(grant: actions.openOnboarding, dismiss: actions.dismissScreenRecordingHint)
+                ScreenRecordingHint(needsRelaunch: state.screenRecordingNeedsRelaunch, grant: actions.grantScreenRecording,
+                                    relaunch: actions.relaunch, dismiss: actions.dismissScreenRecordingHint)
                     .frame(width: width + 2 * FrostBarMetrics.padding, height: FrostBarMetrics.hintHeight)
                     .transition(.opacity)
             }
@@ -526,20 +531,23 @@ private struct SectionHeader: View {
 /// Screen Recording isn't granted: tiles show app icons. A subtle row offering real images (opens onboarding), with a
 /// close button that hides it for good.
 private struct ScreenRecordingHint: View {
+    let needsRelaunch: Bool
     let grant: () -> Void
+    let relaunch: () -> Void
     let dismiss: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 6) {
-            Button(action: grant) {
+            Button(action: needsRelaunch ? relaunch : grant) {
                 Label {
-                    Text("Grant Screen Recording to see real icons")
+                    Text(needsRelaunch ? "Turn on Frost in System Settings, then relaunch."
+                                       : "Grant Screen Recording to see real icons")
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
-                    Image(systemName: "rectangle.dashed.badge.record")
+                    Image(systemName: needsRelaunch ? "arrow.clockwise" : "rectangle.dashed.badge.record")
                 }
                 .font(.caption)
                 .foregroundStyle(isHovered ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
@@ -548,7 +556,7 @@ private struct ScreenRecordingHint: View {
             }
             .buttonStyle(.plain)
             .onHover { isHovered = $0 }
-            .accessibilityHint("Opens the permissions window")
+            .accessibilityHint(needsRelaunch ? "Relaunches Frost" : "Opens System Settings")
             Button(action: dismiss) {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))

@@ -817,16 +817,6 @@
         }
       }
     },
-    "Opens the permissions window" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开权限窗口"
-          }
-        }
-      }
-    },
     "Opens this icon’s menu" : {
       "localizations" : {
         "zh-Hans" : {
@@ -935,6 +925,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "授权后需要重新启动 Frost"
+          }
+        }
+      }
+    },
+    "Relaunches Frost" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新启动 Frost"
           }
         }
       }

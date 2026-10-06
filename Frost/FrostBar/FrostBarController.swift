@@ -335,10 +335,15 @@ final class FrostBarController {
             activate: { [weak self] item, click in self?.activate(item.windowID, click: click) },
             hover: { [weak self] id in self?.hoveredTile = id },
             refresh: { [weak self] in self?.refresh() },
-            openOnboarding: { [weak self] in
-                self?.close(animated: false, reason: "onboarding opened")
-                self?.app.openOnboarding()
+            grantAccessibility: { [weak self] in
+                self?.close(animated: false, reason: "granting Accessibility")
+                self?.app.permissions.requestAccessibility()
             },
+            grantScreenRecording: { [weak self] in
+                self?.close(animated: false, reason: "granting Screen Recording")
+                self?.app.permissions.requestScreenRecording()
+            },
+            relaunch: { AppRelauncher.relaunch() },
             openSettings: { [weak self] in
                 self?.close(animated: false, reason: "settings opened")
                 self?.app.openSettings()

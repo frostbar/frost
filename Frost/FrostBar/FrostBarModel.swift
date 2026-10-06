@@ -80,7 +80,8 @@ final class FrostBarModel {
                              isPresented: isPresented, isRefreshing: isRefreshing,
                              isAlwaysHiddenFading: isAlwaysHiddenFading,
                              showsScreenRecordingHint: app.preferences.showsScreenRecordingHint(
-                                app.permissions.capabilities))
+                                app.permissions.capabilities),
+                             screenRecordingNeedsRelaunch: app.permissions.screenRecordingNeedsRelaunch)
     }
 }
 
