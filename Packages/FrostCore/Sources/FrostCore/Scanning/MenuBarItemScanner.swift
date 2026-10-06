@@ -11,7 +11,8 @@ public enum ScanStatus: Equatable, Sendable {
 
 /// Scans the menu bar items on the display that hosts the **active menu bar** (with multiple displays the real
 /// windows follow the active menu bar, see `MenuBarDisplayResolver`; with a single display it is the main
-/// display), and rescans automatically when apps launch or quit.
+/// display), and rescans automatically when apps launch or quit, and when status item windows appear or go away
+/// without that (`windowWatchInterval`).
 ///
 /// Scanning has two parts:
 /// - `rescan()`: synchronous and cheap; reads only CGWindowList and reuses the ownership cached by windowID.
@@ -57,6 +58,15 @@ public final class MenuBarItemScanner {
     @ObservationIgnored public var ownWindowIDs: () -> Set<CGWindowID> = { [] }
 
     @ObservationIgnored private var runningAppsObservation: NSKeyValueObservation?
+    /// How often `start`'s watch looks for status item windows that appeared or went away while no app launched or
+    /// quit: an app re-adding its item (hiding and showing it, e.g. an icon that blinks for unread messages) creates a
+    /// new window, which macOS puts at the far left, in Always Hidden. Nothing else rescans then, so without the watch
+    /// the item would stay there (its remembered section not restored) until some unrelated rescan. A check reads only
+    /// the window list; `items` are republished only when the set of windows changed.
+    public static let windowWatchInterval: Duration = .seconds(3)
+    @ObservationIgnored private var windowWatch: Task<Void, Never>?
+    /// The windows `items` were last built from (before stale ones are dropped).
+    @ObservationIgnored private var publishedWindowIDs: Set<CGWindowID> = []
     @ObservationIgnored private var pendingRescan: Task<Void, Never>?
     @ObservationIgnored private var pendingRefreshOwnership = false
     @ObservationIgnored private lazy var ownershipRefresher = RefreshCoalescer { [weak self] in
@@ -77,6 +87,14 @@ public final class MenuBarItemScanner {
         }
         rescan()
         ownershipRefresher.refreshInBackground()
+        windowWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: Self.windowWatchInterval) } catch { return }
+                guard let self else { return }
+                let windows = self.menuBarWindows()
+                if Set(windows.map(\.windowID)) != self.publishedWindowIDs { self.rescan(windows) }
+            }
+        }
     }
 
     /// Coalesces bursts of triggers: status items often appear a little after an app launches, so scan after
@@ -99,7 +117,10 @@ public final class MenuBarItemScanner {
     /// ownership. If any window needs a full AX read (a new window, or an unresolved one due for a retry),
     /// starts one in the background that updates `items` when it finishes.
     public func rescan() {
-        let windows = menuBarWindows()
+        rescan(menuBarWindows())
+    }
+
+    private func rescan(_ windows: [RawStatusWindow]) {
         cacheOwnWindows(windows)
         publish(windows)
         let needsFullRead = OwnershipRefreshPolicy.needsFullRead(
@@ -162,6 +183,7 @@ public final class MenuBarItemScanner {
                                occupiesSystemSlot: systemSlots.contains(window.windowID))
         }.filter { !StaleWindowFilter.isStale($0) }
         let live = Set(windows.map(\.windowID))
+        publishedWindowIDs = live
         ownershipCache = ownershipCache.filter { live.contains($0.key) }
         unresolvedSince = unresolvedSince.filter { live.contains($0.key) }
         status = windows.isEmpty ? .noWindows : .ok
