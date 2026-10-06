@@ -272,4 +272,25 @@ import Foundation
         #expect(cache.migrate(from: legacy, to: key) == nil)
         #expect(cache.load(key) == nil)
     }
+    @Test func loadingMigratesTheFirstEarlierKeyThatHasAnEntry() throws {
+        // Upgrading from 0.3.0: the entry is under the numbered key, the second earlier key. Loading must return it
+        // (moved to the new key) instead of failing after the move (0.3.1 crashed here at launch).
+        defer { cleanUp() }
+        let numbered = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", key: "desc:Fan 1"),
+                                         appearance: .dark, scale: 2)
+        let normalized = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", key: "desc:Fan <n>#0"),
+                                           appearance: .dark, scale: 2)
+        let title = ItemImageCacheKey(identity: IdentityMigration.legacy(bundleID: "com.example.App", title: "Fan"),
+                                      appearance: .dark, scale: 2)
+        try cache.save(Self.sampleImage(), tone: .light, style: .monochrome(.light), for: numbered, now: now)
+        let loaded = try #require(cache.load(normalized, migratingFrom: [title, numbered], now: now))
+        #expect(loaded.style == .monochrome(.light))
+        #expect(cache.load(numbered) == nil)
+        // Later loads find it under the new key.
+        #expect(cache.load(normalized, migratingFrom: [title, numbered], now: now) != nil)
+        // Nothing anywhere: nil, no crash.
+        let other = ItemImageCacheKey(identity: ItemIdentity(bundleID: "com.example.App", key: "desc:Other"),
+                                      appearance: .dark, scale: 2)
+        #expect(cache.load(other, migratingFrom: [title, numbered], now: now) == nil)
+    }
 }

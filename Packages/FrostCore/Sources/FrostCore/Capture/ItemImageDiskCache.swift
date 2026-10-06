@@ -180,6 +180,18 @@ public struct ItemImageDiskCache: Sendable {
         metadata.key ?? metadata.title.map { IdentityMigration.legacyPrefix + $0 }
     }
 
+    /// The entry under `key`, else the first of `earlierKeys` that has one, moved to `key` (`migrate`). Each earlier
+    /// key is tried once: a migration moves the files, so trying the same key again finds nothing. (A lazy
+    /// `compactMap(...).first` evaluates its closure twice and crashed on exactly that.)
+    public func load(_ key: ItemImageCacheKey, migratingFrom earlierKeys: [ItemImageCacheKey],
+                     now: Date = Date()) -> CachedItemImage? {
+        if let cached = load(key) { return cached }
+        for earlier in earlierKeys {
+            if let migrated = migrate(from: earlier, to: key, now: now) { return migrated }
+        }
+        return nil
+    }
+
     /// Reads the entry of `legacy` (an identity keyed by window title, from before identity keys existed) and moves it
     /// to `key`: the next lookup finds it under the item's current identity. Returns nil (and changes nothing) when
     /// `legacy` has no valid entry.

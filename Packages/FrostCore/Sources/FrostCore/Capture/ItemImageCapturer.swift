@@ -174,8 +174,7 @@ public final class ItemImageCapturer {
     /// the item's, or it has no visible pixels.
     nonisolated private static func prepare(_ request: CacheRequest, from diskCache: ItemImageDiskCache)
         -> PreparedCapture? {
-        guard let cached = diskCache.load(request.key)
-                ?? request.earlierKeys.lazy.compactMap({ diskCache.migrate(from: $0, to: request.key) }).first,
+        guard let cached = diskCache.load(request.key, migratingFrom: request.earlierKeys),
               abs(cached.image.height - request.pixelHeight) <= 1,
               let copy = PixelCopy(cached.image), copy.hasVisiblePixels
         else { return nil }
