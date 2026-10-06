@@ -9,6 +9,10 @@
 // FAKEITEMS_NET=1 (environment): FIClock shows a network-speed-like text instead ("4KB/s", "503KB/s", ...) that
 // changes its width every second, like a network-speed menu bar item.
 // FAKEITEMS_EXTRA=n (environment) adds n text items "Extra 0"... with menus.
+// FAKEITEMS_LIVE=1 (environment) adds three items after the others, for identity stability tests: FILiveHelp (no AX
+// description; its tooltip, i.e. AX help, shows fan-speed-like readings that change every second), FILiveDesc (its AX
+// description is a temperature-like reading that changes every second) and FIBlink (no AX description or help; hidden
+// for 4 s every 20 s with `isVisible`, like a chat app's icon that blinks for unread messages).
 // FAKEITEMS_POLITE=1 (environment) makes the popover items activate the app politely
 // (NSApp.activate(), macOS 14+ cooperative activation) instead of forcing it with
 // activate(ignoringOtherApps:). That is what many real menu bar apps do; without an
@@ -29,7 +33,17 @@ struct Spec {
     let behaviour: Behaviour
     /// The title counts seconds since launch ("12s"), updated every second.
     var ticking = false
+    /// FAKEITEMS_LIVE=1 items (see the header).
+    var live: Live?
 }
+
+enum Live { case help, description, blink }
+
+let liveSpecs: [Spec] = [
+    Spec(autosave: "FILiveHelp", title: nil, symbol: "fanblades.fill", behaviour: .menu, live: .help),
+    Spec(autosave: "FILiveDesc", title: nil, symbol: "thermometer.medium", behaviour: .menu, live: .description),
+    Spec(autosave: "FIBlink", title: nil, symbol: "message.fill", behaviour: .menu, live: .blink),
+]
 
 let specsA: [Spec] = [
     Spec(autosave: "FIMenuA", title: "A", symbol: nil, behaviour: .menu),
@@ -80,10 +94,11 @@ final class Controller: NSObject, NSMenuDelegate, NSPopoverDelegate {
             item.autosaveName = spec.autosave
             guard let button = item.button else { continue }
             if let symbol = spec.symbol {
-                button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: spec.autosave)
+                button.image = NSImage(systemSymbolName: symbol,
+                                       accessibilityDescription: spec.live == nil ? spec.autosave : nil)
             }
             if let title = spec.title { button.title = title }
-            button.setAccessibilityLabel(spec.autosave)
+            if spec.live == nil { button.setAccessibilityLabel(spec.autosave) }
             switch spec.behaviour {
             case .menu:
                 let menu = NSMenu(title: spec.autosave)
@@ -122,6 +137,7 @@ final class Controller: NSObject, NSMenuDelegate, NSPopoverDelegate {
             }
             items.append(item)
             if spec.ticking { startTicking(button) }
+            if let live = spec.live { startLive(live, item: item) }
         }
         log("launched with \(specs.count) items activation=\(politeActivation ? "polite" : "forced")")
         // Log every activation change so tests can see whether a polite activate() was granted.
@@ -140,6 +156,40 @@ final class Controller: NSObject, NSMenuDelegate, NSPopoverDelegate {
                 guard let self, let button else { return }
                 let seconds = Int(Date().timeIntervalSince(self.launched))
                 button.title = netStyle ? netTitles[seconds % netTitles.count] : "\(seconds)s"
+            }
+        }
+    }
+
+    var liveItems: [(Live, NSStatusItem)] = []
+    var liveTimer: Timer?
+    var liveTick = 0
+
+    /// FAKEITEMS_LIVE=1 (see the header).
+    func startLive(_ live: Live, item: NSStatusItem) {
+        liveItems.append((live, item))
+        update(live, item)
+        guard liveTimer == nil else { return }
+        liveTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.liveTick += 1
+                for (live, item) in self.liveItems { self.update(live, item) }
+            }
+        }
+    }
+
+    func update(_ live: Live, _ item: NSStatusItem) {
+        let tick = liveTick
+        switch live {
+        case .help:
+            item.button?.toolTip = "Left side - \(4990 + tick * 7 % 50) RPM\nRight side - \(5012 - tick * 3 % 40) RPM"
+        case .description:
+            item.button?.setAccessibilityLabel("CPU \(40 + tick % 30)°C")
+        case .blink:
+            let visible = tick % 20 < 16
+            if item.isVisible != visible {
+                item.isVisible = visible
+                log("FIBlink \(visible ? "shown" : "hidden")")
             }
         }
     }
@@ -218,6 +268,7 @@ let controller = Controller()
 // FAKEITEMS_EXTRA=n adds n more text items with menus (for Frost Bar width / scrolling tests).
 let extra = Int(ProcessInfo.processInfo.environment["FAKEITEMS_EXTRA"] ?? "") ?? 0
 let extraSpecs = (0..<extra).map { Spec(autosave: "FIExtra\($0)", title: "Extra \($0)", symbol: nil, behaviour: .menu) }
+    + (ProcessInfo.processInfo.environment["FAKEITEMS_LIVE"] == "1" ? liveSpecs : [])
 MainActor.assumeIsolated {
     controller.install((Bundle.main.bundleIdentifier == "dev.frost.FakeItemsB" ? specsB : specsA) + extraSpecs)
 }
