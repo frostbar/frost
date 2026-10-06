@@ -53,6 +53,9 @@ final class SectionController {
     @ObservationIgnored private var replicaClickTask: Task<Void, Never>?
     @ObservationIgnored private var screenParametersObserver: NSObjectProtocol?
     @ObservationIgnored private var displayRescanTask: Task<Void, Never>?
+    /// The display setup last rescanned for: screen parameter notifications that don't change it (the Dock changing
+    /// size) are ignored (`DisplayConfiguration`).
+    @ObservationIgnored private var displayConfiguration: DisplayConfiguration?
     /// Environment variable `FROST_TEST_DROP_REPLICA_CLICKS=1` (VM testing only): drops replica clicks the system
     /// redelivers to the button, simulating a real Mac where the first click on a replica isn't delivered, to exercise
     /// the fallback path (the VM's virtual display redelivers, so it can't reproduce this otherwise).
@@ -164,12 +167,17 @@ final class SectionController {
         }
 
         updateReplicaClickMonitors()
+        displayConfiguration = .current
         screenParametersObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.updateReplicaClickMonitors()
-                self?.rescanAfterDisplayChange()
+                guard let self else { return }
+                self.updateReplicaClickMonitors()
+                let current = DisplayConfiguration.current
+                guard current != self.displayConfiguration else { return }
+                self.displayConfiguration = current
+                self.rescanAfterDisplayChange()
             }
         }
 

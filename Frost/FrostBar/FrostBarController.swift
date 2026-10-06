@@ -91,6 +91,8 @@ final class FrostBarController {
     var forwardTrace: ForwardTrace?
     /// The tile under the pointer (right clicks go to it, see `FrostBarPanel.onSecondaryClick`).
     private var hoveredTile: CGWindowID?
+    /// The display setup when screen parameters last changed it (`DisplayConfiguration`).
+    private var displayConfiguration = DisplayConfiguration.current
     /// Set when the item of a finished click forward must stop lingering in the Visible section (the Frost Bar
     /// reopens); quitting cancels the forward instead.
     var endLingerRequested = false
@@ -118,8 +120,13 @@ final class FrostBarController {
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.app.capturer.contentCache.invalidate()
-                self?.close(animated: false, reason: "screen parameters changed")
+                // Ignore notifications that change nothing Frost depends on (the Dock changing size).
+                guard let self else { return }
+                let current = DisplayConfiguration.current
+                guard current != self.displayConfiguration else { return }
+                self.displayConfiguration = current
+                self.app.capturer.contentCache.invalidate()
+                self.close(animated: false, reason: "screen parameters changed")
             }
         })
         // Displays asleep, screen locked, another user's session: nobody can see the panel, so close it (which stops
