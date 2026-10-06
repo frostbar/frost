@@ -46,6 +46,10 @@ struct BehaviorView: View {
                     if preferences.displayMode != .inline && !model.permissions.canManageItems {
                         InlineNotice(text: String(localized: "The Frost Bar needs the Accessibility permission. Until it’s granted, hidden icons expand in the menu bar."),
                                      symbol: "info.circle.fill", tint: .orange)
+                        Button("Grant Access") { model.permissions.requestAccessibility() }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .padding(.leading, SettingRow<EmptyView>.textInset)
                     }
                 }
 
@@ -66,8 +70,12 @@ struct BehaviorView: View {
             .padding(.bottom, 16)
             .animation(.snappy, value: preferences.displayMode)
             .animation(.snappy, value: preferences.autoRehide)
+            .animation(.snappy, value: model.permissions.canManageItems)
         }
         .scrollBounceBehavior(.basedOnSize)
+        // The notice goes away once Accessibility is granted in System Settings, which may not reactivate Frost.
+        .onAppear { model.permissions.startPolling() }
+        .onDisappear { model.permissions.stopPolling() }
     }
 }
 
