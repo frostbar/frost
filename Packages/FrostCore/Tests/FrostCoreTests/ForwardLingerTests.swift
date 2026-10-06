@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import FrostCore
 
@@ -91,5 +92,35 @@ import Testing
         // Pointer still on the item: the idle cap counts from the close.
         #expect(linger.update(sample(33_100, over: true)) == .keep)
         #expect(linger.update(sample(33_200, over: true)) == .restore(.idle))
+    }
+
+    // MARK: Standard timing and the pointer region
+
+    @Test func theStandardTimingMovesTheItemBackWithinAboutASecondOfLeavingIt() {
+        let timing = ForwardLinger.Timing.standard
+        #expect(timing.leaveDelay >= .milliseconds(500) && timing.leaveDelay <= .seconds(1))
+        var linger = ForwardLinger(start: t0, timing: timing)
+        #expect(linger.update(sample(400, over: true)) == .keep)
+        // Pointer away from the item (idling elsewhere on the menu bar no longer counts as being on it).
+        let left = Int(timing.leaveDelay.components.attoseconds / 1_000_000_000_000_000) + 400
+        #expect(linger.update(sample(left - 10)) == .keep)
+        #expect(linger.update(sample(left)) == .restore(.pointerLeft))
+    }
+
+    @Test func aPointerRestingOnTheItemDoesNotHoldItOutForLong() {
+        let timing = ForwardLinger.Timing.standard
+        #expect(timing.idleCap <= .seconds(15))
+    }
+
+    @Test func thePointerRegionIsTheItemFrameWithASmallMargin() {
+        let item = CGRect(x: 100, y: 0, width: 30, height: 24)
+        let region = ForwardLinger.pointerRegion(of: item)
+        #expect(region.contains(CGPoint(x: 100, y: 12)))
+        #expect(region.contains(CGPoint(x: 130 + ForwardLinger.pointerMargin - 1, y: 12)))
+        #expect(!region.contains(CGPoint(x: 130 + ForwardLinger.pointerMargin + 1, y: 12)))
+        #expect(!region.contains(CGPoint(x: 100 - ForwardLinger.pointerMargin - 1, y: 12)))
+        // Not the whole menu bar row: a point far to either side is outside.
+        #expect(!region.contains(CGPoint(x: 600, y: 12)))
+        #expect(!region.contains(CGPoint(x: 10, y: 12)))
     }
 }

@@ -152,15 +152,17 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] **The item lingers after its menu closes (user report: "after clicking a hidden icon via the Frost Bar, I can't
   right-click it in the menu bar")**: click a tile, then right-click the item in the menu bar: the item stays where it
   is and (on a second right click if the first one only closed the menu) its right-click menu opens there. With the
-  pointer resting on the item it stays out (up to 30 s without a click, log `linger ... over (idle)`); picking a menu
-  entry or moving the pointer away moves it back to its original slot about 1 s later (`over (pointer left)`).
+  pointer resting on the item it stays out (up to 10 s without a click, log `linger ... over (idle)`); picking a menu
+  entry or moving the pointer off the item (a few points of margin; elsewhere on the menu bar doesn't count) moves it
+  back to its original slot about 0.75 s later (`over (pointer left)`), so the snowflake is back where it was and
+  clicking its usual spot opens the Frost Bar, not the forwarded item's menu.
   Reopening the Frost Bar moves it back at once (`ended early`); quitting during the linger restores it too (log
   `deferring termination`, then a ⌘-drag back to the original anchor; relaunch: the item is in its old section). It
   never moves while a mouse button is held.
 - [ ] **The pointer moves once on a forward and never visibly on background moves (user report: "the pointer jumps
   to the menu bar and back")**: left-click, then right-click a tile: the pointer disappears briefly and reappears on
   the item in the menu bar, where it stays (it never shows over the snowflake, and never goes back to the tile); the
-  item lingers while it rests there. Move the pointer away: about 2.5 s later the item moves back while the pointer
+  item lingers while it rests there. Move the pointer away: about 0.75 s later the item moves back while the pointer
   stays where it is, with no flash over the menu bar (log `⌘-drag … pointer away N ms`, ~60–90 ms in the VM, hidden
   throughout). Same for layout editor drops and new-item placement. After every move, including quitting during a
   linger, the pointer is visible. VM evidence: `guest-cursor-probe.swift forward` with `screencapture -v -C`.

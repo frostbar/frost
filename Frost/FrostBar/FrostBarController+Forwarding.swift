@@ -346,8 +346,8 @@ extension FrostBarController {
     // MARK: - Linger
 
     /// After the forwarded click's presentation closed, keeps the item in the Visible section while the user is still
-    /// using it there (pointer on its slot, clicking it again for its other menu), so a follow-up click doesn't hit an
-    /// empty slot. Decisions: `ForwardLinger`; this polls every 100 ms. Ends at once when the Frost Bar reopens or the
+    /// using it there (pointer on it, clicking it again for its other menu), so a follow-up click doesn't hit an
+    /// empty slot, and moves it back shortly after that so the Frost icon returns to where the user expects it. Decisions: `ForwardLinger`; this polls every 100 ms. Ends at once when the Frost Bar reopens or the
     /// layout editor opens; while the user is away it pauses (no moves). Quitting cancels the task (the sleep throws),
     /// and the caller closes any open presentation and moves the item back as usual.
     private func linger(_ id: CGWindowID) async throws {
@@ -368,9 +368,7 @@ extension FrostBarController {
             if app.presence.isAway { continue }
             let presentation = ItemClicker.presentation(excluding: baseline, ownerPID: pid)
             let sample = ForwardLinger.Sample(
-                time: .now, isPointerOverItem: Self.menuBarRow(of: window.frame,
-                                                                display: app.scanner.menuBarDisplay?.frame)
-                    .contains(Self.cgPointer()),
+                time: .now, isPointerOverItem: ForwardLinger.pointerRegion(of: window.frame).contains(Self.cgPointer()),
                 isMouseButtonHeld: UserMouseButtons.isAnyHeld, clickedItem: watcher.consumeClick(),
                 isPresentationOpen: !presentation.windows.isEmpty, isMenuOpen: presentation.containsMenu)
             if case .restore(let reason) = state.update(sample) {
@@ -388,13 +386,6 @@ extension FrostBarController {
     }
 
     private static let lingerPoll: Duration = .milliseconds(100)
-
-    /// The menu bar row an item sits in (CG coordinates): the display's full width at the item's height. While the
-    /// pointer is anywhere in it, a lingering item stays put — moving it back would shift the icons under the pointer.
-    private static func menuBarRow(of item: CGRect, display: CGRect?) -> CGRect {
-        guard let display else { return item }
-        return CGRect(x: display.minX, y: item.minY, width: display.width, height: item.height)
-    }
 
     /// The pointer in CG global coordinates (top-left origin).
     private static func cgPointer() -> CGPoint {
