@@ -1,69 +1,69 @@
 import FrostCore
 import SwiftUI
 
-/// About tab: icon, name, version and permission status.
+/// About tab: app icon, name and version, update settings and permission status.
 struct AboutView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         let permissions = model.permissions
+        @Bindable var updates = model.updates
 
-        ScrollView {
-            VStack(spacing: 20) {
-                header
+        VStack(spacing: 0) {
+            header
+                .padding(.top, 8)
 
-                GlassCard {
-                    PermissionRow(symbol: "accessibility", tint: .blue, title: String(localized: "Accessibility"),
-                                  subtitle: String(localized: "Required. Used to move icons between sections and to click icons in the Frost Bar."),
+            Form {
+                Section("Updates") {
+                    SettingRow(title: "Automatically check for updates",
+                               subtitle: "Checks GitHub Releases once a day and asks before installing.") {
+                        Toggle("Automatically check for updates", isOn: $updates.automaticallyChecksForUpdates)
+                            .labelsHidden().toggleStyle(.switch)
+                    }
+                    Button("Check for Updates…") { updates.checkForUpdates() }
+                        .disabled(!updates.canCheckForUpdates)
+                }
+
+                Section {
+                    PermissionRow(title: "Accessibility",
+                                  subtitle: "Required to move icons and to click them in the Frost Bar.",
                                   status: permissions.accessibility ? .granted : .notGranted,
                                   grant: { permissions.requestAccessibility() })
-                    Divider()
-                        .padding(.leading, SettingRow<EmptyView>.textInset)
-                    PermissionRow(symbol: "rectangle.dashed.badge.record", tint: .pink, title: String(localized: "Screen Recording"),
-                                  subtitle: String(localized: "Optional. Shows real images of icons in the Frost Bar and the layout editor; without it, they appear as app icons. macOS shows a purple dot in the menu bar while Frost captures them."),
+                    PermissionRow(title: "Screen Recording",
+                                  subtitle: "Optional. Shows real icon images instead of app icons. macOS shows a purple dot in the menu bar while Frost captures them.",
                                   status: permissions.screenRecording ? .granted
                                       : permissions.screenRecordingNeedsRelaunch ? .needsRelaunch : .notGranted,
                                   grant: { permissions.requestScreenRecording() },
                                   openSettings: { permissions.openScreenRecordingSettings() })
+                } header: {
+                    Text("Permissions")
+                } footer: {
+                    Text("Hiding and showing icons doesn’t require any permissions.")
                 }
-
-                Text("Hiding and showing icons doesn’t require any permissions.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-            .animation(.snappy, value: permissions.accessibility)
-            .animation(.snappy, value: permissions.screenRecording)
-            .animation(.snappy, value: permissions.screenRecordingNeedsRelaunch)
+            .formStyle(.grouped)
         }
-        .scrollBounceBehavior(.basedOnSize)
+        .animation(.snappy, value: permissions.accessibility)
+        .animation(.snappy, value: permissions.screenRecording)
+        .animation(.snappy, value: permissions.screenRecordingNeedsRelaunch)
         // Granting access in System Settings does not necessarily reactivate Frost, so poll while visible.
         .onAppear { permissions.startPolling() }
         .onDisappear { permissions.stopPolling() }
     }
 
     private var header: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "snowflake")
-                .font(.system(size: 64, weight: .light))
-                .foregroundStyle(.linearGradient(colors: [.cyan, .blue], startPoint: .topLeading,
-                                                 endPoint: .bottomTrailing))
+        VStack(spacing: 4) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
                 .frame(width: 96, height: 96)
-                .background {
-                    Circle()
-                        .fill(Color.cyan.opacity(0.18))
-                        .blur(radius: 24)
-                }
                 .accessibilityHidden(true)
             Text("Frost")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .font(.title.weight(.semibold))
             Text(Self.versionString)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
         }
-        .padding(.top, 4)
     }
 
     private static var versionString: String {
@@ -81,19 +81,16 @@ private struct PermissionRow: View {
         case granted
     }
 
-    let symbol: String
-    let tint: Color
-    let title: String
-    let subtitle: String
+    let title: LocalizedStringKey
+    let subtitle: LocalizedStringKey
     let status: Status
     let grant: () -> Void
     /// Opens System Settings' pane for this permission (only used while a relaunch is pending).
     var openSettings: () -> Void = {}
 
     var body: some View {
-        SettingRow(symbol: symbol, tint: tint, title: title,
-                   subtitle: status == .needsRelaunch
-                       ? String(localized: "Turn on Frost in System Settings, then relaunch.") : subtitle) {
+        SettingRow(title: title,
+                   subtitle: status == .needsRelaunch ? "Turn on Frost in System Settings, then relaunch." : subtitle) {
             switch status {
             case .granted:
                 Label("Granted", systemImage: "checkmark.circle.fill")

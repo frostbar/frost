@@ -2,77 +2,62 @@ import FrostCore
 import ServiceManagement
 import SwiftUI
 
-/// Behavior tab: launch at login, automatic rehide, display mode, keeping icons in their sections, automatic update
-/// checks.
+/// Behavior tab: how hidden icons are shown and rehidden, keeping icons in their sections, launch at login. Grouped
+/// form sections like System Settings.
 struct BehaviorView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         @Bindable var preferences = model.preferences
 
-        ScrollView {
-            VStack(spacing: 12) {
-                GlassCard {
-                    LaunchAtLoginRow()
-                }
-
-                GlassCard {
-                    SettingRow(symbol: "eye.slash", tint: .indigo, title: String(localized: "Automatically rehide"),
-                               subtitle: String(localized: "Hide icons again after a delay. Clicking outside the menu bar hides them right away.")) {
-                        Toggle("Automatically rehide", isOn: $preferences.autoRehide)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
-                    Divider()
-                        .padding(.leading, SettingRow<EmptyView>.textInset)
-                    RehideDelayRow(delay: $preferences.autoRehideDelay)
-                        .disabled(!preferences.autoRehide)
-                        .opacity(preferences.autoRehide ? 1 : 0.5)
-                }
-
-                GlassCard {
-                    SettingRow(symbol: "menubar.rectangle", tint: .blue, title: String(localized: "Show hidden icons")) {
-                        Picker("Show hidden icons", selection: $preferences.displayMode) {
-                            ForEach(Preferences.DisplayMode.allCases, id: \.self) { mode in
-                                Text(mode.title).tag(mode)
-                            }
+        Form {
+            Section("Menu Bar") {
+                LabeledContent {
+                    Picker("Show hidden icons", selection: $preferences.displayMode) {
+                        ForEach(Preferences.DisplayMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .fixedSize()
                     }
-                    DisplayModeExplanation(mode: preferences.displayMode)
-                        .padding(.leading, SettingRow<EmptyView>.textInset)
-                    if preferences.displayMode != .inline && !model.permissions.canManageItems {
+                    .labelsHidden()
+                    .fixedSize()
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show hidden icons")
+                        DisplayModeExplanation(mode: preferences.displayMode)
+                    }
+                }
+                if preferences.displayMode != .inline && !model.permissions.canManageItems {
+                    HStack(spacing: 12) {
                         InlineNotice(text: String(localized: "The Frost Bar needs the Accessibility permission. Until it’s granted, hidden icons expand in the menu bar."),
                                      symbol: "info.circle.fill", tint: .orange)
+                        Spacer(minLength: 0)
                         Button("Grant Access") { model.permissions.requestAccessibility() }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
-                            .padding(.leading, SettingRow<EmptyView>.textInset)
                     }
                 }
-
-                GlassCard {
-                    SettingRow(symbol: "pin", tint: .orange, title: String(localized: "Keep icons in their sections"),
-                               subtitle: String(localized: "When an app relaunches and macOS puts its icon in another section, move it back.")) {
-                        Toggle("Keep icons in their sections", isOn: $preferences.keepItemSections)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
+                SettingRow(title: "Automatically rehide",
+                           subtitle: "Hides icons again after a delay, or when you click elsewhere.") {
+                    Toggle("Automatically rehide", isOn: $preferences.autoRehide)
+                        .labelsHidden().toggleStyle(.switch)
                 }
-
-                GlassCard {
-                    UpdatesRow(updates: model.updates)
+                RehideDelayRow(delay: $preferences.autoRehideDelay)
+                    .disabled(!preferences.autoRehide)
+                    .opacity(preferences.autoRehide ? 1 : 0.5)
+                SettingRow(title: "Keep icons in their sections",
+                           subtitle: "Moves an app’s icon back when macOS puts it elsewhere.") {
+                    Toggle("Keep icons in their sections", isOn: $preferences.keepItemSections)
+                        .labelsHidden().toggleStyle(.switch)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
-            .animation(.snappy, value: preferences.displayMode)
-            .animation(.snappy, value: preferences.autoRehide)
-            .animation(.snappy, value: model.permissions.canManageItems)
+
+            Section("General") {
+                LaunchAtLoginRow()
+            }
         }
-        .scrollBounceBehavior(.basedOnSize)
+        .formStyle(.grouped)
+        .animation(.snappy, value: preferences.autoRehide)
+        .animation(.snappy, value: model.permissions.canManageItems)
         // The notice goes away once Accessibility is granted in System Settings, which may not reactivate Frost.
         .onAppear { model.permissions.startPolling() }
         .onDisappear { model.permissions.stopPolling() }
@@ -80,8 +65,9 @@ struct BehaviorView: View {
 }
 
 /// The selected display mode's explanation. All explanations are laid out on top of each other (only the selected one
-/// visible), so the card is as tall as the longest one whatever the selection: switching modes never animates the
-/// card's height (pushing the cards below) or overlaps texts of different line counts. The text switches instantly.
+/// visible), so the row is as tall as the longest one whatever the selection: switching modes never animates the
+/// row's height (moving the rows below and resizing the window) or overlaps texts of different line counts. The text
+/// switches instantly.
 private struct DisplayModeExplanation: View {
     let mode: Preferences.DisplayMode
 
@@ -91,7 +77,6 @@ private struct DisplayModeExplanation: View {
                 Text(candidate.explanation)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .opacity(candidate == mode ? 1 : 0)
                     .accessibilityHidden(candidate != mode)
@@ -105,36 +90,17 @@ private struct RehideDelayRow: View {
     @Binding var delay: Double
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text("Rehide delay")
-            Spacer(minLength: 12)
-            Slider(value: $delay, in: 5...60, step: 5) {
-                Text("Rehide delay")
-            }
-            .labelsHidden()
-            .frame(width: 240)
-            Text("\(Int(delay)) sec")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: 52, alignment: .trailing)
-        }
-        .padding(.leading, SettingRow<EmptyView>.textInset)
-    }
-}
-
-/// Automatic update checks (Sparkle) and Check Now.
-private struct UpdatesRow: View {
-    @Bindable var updates: UpdateController
-
-    var body: some View {
-        SettingRow(symbol: "arrow.down.circle", tint: .teal, title: String(localized: "Automatically check for updates"),
-                   subtitle: String(localized: "Checks GitHub Releases once a day and asks before installing an update.")) {
+        LabeledContent("Rehide delay") {
             HStack(spacing: 12) {
-                Button("Check Now") { updates.checkForUpdates() }
-                    .disabled(!updates.canCheckForUpdates)
-                Toggle("Automatically check for updates", isOn: $updates.automaticallyChecksForUpdates)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
+                Slider(value: $delay, in: 5...60, step: 5) {
+                    Text("Rehide delay")
+                }
+                .labelsHidden()
+                .frame(width: 200)
+                Text("\(Int(delay)) sec")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 52, alignment: .trailing)
             }
         }
     }
@@ -148,12 +114,8 @@ private struct LaunchAtLoginRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SettingRow(symbol: "power", tint: .green, title: String(localized: "Launch at login"),
-                       subtitle: String(localized: "Open Frost automatically when you log in to your Mac.")) {
-                Toggle("Launch at login", isOn: Binding(get: { status == .enabled }, set: setEnabled))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-            }
+            Toggle("Launch at login", isOn: Binding(get: { status == .enabled }, set: setEnabled))
+                .toggleStyle(.switch)
             if let errorMessage {
                 InlineNotice(text: errorMessage)
             } else if status == .requiresApproval {
@@ -197,9 +159,9 @@ extension Preferences.DisplayMode {
 
     var explanation: String {
         switch self {
-        case .automatic: String(localized: "Automatic: uses the Frost Bar on displays with a notch and expands in the menu bar on other displays.")
-        case .inline: String(localized: "In Menu Bar: hidden icons expand right in the menu bar.")
-        case .frostBar: String(localized: "Frost Bar: hidden icons appear in a glass panel below the menu bar.")
+        case .automatic: String(localized: "Uses the Frost Bar on displays with a notch, the menu bar elsewhere.")
+        case .inline: String(localized: "Hidden icons expand in the menu bar.")
+        case .frostBar: String(localized: "Hidden icons appear in a panel below the menu bar.")
         }
     }
 }

@@ -1,19 +1,5 @@
 import SwiftUI
 
-/// A glass card grouping rows on a settings tab.
-struct GlassCard<Content: View>: View {
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            content
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 20))
-    }
-}
-
 /// Circular SF Symbol badge (colored gradient with a white glyph).
 struct SymbolBadge: View {
     static let size: CGFloat = 28
@@ -33,38 +19,30 @@ struct SymbolBadge: View {
     }
 }
 
-/// A settings row: badge and title / subtitle on the left, control on the right.
+/// A row of a grouped settings form: title (and an optional one-line explanation below it) on the left, the control on
+/// the right.
 struct SettingRow<Accessory: View>: View {
-    /// Spacing between badge and text; extra content below a row aligns with the title using `textInset`.
-    static var spacing: CGFloat { 12 }
-    static var textInset: CGFloat { SymbolBadge.size + spacing }
-
-    let symbol: String
-    let tint: Color
-    let title: String
-    var subtitle: String?
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey?
     @ViewBuilder var accessory: Accessory
 
     var body: some View {
-        HStack(alignment: .center, spacing: Self.spacing) {
-            SymbolBadge(symbol: symbol, tint: tint)
+        LabeledContent {
+            accessory
+        } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.body.weight(.medium))
                 if let subtitle {
                     Text(subtitle)
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            accessory
         }
     }
 }
 
-/// A small inline notice (error / warning), aligned with the row title.
+/// A small inline notice (error / warning) inside a form row.
 struct InlineNotice: View {
     let text: String
     var symbol = "exclamationmark.triangle.fill"
@@ -78,7 +56,6 @@ struct InlineNotice: View {
         }
         .font(.subheadline)
         .foregroundStyle(tint)
-        .padding(.leading, SettingRow<EmptyView>.textInset)
         .transition(.opacity)
     }
 }

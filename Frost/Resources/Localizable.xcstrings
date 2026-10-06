@@ -245,16 +245,6 @@
         }
       }
     },
-    "Automatic: uses the Frost Bar on displays with a notch and expands in the menu bar on other displays." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动：刘海屏使用 Frost Bar，其他屏幕在菜单栏内展开。"
-          }
-        }
-      }
-    },
     "Automatically check for updates" : {
       "localizations" : {
         "zh-Hans" : {
@@ -306,16 +296,6 @@
         }
       }
     },
-    "Check Now" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "立即检查"
-          }
-        }
-      }
-    },
     "Check for Updates…" : {
       "comment" : "Frost icon context menu item",
       "localizations" : {
@@ -327,12 +307,12 @@
         }
       }
     },
-    "Checks GitHub Releases once a day and asks before installing an update." : {
+    "Checks GitHub Releases once a day and asks before installing." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每天从 GitHub Releases 检查一次新版本；发现更新时会先询问你。"
+            "value" : "每天从 GitHub Releases 检查一次，安装前会先询问你。"
           }
         }
       }
@@ -502,16 +482,6 @@
         }
       }
     },
-    "Frost Bar: hidden icons appear in a glass panel below the menu bar." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Frost Bar：隐藏的图标显示在菜单栏下方的玻璃面板中。"
-          }
-        }
-      }
-    },
     "Frost Separator" : {
       "comment" : "Accessibility label of Frost's section separator status items",
       "localizations" : {
@@ -560,6 +530,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Frost 的分隔符不在菜单栏中。\nFrost 会自动重试；若一直如此，请尝试重新启动 Frost。"
+          }
+        }
+      }
+    },
+    "General" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通用"
           }
         }
       }
@@ -615,6 +595,26 @@
         }
       }
     },
+    "Hidden icons appear in a panel below the menu bar." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏的图标显示在菜单栏下方的面板中。"
+          }
+        }
+      }
+    },
+    "Hidden icons expand in the menu bar." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏的图标在菜单栏内展开。"
+          }
+        }
+      }
+    },
     "Hide Frost" : {
       "localizations" : {
         "zh-Hans" : {
@@ -635,12 +635,12 @@
         }
       }
     },
-    "Hide icons again after a delay. Clicking outside the menu bar hides them right away." : {
+    "Hides icons again after a delay, or when you click elsewhere." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "展开后经过一段时间自动隐藏图标；点击菜单栏以外的地方会立即收起。"
+            "value" : "经过一段时间或点击其他位置后，再次隐藏图标。"
           }
         }
       }
@@ -672,16 +672,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "菜单栏内"
-          }
-        }
-      }
-    },
-    "In Menu Bar: hidden icons expand right in the menu bar." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "菜单栏内：隐藏的图标直接在菜单栏中展开。"
           }
         }
       }
@@ -727,12 +717,32 @@
         }
       }
     },
+    "Menu Bar" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "菜单栏"
+          }
+        }
+      }
+    },
     "Minimize" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "最小化"
+          }
+        }
+      }
+    },
+    "Moves an app’s icon back when macOS puts it elsewhere." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 把 App 的图标放到别处时，将其移回原分区。"
           }
         }
       }
@@ -783,16 +793,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未授权"
-          }
-        }
-      }
-    },
-    "Open Frost automatically when you log in to your Mac." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登录 Mac 后自动运行 Frost。"
           }
         }
       }
@@ -858,12 +858,12 @@
         }
       }
     },
-    "Optional. Shows real images of icons in the Frost Bar and the layout editor; without it, they appear as app icons. macOS shows a purple dot in the menu bar while Frost captures them." : {
+    "Optional. Shows real icon images instead of app icons. macOS shows a purple dot in the menu bar while Frost captures them." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可选。在 Frost Bar 与布局编辑器中显示图标的真实图像；未授权时，图标以所属应用的图标显示。捕获图标时，macOS 会在菜单栏显示紫色圆点。"
+            "value" : "可选。显示图标的真实图像，而非所属应用的图标。捕获图标时，macOS 会在菜单栏显示紫色圆点。"
           }
         }
       }
@@ -874,6 +874,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "粘贴"
+          }
+        }
+      }
+    },
+    "Permissions" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "权限"
           }
         }
       }
@@ -970,12 +980,12 @@
         }
       }
     },
-    "Required. Used to move icons between sections and to click icons in the Frost Bar." : {
+    "Required to move icons and to click them in the Frost Bar." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "必需。用于在分区之间移动图标，以及在 Frost Bar 中点击图标。"
+            "value" : "必需。用于移动图标，以及在 Frost Bar 中点击图标。"
           }
         }
       }
@@ -1172,12 +1182,32 @@
         }
       }
     },
+    "Updates" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新"
+          }
+        }
+      }
+    },
     "Used to move icons between sections and to click icons in the Frost Bar." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "用于在分区之间移动图标，以及在 Frost Bar 中点击图标。"
+          }
+        }
+      }
+    },
+    "Uses the Frost Bar on displays with a notch, the menu bar elsewhere." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刘海屏使用 Frost Bar，其他屏幕在菜单栏内展开。"
           }
         }
       }
@@ -1211,16 +1241,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "欢迎使用 Frost"
-          }
-        }
-      }
-    },
-    "When an app relaunches and macOS puts its icon in another section, move it back." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用重新启动后，如果 macOS 把它的图标放到了其他分区，就将图标移回原来的分区。"
           }
         }
       }
