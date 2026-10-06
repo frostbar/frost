@@ -11,7 +11,7 @@ private func CGSSetConnectionProperty(_ connection: Int32, _ target: Int32, _ ke
 ///
 /// Frost is an accessory app that is almost never active, and `CGDisplayHideCursor` from an inactive app is ignored
 /// unless its connection sets the (private) `SetsCursorInBackground` property, the same thing Ice does (measured in
-/// the VM on macOS 26, see spike-findings.md, "Hiding the pointer during synthesized events"). If setting it fails,
+/// the VM on macOS 26, see macos-behavior.md, "Hiding the pointer during synthesized events"). If setting it fails,
 /// hiding is a harmless no-op and the pointer is still restored as before.
 ///
 /// Every `begin()` is balanced by exactly one `CGDisplayShowCursor`: `end` is idempotent and thread-safe, and `deinit`

@@ -208,7 +208,7 @@ public struct SectionKeeper: Equatable, Sendable {
     /// Whether one of Frost's separators sits where the section boundaries say it does. A narrow separator (expanded,
     /// 16 or 1 pt) squeezed under the notch is `onscreen=false` inside the display and its x is not its real position
     /// (`ItemMover.isObscured`). A pushed-out separator (5016 pt wide while collapsed) is `onscreen=false` too, but the
-    /// order is always preserved (spike-findings.md), so it is reliable.
+    /// order is always preserved (macos-behavior.md), so it is reliable.
     public static func separatorIsReliable(_ separator: MenuBarItem, displayBounds: CGRect) -> Bool {
         separator.frame.width >= pushedOutMinWidth || !ItemMover.isObscured(separator, displayBounds: displayBounds)
     }

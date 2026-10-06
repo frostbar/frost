@@ -58,7 +58,7 @@ public struct OwnerWindowFrames: Equatable, Sendable {
     }
 }
 
-/// Clicks menu bar items and detects when their menu / popover closes (implemented per spike-findings.md,
+/// Clicks menu bar items and detects when their menu / popover closes (implemented per macos-behavior.md,
 /// "Task 11").
 public enum ItemClicker {
     /// Clicks an **on-screen** item. Prefers AXPress (background thread, 0.25 s messaging timeout); both

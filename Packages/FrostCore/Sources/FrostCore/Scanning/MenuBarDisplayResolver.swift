@@ -32,7 +32,7 @@ public struct FrostControlFrames: Hashable, Sendable {
 /// Picks the set of status windows to manage out of all of them: the real windows on the display that hosts the
 /// **active menu bar** (sorted by minX).
 ///
-/// Measured macOS 26 multi-display behaviour (VM + virtual displays inside the guest, `docs/plans/spike-findings.md`,
+/// Measured macOS 26 multi-display behaviour (VM + virtual displays inside the guest, `docs/macos-behavior.md`,
 /// "Multiple displays"):
 /// - Every status item has one window on the menu bar of every display. The **real window** (`button.window`, titled
 ///   with the autosave name, and the one AX coordinates describe) is on the display hosting the active menu bar; the

@@ -1,6 +1,6 @@
 import CoreGraphics
 
-/// Filters out leftover status bar windows of apps that have quit (spike-findings.md, "Task 4"): after an app
+/// Filters out leftover status bar windows of apps that have quit (macos-behavior.md, "Task 4"): after an app
 /// quits, its status bar window may remain in CGWindowList (measured: width 0, `onscreen=false`).
 ///
 /// Rule: no ownership (no AX match, and no cached ownership by a live process) **and** not on screen **and**

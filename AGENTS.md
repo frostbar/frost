@@ -50,8 +50,7 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
 - `Tools/FakeItems/`: a fake third-party menu bar app for testing (VM testing only).
 - `scripts/vm/`: VM testing scripts. `scripts/release/`: release scripts (`config.sh` is the single release
   configuration). `Spikes/`: early proof-of-concept programs, not part of the build.
-- `docs/plans/`: the design document and `spike-findings.md` (measured macOS 26 behavior; read it before changing
-  low-level code).
+- `docs/macos-behavior.md`: measured macOS 26 menu bar behavior (read it before changing low-level code).
 - `docs/manual-test-checklist.md` (including "Known limitations"), `docs/testing-vm.md` (including "Verification
   techniques"), `docs/releasing.md` (releases, signing and keys), `docs/ux-journeys.md` (end-to-end user journeys,
   walked from a clean state).
@@ -146,7 +145,7 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
 - A ⌘-drag's mouse-down lifts the item to the cursor and the menu bar slides the windows between its old slot and the
   mouse-down (the Frost icon) over to close the gap; the mouse-up is placed against those *current* positions. A
   mouse-up posted at a fixed delay with frames read before the drag is either ignored (before the lift) or lands one
-  slot off (target among the sliding windows). `ItemMover` releases via `DragRelease` (`spike-findings.md`, "Later
+  slot off (target among the sliding windows). `ItemMover` releases via `DragRelease` (`macos-behavior.md`, "Later
   measurement"). After the mouse-up the item jumps into its slot without sliding; only the windows left of it slide
   (~0.4 s). The Frost Bar clicks as soon as the item has landed (`ItemMover.move(_:to:until: .itemLanded)`,
   `LandingDetector`): its menu still opens at the final position. Click-to-menu latency is measured with
@@ -165,7 +164,7 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   offset, with the same width; the only exception is Frost's separator narrowed to 1 pt (the replica stays 16 pt).
   On two displays of the same height, pushed-out real windows and replicas interleave, all outside the display
   rectangles, and geometry alone can't tell them apart (`MenuBarDisplayResolver`; measurements in
-  `spike-findings.md`, "Multiple displays"). When the snowflake replica on an inactive display is clicked, the
+  `macos-behavior.md`, "Multiple displays"). When the snowflake replica on an inactive display is clicked, the
   mouse-down / mouse-up first show up in Frost's **global** monitor (they belong to another window), and after
   switching displays the system does **not always** redeliver the click to the button (on a real Mac both left and
   right clicks can be lost; in the VM left clicks are redelivered, right clicks are not): `ReplicaClickDetector`

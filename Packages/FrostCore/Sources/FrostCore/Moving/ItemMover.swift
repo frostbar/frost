@@ -21,7 +21,7 @@ public enum ItemMoveError: Error, Equatable, Sendable {
     case mouseButtonHeld
 }
 
-/// Moves menu bar items with a synthetic ⌘-drag (implemented per spike-findings.md, "Task 11").
+/// Moves menu bar items with a synthetic ⌘-drag (implemented per macos-behavior.md, "Task 11").
 ///
 /// - Every event sets field `0x33 = dragged item's windowID`, so the system routes by windowID rather than by
 ///   cursor position.

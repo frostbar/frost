@@ -359,7 +359,7 @@ For each item, record: environment (model / displays / macOS version) and result
 Background: every status item has one window on each display's menu bar; the **real window** (titled with its
 autosave name) is on the display with the **active menu bar**, and swaps places with the replica when another display
 is clicked / focused. Frost manages the display with the active menu bar (`MenuBarDisplayResolver`; measurements in
-the "Multiple displays" section of `docs/plans/spike-findings.md`). This has been verified in the VM with virtual
+the "Multiple displays" section of `docs/macos-behavior.md`). This has been verified in the VM with virtual
 displays (same 30 pt height; right / left / very wide left / below); on a real Mac the two menu bars have different
 heights (39 / 30 pt), which takes the height-based path, so what needs verifying is "follows the active menu bar" and
 how the freeze frame and click forwarding behave on the external display.

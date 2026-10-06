@@ -1,4 +1,7 @@
-# Spike Findings (macOS 26.6.2, build 25G83)
+# macOS 26 menu bar behavior
+
+Measured with spike programs and in the test VM, starting on macOS 26.6.2 (build 25G83). Code and `AGENTS.md`
+refer to its sections by name.
 
 ("Task N" in this document refers to task numbers in an early implementation plan that is not included in the
 repository.)
