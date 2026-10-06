@@ -696,6 +696,16 @@
         }
       }
     },
+    "Last checked: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次检查：%@"
+          }
+        }
+      }
+    },
     "Launch at login" : {
       "localizations" : {
         "zh-Hans" : {
@@ -753,6 +763,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要重新启动"
+          }
+        }
+      }
+    },
+    "Never checked" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从未检查"
           }
         }
       }

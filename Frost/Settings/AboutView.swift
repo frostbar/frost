@@ -20,8 +20,13 @@ struct AboutView: View {
                         Toggle("Automatically check for updates", isOn: $updates.automaticallyChecksForUpdates)
                             .labelsHidden().toggleStyle(.switch)
                     }
-                    Button("Check for Updates…") { updates.checkForUpdates() }
-                        .disabled(!updates.canCheckForUpdates)
+                    LabeledContent {
+                        Button("Check for Updates…") { updates.checkForUpdates() }
+                            .disabled(!updates.canCheckForUpdates)
+                    } label: {
+                        Text(Self.lastCheckedText(updates.lastUpdateCheckDate))
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section {
@@ -64,6 +69,16 @@ struct AboutView: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
         }
+    }
+
+    /// "Last checked: today at 15:58" (the system's relative date style, in the user's language), or "Never checked".
+    private static func lastCheckedText(_ date: Date?) -> String {
+        guard let date else { return String(localized: "Never checked") }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        formatter.doesRelativeDateFormatting = true
+        return String(localized: "Last checked: \(formatter.string(from: date))")
     }
 
     private static var versionString: String {

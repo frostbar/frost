@@ -27,9 +27,14 @@ final class UpdateController {
     @ObservationIgnored private let controller: SPUStandardUpdaterController
     @ObservationIgnored private let userDriverDelegate = UserDriverDelegate()
     @ObservationIgnored private var canCheckObservation: NSKeyValueObservation?
+    @ObservationIgnored private var lastCheckObservation: NSKeyValueObservation?
 
     /// Whether a check can start now (false while checking, downloading or installing). Enables "Check for Updates...".
     private(set) var canCheckForUpdates = false
+
+    /// When the last check ended (scheduled or user-initiated); nil if Frost never checked. Sparkle keeps it in user
+    /// defaults and updates it after every check.
+    private(set) var lastUpdateCheckDate: Date?
 
     /// The version of an update found by a scheduled check that is waiting for the user's attention (gentle
     /// reminder); nil when there is none.
@@ -53,6 +58,11 @@ final class UpdateController {
         canCheckObservation = controller.updater.observe(\.canCheckForUpdates, options: [.new]) { [weak self] _, change in
             let value = change.newValue ?? false
             MainActor.assumeIsolated { self?.canCheckForUpdates = value }
+        }
+        lastUpdateCheckDate = controller.updater.lastUpdateCheckDate
+        lastCheckObservation = controller.updater.observe(\.lastUpdateCheckDate, options: [.new]) { [weak self] _, change in
+            let value = change.newValue ?? nil
+            MainActor.assumeIsolated { self?.lastUpdateCheckDate = value }
         }
         userDriverDelegate.onReminder = { [weak self] version in
             FrostLog.app.notice("update \(version, privacy: .public) available (scheduled check); showing a reminder")
