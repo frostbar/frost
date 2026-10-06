@@ -108,10 +108,16 @@ private struct PermissionRow: View {
                    subtitle: status == .needsRelaunch ? "Turn on Frost in System Settings, then relaunch." : subtitle) {
             switch status {
             case .granted:
-                Label("Granted", systemImage: "checkmark.circle.fill")
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.green)
-                    .font(.callout.weight(.medium))
+                // Only the checkmark is colored; the word is plain secondary text.
+                Label {
+                    Text("Granted")
+                        .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.green)
+                }
+                .font(.callout)
                     .transition(.blurReplace)
             case .needsRelaunch:
                 // A user who denied the prompt (or closed it) still has to flip the switch first; this gets them to

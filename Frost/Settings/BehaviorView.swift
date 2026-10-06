@@ -29,7 +29,7 @@ struct BehaviorView: View {
                 if preferences.displayMode != .inline && !model.permissions.canManageItems {
                     HStack(spacing: 12) {
                         InlineNotice(text: String(localized: "The Frost Bar needs the Accessibility permission. Until it’s granted, hidden icons expand in the menu bar."),
-                                     symbol: "info.circle.fill", tint: .orange)
+                                     symbol: "info.circle.fill", tint: .secondary)
                         Spacer(minLength: 0)
                         Button("Grant Access") { model.permissions.requestAccessibility() }
                             .buttonStyle(.borderedProminent)
@@ -122,7 +122,7 @@ private struct LaunchAtLoginRow: View {
                 HStack(spacing: 8) {
                     InlineNotice(text: String(localized: "Allow Frost to launch at login in System Settings."),
                                  symbol: "exclamationmark.circle.fill",
-                                 tint: .orange)
+                                 tint: .secondary)
                     Button("Open Login Items Settings") { SMAppService.openSystemSettingsLoginItems() }
                         .buttonStyle(.link)
                         .font(.subheadline)

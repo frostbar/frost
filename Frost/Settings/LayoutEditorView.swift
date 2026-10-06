@@ -57,13 +57,13 @@ struct LayoutEditorContent: View {
                         .controlSize(.large)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .noWindows:
-                    EditorPlaceholder(symbol: "menubar.dock.rectangle.badge.record", tint: .orange,
+                    EditorPlaceholder(symbol: "menubar.dock.rectangle.badge.record",
                                       title: "No Menu Bar Icons Found",
                                       message: "The system didn’t return any menu bar icons.\nFrost will retry automatically. If this keeps happening, try relaunching Frost.") {
                         RetryHint(isRetrying: state.isRetrying)
                     }
                 case .controlsMissing:
-                    EditorPlaceholder(symbol: "rectangle.split.3x1", tint: .pink,
+                    EditorPlaceholder(symbol: "rectangle.split.3x1",
                                       title: "Can’t Find Frost’s Separator",
                                       message: "Frost’s separator isn’t in the menu bar.\nFrost will retry automatically. If this keeps happening, try relaunching Frost.") {
                         RetryHint(isRetrying: state.isRetrying)
@@ -93,7 +93,6 @@ struct LayoutEditorContent: View {
                 Text("Drag icons to rearrange them. The menu bar updates to match.")
             } icon: {
                 Image(systemName: "hand.draw")
-                    .foregroundStyle(.tint)
             }
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -128,7 +127,6 @@ struct LayoutEditorContent: View {
                     Text("\(offscreen) icons are off-screen (e.g. behind the notch) and have no preview, but can still be dragged.")
                 } icon: {
                     Image(systemName: "eye.trianglebadge.exclamationmark")
-                        .foregroundStyle(.orange)
                 }
                 .transition(.opacity)
             }
@@ -136,7 +134,6 @@ struct LayoutEditorContent: View {
                 Text("You can also ⌘-drag icons right in the menu bar. Icons with a lock are fixed by the system.")
             } icon: {
                 Image(systemName: "lightbulb")
-                    .foregroundStyle(.yellow)
             }
         }
         .font(.footnote)
@@ -168,14 +165,6 @@ extension MenuBarSection {
         case .visible: "eye"
         case .hidden: "eye.slash"
         case .alwaysHidden: "lock"
-        }
-    }
-
-    var editorTint: Color {
-        switch self {
-        case .visible: .blue
-        case .hidden: .indigo
-        case .alwaysHidden: .purple
         }
     }
 
@@ -232,7 +221,11 @@ private struct SectionBand: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            SymbolBadge(symbol: section.editorSymbol, tint: section.editorTint, diameter: 22)
+            Image(systemName: section.editorSymbol)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+                .accessibilityHidden(true)
             Text(section.editorTitle)
                 .font(.subheadline.weight(.semibold))
             Text("\(items.count)")
@@ -547,7 +540,7 @@ private struct ItemTile: View {
         if !item.isMovable {
             TileBadge(symbol: "lock.fill", tint: .gray)
         } else if isObscured {
-            TileBadge(symbol: "eye.trianglebadge.exclamationmark", tint: .orange)
+            TileBadge(symbol: "eye.trianglebadge.exclamationmark", tint: .gray)
         }
     }
 
@@ -635,14 +628,17 @@ private struct RetryHint: View {
 /// Centered glass card: large badge, title, message and actions.
 private struct EditorPlaceholder<Actions: View>: View {
     let symbol: String
-    let tint: Color
     let title: LocalizedStringKey
     let message: LocalizedStringKey
     @ViewBuilder var actions: Actions
 
     var body: some View {
         VStack(spacing: 14) {
-            SymbolBadge(symbol: symbol, tint: tint, diameter: 56)
+            Image(systemName: symbol)
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 40, weight: .regular))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             VStack(spacing: 6) {
                 Text(title)
                     .font(.title3.weight(.semibold))
@@ -670,7 +666,7 @@ private struct PermissionPlaceholder: View {
     let grant: () -> Void
 
     var body: some View {
-        EditorPlaceholder(symbol: "lock.shield", tint: .orange, title: "Accessibility Required",
+        EditorPlaceholder(symbol: "lock.shield", title: "Accessibility Required",
                           message: "Frost needs the Accessibility permission to read and move icons. Screen Recording is optional: it shows real images of the icons.") {
             VStack(spacing: 16) {
                 HStack(spacing: 18) {
@@ -713,7 +709,6 @@ private struct ScreenRecordingNotice: View {
                     Text("Turn on Frost in System Settings, then relaunch.")
                 } icon: {
                     Image(systemName: "arrow.clockwise")
-                        .foregroundStyle(.orange)
                 }
                 // For a user who denied or closed the prompt: the pane in one click, without giving up the relaunch.
                 Button("Open System Settings", action: openSettings)
@@ -729,7 +724,6 @@ private struct ScreenRecordingNotice: View {
                         Text("Grant Screen Recording to see real icons")
                     } icon: {
                         Image(systemName: "rectangle.dashed.badge.record")
-                            .foregroundStyle(.pink)
                     }
                 }
                 .buttonStyle(.link)
