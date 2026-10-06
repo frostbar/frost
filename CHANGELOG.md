@@ -6,6 +6,28 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+### Changed
+- A forwarded icon goes back about 0.75 s after the pointer leaves it (it used to wait 2.5 s while the pointer was
+  anywhere on the menu bar), so the Frost icon is back where you expect it. It stays out while its menu is open or the
+  pointer rests on it.
+- Granting a permission now shows the system prompt once, and later requests open System Settings directly. The Frost
+  Bar's grant buttons and hint request directly instead of opening the welcome window.
+- Settings reopens on the tab you used last, and no longer expands the menu bar while Accessibility is missing.
+- Short text icons (a counter, a percentage) now show in full in the Frost Bar and the layout editor without Screen
+  Recording. Rows in the layout editor that overflow show edge fades and paging arrows.
+- The permission descriptions mention the purple dot macOS shows while Frost captures icons. The grant buttons read
+  "Grant Access" everywhere.
+- While a relaunch is pending, the welcome window shows it on the Screen Recording card and makes Relaunch the default
+  button.
+
+### Added
+- The Behavior tab's Accessibility notice has a Grant Access button, and the Frost icon's menu offers Grant Access…
+  while Accessibility is missing.
+
+### Fixed
+- The system permission prompt no longer lingers behind System Settings and reappears after you granted.
+- Clicking the Frost icon right after granting Accessibility opens the Frost Bar instead of expanding the menu bar.
+
 ## [0.3.0] - 2026-10-05
 
 ### Added

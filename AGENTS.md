@@ -162,6 +162,13 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   right clicks can be lost; in the VM left clicks are redelivered, right clicks are not): `ReplicaClickDetector`
   recognizes and replays them, deduplicated by event timestamp. In the VM, `FROST_TEST_DROP_REPLICA_CLICKS=1`
   simulates lost left clicks too.
+- Permission requests (`PermissionsService`, `PermissionRequest`): the first request per permission only shows the
+  system prompt (it lists Frost in Privacy & Security, and its "Open System Settings" button leads there); later ones
+  open the pane directly. Doing both at once leaves the prompt behind System Settings, where it resurfaces after the
+  grant. "Asked" is recorded in defaults (`permissionAsked*`), so resetting TCC in a test also needs
+  `defaults delete dev.frost.Frost`. A forwarded item (`ForwardLinger`) stays out only while its presentation is open or
+  the pointer is on it (frame plus a margin), and returns 0.75 s after neither holds: while it sits right of the Frost
+  icon the icon is one item further left than where users click.
 - Launches and quits of menu-bar-only apps (LSUIElement) don't trigger `NSWorkspace` launch/terminate
   notifications; observe the list of running apps instead.
 - When verifying the freeze frame / anything that "lays a screenshot over the screen", **don't use only a black

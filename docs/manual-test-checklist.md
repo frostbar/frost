@@ -31,14 +31,19 @@ For each item, record: environment (model / displays / macOS version) and result
   traffic lights don't cover content; text and cards are clear in both Light and Dark Mode. The permission
   descriptions read exactly like the About tab's (English and Simplified Chinese), and the prominent buttons have white
   text on the accent color.
-- [ ] Click the grant button on the Accessibility card: the system prompt appears and Privacy & Security →
-  Accessibility opens; after turning the switch on in System Settings, the card turns into a green checkmark within
+- [ ] Click the **Grant Access** button on the Accessibility card (first time, `defaults delete dev.frost.Frost` and no
+  TCC row): only the system prompt appears, nothing opens behind it; its "Open System Settings" button opens Privacy &
+  Security → Accessibility with Frost listed. Once the switch is on, no stray prompt remains, also after a relaunch.
+  Later requests (the key `permissionAskedAccessibility` is set) open the pane directly without a prompt. After turning
+  the switch on in System Settings, the card turns into a green checkmark within
   about 1 second (the checkmark bounces once), without switching back to Frost.
 - [ ] The Accessibility card is tagged **Required** and the Screen Recording card **Optional**.
 - [ ] Once Accessibility is granted (Screen Recording still missing): the "all set" message and the done / "open layout
   editor" buttons appear already; the Frost Bar and the layout editor work (see "Accessibility only" below).
-- [ ] Click the grant button on the Screen Recording card: the Screen Recording pane opens; a note below the card says
-  Frost must be relaunched after granting.
+- [ ] Click the **Grant Access** button on the Screen Recording card: the same (system prompt first, then the pane
+  directly). The card shows "Needs Relaunch" instead of the button, a note below says Frost must be relaunched, and
+  **Relaunch** is the prominent default button (Return) while "Open Layout Editor" is not shown. The description
+  mentions the purple recording dot.
 - [ ] Click the relaunch button: Frost quits and relaunches within about 1 second, the onboarding window reappears,
   and Screen Recording shows as granted.
 - [ ] Once Accessibility is granted: an "all set" message appears; the bottom buttons change to a done button plus an
@@ -120,7 +125,10 @@ For each item, record: environment (model / displays / macOS version) and result
   refreshes stop (log `user away (screenLocked)` / `(displaysAsleep)`); after unlocking, editing resumes once the
   window is key (log `user back`).
 - [ ] Revoke Accessibility: the editor shows an "Accessibility Required" placeholder that updates as permissions
-  change; its button requests Accessibility directly (no onboarding window). With Accessibility only, the footer's
+  change and does **not** expand the menu bar; granting while the tab is visible starts the editor (menu bar expands
+  once); its button requests Accessibility directly (no onboarding window). Settings reopens on the tab last used.
+  A row with more tiles than fit shows edge fades and a paging arrow on the overflowing side; drops into any position
+  still work (scroll first with the arrows or the trackpad). With Accessibility only, the footer's
   Screen Recording link requests it and then offers a relaunch (Frost comes back on the Layout tab). Revoking only Screen Recording does **not** show the placeholder
   (see "Accessibility only").
 - [ ] **Known risk (b)**: when moving an item hidden under the notch, the menu bar briefly collapses and then
@@ -429,6 +437,11 @@ on-screen, windowID, title; real windows are titled with their autosave name, re
 
 ## 9. Revoking and restoring permissions
 
+- [ ] **No Accessibility** (user chose Not Now): the Behavior tab's notice has a **Grant Access** button; the Frost icon's
+  right-click menu starts with **Grant Access…**; the Frost Bar panel's "Accessibility Required" button requests
+  directly. After granting in System Settings (Frost not frontmost), the very next click on the Frost icon uses the
+  Frost Bar mode (the Accessibility change notification refreshes it; the click handler refreshes too).
+
 - [ ] Revoke Accessibility while running: the Frost Bar and layout editor show placeholders, and hiding / showing still
   works; a move in progress fails safely (no hang, no stray cursor movement).
 - [ ] Revoke Screen Recording while running: images stop updating, and app icons or placeholders are shown; after
@@ -443,8 +456,10 @@ Evidence goes under `build/vm-shots/no-screen-recording/`.
   the owning app's icon, an SF Symbol for system items (Spotlight, Control Center modules), the text of text items on
   wide tiles, and a short label under the icon when several icons of one app would look the same. No live refresh
   runs (log `live refresh: … skipped permissionsMissing`), and the menu bar never expands.
+- [ ] Short text items (a seconds counter, a percentage) read in full on their tiles, in the Frost Bar and the layout
+  editor.
 - [ ] A small "Grant Screen Recording to see real icons" row sits above the footer; clicking it closes the panel and
-  opens onboarding; its close button hides it for good (also in the layout editor), `screenRecordingHintDismissed`.
+  requests directly (no onboarding window; after a request it offers **Relaunch**); its close button hides it for good (also in the layout editor), `screenRecordingHintDismissed`.
 - [ ] Clicking a tile opens the item's menu / popover; right-click or Control-click opens its secondary menu; the item
   moves back afterwards.
 - [ ] The layout editor shows the same fallback tiles and the same hint in its footer; drags between sections work;
