@@ -476,13 +476,13 @@ public final class ItemImageCapturer {
 
     /// The current menu bar appearance (part of the disk cache key): judged by the app's appearance, consistent with
     /// the in-memory cache's invalidation condition (`effectiveAppearance`).
-    private static var currentAppearance: MenuBarAppearance {
+    static var currentAppearance: MenuBarAppearance {
         NSApplication.shared.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
     }
 
     /// Scale of the display hosting the scanned menu bar (not NSScreen.main: that is the screen with the
     /// key window).
-    private var menuBarScale: CGFloat {
+    var menuBarScale: CGFloat {
         let displayID = menuBarDisplayID()
         return NSScreen.screens.first { $0.displayID == displayID }?.backingScaleFactor ?? 2
     }
