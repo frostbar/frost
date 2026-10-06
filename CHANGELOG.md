@@ -10,8 +10,9 @@ release notes on GitHub and in the in-app update window.
 - A forwarded icon goes back about 0.75 s after the pointer leaves it (it used to wait 2.5 s while the pointer was
   anywhere on the menu bar), so the Frost icon is back where you expect it. It stays out while its menu is open or the
   pointer rests on it.
-- Granting a permission now shows the system prompt once, and later requests open System Settings directly. The Frost
-  Bar's grant buttons and hint request directly instead of opening the welcome window.
+- Grant Access buttons (Settings → About, the layout editor, the Frost Bar) ask for the permission right away instead
+  of opening the welcome window first. After granting Screen Recording, a Relaunch button appears in place, and Frost
+  reopens the window you were in after relaunching (also after System Settings' "Quit & Reopen").
 - Settings reopens on the tab you used last, and no longer expands the menu bar while Accessibility is missing.
 - Short text icons (a counter, a percentage) now show in full in the Frost Bar and the layout editor without Screen
   Recording. Rows in the layout editor that overflow show edge fades and paging arrows.
