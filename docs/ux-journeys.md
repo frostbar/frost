@@ -160,6 +160,8 @@ before. When you fix a finding, add it to "Watch for" so the next run checks it.
 - The snowflake staying shifted while an icon lingers.
 - The pointer jumping back and forth.
 - Flicker in the strip of menu bar above the panel.
+- Icons whose tooltip or description shows live numbers (fan speeds, temperatures) or that blink away for a moment
+  (an unread-message icon) staying in their sections, without `moved N remembered section(s)` repeating in the log.
 
 ### J7. Arranging icons: the layout editor
 
@@ -204,7 +206,8 @@ before. When you fix a finding, add it to "Watch for" so the next run checks it.
 
 **Watch for:**
 - Permissions asked again (expected only when the signing identity changes).
-- Icons moving sections after the upgrade.
+- Icons moving sections after the upgrade, including icons with live numbers in their tooltip or description
+  (their identity keys changed format).
 
 ### J11. Real Mac only
 

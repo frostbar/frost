@@ -91,6 +91,14 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   window-property calls) and their windows can't be captured. Item identities therefore come from AX attributes
   (`ItemIdentityKey`: AX identifier, else description / help, else the index among the app's extras, which is creation
   order), never from titles; titles are only an extra signal for migrating title-keyed data (`IdentityMigration`).
+  Numbers in descriptions / help texts are replaced with `<n>` before keying: some apps put live readings there (a
+  fan-control app's tooltip shows its fan speeds), and a key that changes on every AX read re-keyed the remembered
+  section every 20-30 s. Texts that differ only in numbers share a key and get occurrence suffixes (creation order);
+  keys stored with numbers map to the new ones (`MenuBarItem.numberedIdentityKey`, `numberNormalizedEncoding`).
+  `didChangeScreenParametersNotification` also fires when only the Dock changes size; compare `DisplayConfiguration`
+  before rescanning or closing anything. An app hiding and showing its item (`isVisible`, e.g. an icon blinking for
+  unread messages) gets a **new window** at the far left (Always Hidden) with no launch/quit event; the scanner's
+  window watch (`MenuBarItemScanner.windowWatchInterval`, 3 s) notices it so the section memory can put it back.
   Control Center's clock and Control Center button are recognized by their AX identifiers
   (`com.apple.menuextra.clock` / `.controlcenter`), see `SystemItemRules`.
 - `NSStatusBar.system.thickness` returns 22, which does not match the actual menu bar height (39 on notched

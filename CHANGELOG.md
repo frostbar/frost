@@ -32,6 +32,12 @@ release notes on GitHub and in the in-app update window.
 - The system permission prompt no longer lingers behind System Settings and reappears after you granted. Frost
   recognizes it by more than the one process name it uses today, so the pane is not opened on top of it either.
 - Clicking the Frost icon right after granting Accessibility opens the Frost Bar instead of expanding the menu bar.
+- Icons with live numbers, such as fan speeds or temperatures in their tooltip, now keep their section reliably
+  instead of being treated as a different icon every few seconds.
+- An icon its app hides and shows again (for example one that blinks for unread messages) goes back to its section
+  within a few seconds instead of staying in Always Hidden.
+- The Frost Bar no longer closes, and Frost no longer rescans the menu bar, when only the Dock changes size (for
+  example when an app's Dock icon appears).
 
 ## [0.3.0] - 2026-10-05
 
