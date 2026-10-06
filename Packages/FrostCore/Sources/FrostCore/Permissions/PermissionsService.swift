@@ -24,16 +24,38 @@ public final class PermissionsService {
     @ObservationIgnored private var pollTask: Task<Void, Never>?
 
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
+    @ObservationIgnored private var accessibilityObserver: NSObjectProtocol?
+    @ObservationIgnored private let defaults: UserDefaults
+
+    private enum Key {
+        static let askedAccessibility = "permissionAskedAccessibility"
+        static let askedScreenRecording = "permissionAskedScreenRecording"
+    }
 
     /// Reads once at startup, then refreshes every time the app is activated (e.g. the user switches back from
     /// System Settings). Operations that need permissions (opening Frost Bar, showing the layout editor, before a
     /// move) should also call `refresh()` first.
-    public init() {
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         refresh()
         activationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
+        }
+        // System Settings posts this when the user flips an Accessibility switch: pick a grant up at once, also while
+        // Frost isn't active (a click on the Frost icon right after granting must not see stale permissions).
+        accessibilityObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.accessibility.api"), object: nil, queue: .main
+        ) { [weak self] _ in
+            // The system updates its trust answer a moment after the notification.
+            MainActor.assumeIsolated {
+                self?.refresh()
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    self?.refresh()
+                }
+            }
         }
     }
 
@@ -45,16 +67,28 @@ public final class PermissionsService {
         if screenRecording != sr { screenRecording = sr }
     }
 
+    /// The first request shows the system prompt (its "Open System Settings" button leads to the pane and lists Frost
+    /// there); later ones open the pane directly (`PermissionRequest`).
     public func requestAccessibility() {
-        let key = "AXTrustedCheckOptionPrompt" as CFString  // kAXTrustedCheckOptionPrompt
-        _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
-        openSettings(anchor: "Privacy_Accessibility")
+        switch PermissionRequest.step(alreadyAsked: defaults.bool(forKey: Key.askedAccessibility)) {
+        case .systemPrompt:
+            defaults.set(true, forKey: Key.askedAccessibility)
+            let key = "AXTrustedCheckOptionPrompt" as CFString  // kAXTrustedCheckOptionPrompt
+            _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+        case .openSettings:
+            openSettings(anchor: "Privacy_Accessibility")
+        }
     }
 
     public func requestScreenRecording() {
         screenRecordingRequested = true
-        _ = CGRequestScreenCaptureAccess()
-        openSettings(anchor: "Privacy_ScreenCapture")
+        switch PermissionRequest.step(alreadyAsked: defaults.bool(forKey: Key.askedScreenRecording)) {
+        case .systemPrompt:
+            defaults.set(true, forKey: Key.askedScreenRecording)
+            _ = CGRequestScreenCaptureAccess()
+        case .openSettings:
+            openSettings(anchor: "Privacy_ScreenCapture")
+        }
     }
 
     @ObservationIgnored private var pollers = 0
