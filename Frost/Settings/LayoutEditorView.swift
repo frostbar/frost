@@ -399,7 +399,11 @@ private struct ItemTile: View {
     private var isPending: Bool { state.pending.contains(item.windowID) }
     private var isObscured: Bool { state.obscured.contains(item.windowID) }
     private var name: String { state.names[item.windowID] ?? item.windowTitle }
-    private var width: CGFloat { max(item.frame.width, 16) + 8 }
+    private var width: CGFloat {
+        let own = max(item.frame.width, 16)
+        guard image == nil else { return own + 8 }
+        return max(own, FallbackLabelMetrics.tileWidth(for: item, label: state.fallbackLabels[item.windowID])) + 8
+    }
 
     var body: some View {
         if item.isMovable && !isPending {

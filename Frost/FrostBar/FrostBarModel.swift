@@ -69,7 +69,9 @@ final class FrostBarModel {
             if images[item.windowID] == nil, let icon = AppIconCache.shared.icon(for: item.bundleID) {
                 icons[item.windowID] = icon
             }
-            let current = (images[item.windowID] == nil ? nil : sizes[item.windowID]?.width) ?? item.frame.width
+            // Without an image the tile is as wide as its label needs (a short text item shows in full).
+            let current = (images[item.windowID] == nil ? nil : sizes[item.windowID]?.width)
+                ?? FallbackLabelMetrics.tileWidth(for: item, label: labels[item.windowID])
             widths[item.windowID] = tileWidths.hold(item.windowID, width: current)
         }
         return FrostBarState(phase: phase, alwaysHidden: alwaysHidden, hidden: hidden, images: images,

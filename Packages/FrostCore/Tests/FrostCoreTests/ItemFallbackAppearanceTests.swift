@@ -55,4 +55,22 @@ import CoreGraphics
         #expect(ItemFallbackAppearance.label(for: wifi, sharesIcon: true) == nil)
         #expect(ItemFallbackAppearance.label(for: item("com.example.app"), sharesIcon: true) == nil)
     }
+
+    @Test func aTextTileIsWideEnoughForItsWholeLabel() {
+        // A 45 pt text item (a seconds counter): icon, spacing and padding take 26 pt, so a 33 pt text needs 59 pt.
+        let wide = ItemFallbackAppearance.tileWidth(itemWidth: 45, labelTextWidth: 33)
+        #expect(wide == 33 + ItemFallbackAppearance.besideOverhead)
+        // Already roomy enough: unchanged.
+        #expect(ItemFallbackAppearance.tileWidth(itemWidth: 120, labelTextWidth: 60) == 120)
+        // An icon-sized item with a shared-icon label: the label goes below the icon.
+        let narrow = ItemFallbackAppearance.tileWidth(itemWidth: 30, labelTextWidth: 41)
+        #expect(narrow == 41 + ItemFallbackAppearance.belowOverhead)
+        // No label: the item's own width.
+        #expect(ItemFallbackAppearance.tileWidth(itemWidth: 30, labelTextWidth: nil) == 30)
+    }
+
+    @Test func theLabelFontFollowsTheLayout() {
+        #expect(ItemFallbackAppearance.labelFontSize(itemWidth: ItemFallbackAppearance.minLabelWidth) == 11)
+        #expect(ItemFallbackAppearance.labelFontSize(itemWidth: ItemFallbackAppearance.minLabelWidth - 1) == 8)
+    }
 }

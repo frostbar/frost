@@ -109,6 +109,18 @@ struct ItemGlyph: View {
     }
 }
 
+/// Sizes tiles without an image to their short label (`ItemFallbackAppearance`), so text items are readable in full.
+enum FallbackLabelMetrics {
+    /// The width a tile for `item` needs when it shows `label` instead of an image.
+    static func tileWidth(for item: MenuBarItem, label: String?) -> CGFloat {
+        let itemWidth = item.frame.width
+        guard let label else { return itemWidth }
+        let font = NSFont.systemFont(ofSize: ItemFallbackAppearance.labelFontSize(itemWidth: itemWidth), weight: .medium)
+        let text = ceil((label as NSString).size(withAttributes: [.font: font]).width) + 1
+        return ItemFallbackAppearance.tileWidth(itemWidth: itemWidth, labelTextWidth: text)
+    }
+}
+
 extension ItemGlyph {
     /// A system item's symbol (e.g. Wi-Fi: its owner, Control Center, has one icon for all of them), else the app icon.
     private var symbol: String? { ItemFallbackAppearance.symbol(for: item) }

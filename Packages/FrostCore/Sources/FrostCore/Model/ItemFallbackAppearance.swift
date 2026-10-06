@@ -37,6 +37,23 @@ public enum ItemFallbackAppearance {
         return result
     }
 
+    /// Space a label tile spends besides the text when the label sits next to the icon (padding, icon, spacing).
+    public static let besideOverhead: CGFloat = 26
+    /// Same when the label sits below the icon (padding).
+    public static let belowOverhead: CGFloat = 4
+
+    /// The label's font size: next to the icon on text-item tiles, smaller below it on icon-sized ones.
+    public static func labelFontSize(itemWidth: CGFloat) -> CGFloat { itemWidth >= minLabelWidth ? 11 : 8 }
+
+    /// The width a tile without an image needs: the item's own width, or more when its label (measured at
+    /// `labelFontSize`) plus the icon wouldn't fit, so a short text item (a seconds counter, a percentage) is never cut
+    /// to "15…".
+    public static func tileWidth(itemWidth: CGFloat, labelTextWidth: CGFloat?) -> CGFloat {
+        guard let labelTextWidth else { return itemWidth }
+        let overhead = itemWidth >= minLabelWidth ? besideOverhead : belowOverhead
+        return max(itemWidth, labelTextWidth + overhead)
+    }
+
     /// Tiles narrower than this (an icon-sized item) show only the icon, unless several share it.
     public static let minLabelWidth: CGFloat = 44
 
