@@ -1,11 +1,14 @@
 import AppKit
+import FrostCore
 import SwiftUI
 
 /// The settings window (a reused singleton) in the standard macOS settings style: an `NSTabViewController` with toolbar
-/// tabs (icon and label, the selected one highlighted), the window title following the selected tab, fixed size.
+/// tabs (icon and label, the selected one highlighted), the window title following the selected tab, fixed width and a
+/// height that follows the selected tab's content.
 ///
 /// Each tab is its own hosting controller living as long as the window, so switching tabs only swaps views (with a
-/// short cross-fade, instant under Reduce Motion): no window resize and no SwiftUI rebuild of the tab's content.
+/// short cross-fade and the window animating to the new tab's height, both instant under Reduce Motion): no SwiftUI
+/// rebuild of the tab's content, which stays pinned to the top at its own height while the window resizes.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private static var shared: SettingsWindowController?
@@ -32,20 +35,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         return (shared.window, SettingsTab.allCases[index])
     }
 
-    /// Size of the tab content area below the toolbar (the same for every tab): tall enough for every tab's content
-    /// without scrolling at the default text size, in English and zh-Hans. The tallest is Behavior in English while
-    /// permissions are missing (its display mode card then adds a notice): 566 pt measured in the VM.
-    static let contentSize: NSSize = {
-        var size = NSSize(width: 640, height: 570)
-        #if DEBUG
-        // `FROST_TEST_SETTINGS_HEIGHT=<pt>` (VM testing only): another content height, e.g. small enough for the
-        // tabs to scroll, or tall enough to measure their full content.
-        if let value = ProcessInfo.processInfo.environment["FROST_TEST_SETTINGS_HEIGHT"], let height = Double(value) {
-            size.height = height
-        }
-        #endif
-        return size
-    }()
+    /// Height of the Layout tab's content area below the toolbar: the three section bands, the hint and the Screen
+    /// Recording notice, which is the tallest state. The other tabs are as tall as their content.
+    static let layoutHeight: CGFloat = 466
+    /// Duration of the window's height animation on a tab switch (the content cross-fades alongside).
+    static let resizeDuration: TimeInterval = 0.25
+
     /// Delay between showing the Layout tab and starting the editor (expanding the menu bar, rescans, captures), so the
     /// switch renders first. After a fade the editor starts once the fade has ended (plus a short margin) instead.
     private static let editorStartDelay: Duration = .milliseconds(150)
@@ -113,6 +108,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         super.init()
         window.delegate = self
         tabs.onSelect = { [weak self] tab in self?.tabDidChange(tab) }
+        tabs.onWillTransition = { [weak self] container in
+            (container as? SettingsTabContainerController).map { self?.resizeWindow(for: $0, animated: true) }
+        }
+        for item in tabs.tabViewItems {
+            (item.viewController as? SettingsTabContainerController)?.onHeightChange = { [weak self] container in
+                // A tab whose content changed height while shown (a notice appearing) resizes the window.
+                guard let self, self.selectedContainer === container else { return }
+                self.resizeWindow(for: container, animated: true)
+            }
+        }
         if model.presence.isAway { pauseReasons.insert(.userAway) }
         if NSApp.isHidden { pauseReasons.insert(.appHidden) }
         for (name, hidden) in [(NSApplication.didHideNotification, true), (NSApplication.didUnhideNotification, false)] {
@@ -136,27 +141,33 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private static func hostingController(for tab: SettingsTab, model: AppModel,
                                           layoutEditor: LayoutEditorModel) -> NSViewController {
+        let reporter = SettingsHeightReporter()
         let controller: NSViewController
         switch tab {
         case .layout:
-            controller = hosting(SettingsPane { LayoutEditorView() }, model, layoutEditor)
-        case .behavior: controller = hosting(SettingsPane { BehaviorView() }, model, layoutEditor)
-        case .about: controller = hosting(SettingsPane { AboutView() }, model, layoutEditor)
+            controller = hosting(SettingsPane(reporter: reporter, fixedHeight: layoutHeight) { LayoutEditorView() },
+                                 reporter, model, layoutEditor)
+        case .behavior:
+            controller = hosting(SettingsPane(reporter: reporter) { BehaviorView() }, reporter, model, layoutEditor)
+        case .about:
+            controller = hosting(SettingsPane(reporter: reporter) { AboutView() }, reporter, model, layoutEditor)
         }
         // The window title follows the selected tab (the tab view controller propagates its selected child's title).
         controller.title = tab.title
         return controller
     }
 
-    private static func hosting(_ view: some View, _ model: AppModel,
+    private static func hosting(_ view: some View, _ reporter: SettingsHeightReporter, _ model: AppModel,
                                 _ layoutEditor: LayoutEditorModel) -> NSViewController {
         let controller = NSHostingController(rootView: view.environment(model).environment(layoutEditor))
-        // Fixed window size: the content's ideal size must not resize the window or animate it between tabs.
+        // The window's size comes from the tab's reported content height, not from the hosting controller.
         controller.sizingOptions = []
         // The container already places the content below the toolbar; no further insets from SwiftUI.
         controller.safeAreaRegions = []
-        let container = SettingsTabContainerController(content: controller)
-        container.view.frame.size = contentSize
+        let container = SettingsTabContainerController(content: controller, reporter: reporter) {
+            controller.sizeThatFits(in: CGSize(width: SettingsPane<EmptyView>.width, height: 4000)).height
+        }
+        container.view.frame.size = NSSize(width: SettingsPane<EmptyView>.width, height: layoutHeight)
         return container
     }
 
@@ -222,12 +233,39 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Sizes the window so the area below the toolbar is `contentSize` (the toolbar's height depends on the system).
+    private var selectedContainer: SettingsTabContainerController? {
+        let items = tabs.tabViewItems
+        guard items.indices.contains(tabs.selectedTabViewItemIndex) else { return nil }
+        return items[tabs.selectedTabViewItemIndex].viewController as? SettingsTabContainerController
+    }
+
+    /// Sizes the window to the selected tab's content (the toolbar's height depends on the system).
     private func fitWindowToContent() {
         window.layoutIfNeeded()
+        guard let container = selectedContainer else { return }
+        resizeWindow(for: container, animated: false)
+    }
+
+    /// Gives the window the height of `container`'s content below the toolbar, keeping its top edge and width. The
+    /// animation runs on the window frame only: the tab's content is pinned to the top at its own height, so it is
+    /// neither laid out again nor moved while the window grows or shrinks (the clipped part just appears or goes).
+    private func resizeWindow(for container: SettingsTabContainerController, animated: Bool) {
         let chrome = window.frame.height - window.contentLayoutRect.height
-        let size = NSSize(width: Self.contentSize.width, height: Self.contentSize.height + chrome)
-        window.setFrame(NSRect(origin: window.frame.origin, size: size), display: false)
+        let height = (container.contentHeight + chrome).rounded()
+        var frame = window.frame
+        frame.size.width = SettingsPane<EmptyView>.width
+        guard abs(frame.height - height) > 0.5 || abs(window.frame.width - frame.width) > 0.5 else { return }
+        frame.origin.y += frame.height - height
+        frame.size.height = height
+        guard animated, window.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            window.setFrame(frame, display: true)
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.resizeDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(frame, display: true)
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -292,34 +330,59 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
 /// One tab's content, kept below the toolbar.
 ///
-/// The window has a full-size content view (the shared translucent background extends under the transparent toolbar),
-/// so a tab's view also spans the toolbar area. Left to SwiftUI, a tab's `ScrollView` would scroll its content up under
-/// the toolbar, where it shows through the toolbar's tab labels. The hosted content is therefore pinned to the safe area
-/// (the window's content layout rect) and clipped to it: nothing of a tab is ever drawn under the toolbar, and a tab
-/// that scrolls passes under the scroll edge effect of `SettingsPane`'s top bar.
+/// The window has a full-size content view, so a tab's view also spans the toolbar area. The hosted content is therefore
+/// pinned to the safe area (the window's content layout rect) and clipped to it: nothing of a tab is ever drawn under
+/// the toolbar.
+///
+/// The hosted content is pinned to the top at its own content height, not stretched to the container: while the window
+/// resizes between tabs (`SettingsWindowController.resizeWindow`) the container's bottom edge moves over still content.
 private final class SettingsTabContainerController: NSViewController {
     private let content: NSViewController
+    private let reporter: SettingsHeightReporter
+    /// The content's height right now, from SwiftUI (also before the view has been in a window).
+    private let measure: () -> CGFloat
+    private let heightConstraint: NSLayoutConstraint
+    /// Called when the content's height changes while the tab lives on (a notice appearing).
+    var onHeightChange: ((SettingsTabContainerController) -> Void)?
 
-    init(content: NSViewController) {
+    init(content: NSViewController, reporter: SettingsHeightReporter, measure: @escaping () -> CGFloat) {
         self.content = content
+        self.reporter = reporter
+        self.measure = measure
+        heightConstraint = content.view.heightAnchor.constraint(equalToConstant: SettingsWindowController.layoutHeight)
         super.init(nibName: nil, bundle: nil)
+        reporter.onChange = { [weak self] _ in
+            guard let self else { return }
+            self.heightConstraint.constant = self.contentHeight
+            self.onHeightChange?(self)
+        }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// The height of this tab's content area.
+    var contentHeight: CGFloat {
+        // The laid-out height once SwiftUI has reported it; the ideal height before the tab's first layout.
+        if let reported = reporter.height { return reported.rounded(.up) }
+        let height = measure()
+        return height.isFinite && height > 0 ? height.rounded(.up) : SettingsWindowController.layoutHeight
+    }
+
     override func loadView() {
-        let view = NSView(frame: NSRect(origin: .zero, size: SettingsWindowController.contentSize))
+        let view = NSView(frame: NSRect(origin: .zero, size: NSSize(width: SettingsPane<EmptyView>.width,
+                                                                    height: SettingsWindowController.layoutHeight)))
         addChild(content)
         let hosted = content.view
         hosted.translatesAutoresizingMaskIntoConstraints = false
         hosted.clipsToBounds = true
         view.addSubview(hosted)
+        heightConstraint.constant = contentHeight
         NSLayoutConstraint.activate([
             hosted.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             hosted.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             hosted.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            hosted.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            heightConstraint,
         ])
         self.view = view
     }
@@ -327,11 +390,11 @@ private final class SettingsTabContainerController: NSViewController {
 
 /// Reports toolbar tab selections to the window controller and cross-fades between tabs.
 ///
-/// The window's translucent background is one `NSVisualEffectView` behind all tabs, outside the fade: cross-fading
-/// two behind-window materials visibly shifts the tint mid-fade. The tabs themselves are transparent, so a switch is a
-/// plain cross-fade of their content, run entirely by Core Animation: the incoming view is added (fully laid out and
-/// drawn) and only the presentation opacities of the two views animate, so the main thread does no per-frame work and
-/// the window never resizes. The outgoing view is removed when the fade ends.
+/// The window's standard (opaque) background lies behind all tabs. The tabs themselves are transparent, so a switch is
+/// a plain cross-fade of their content, run entirely by Core Animation: the incoming view is added (fully laid out and
+/// drawn) and only the presentation opacities of the two views animate, so the main thread does no per-frame work in
+/// the content. The window animates to the incoming tab's height alongside (`onWillTransition`). The outgoing view is
+/// removed when the fade ends.
 private final class SettingsTabViewController: NSTabViewController {
     var onSelect: ((SettingsTab) -> Void)?
 
@@ -347,15 +410,8 @@ private final class SettingsTabViewController: NSTabViewController {
     private var fadeGeneration = 0
     private static let fadeKey = "frost.tabFade"
 
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        let background = NSVisualEffectView(frame: view.bounds)
-        background.material = .underWindowBackground
-        background.blendingMode = .behindWindow
-        background.state = .active
-        background.autoresizingMask = [.width, .height]
-        view.addSubview(background, positioned: .below, relativeTo: nil)
-    }
+    /// Called when a switch starts, with the incoming tab: the window then starts its height animation.
+    var onWillTransition: ((NSViewController) -> Void)?
 
     override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
         super.tabView(tabView, didSelect: tabViewItem)
@@ -377,9 +433,11 @@ private final class SettingsTabViewController: NSTabViewController {
             // AppKit calls the completion on the main thread (synchronously for an instant switch).
             nonisolated(unsafe) let completion = completion
             super.transition(from: fromViewController, to: toViewController, options: []) { completion?() }
+            onWillTransition?(toViewController)
             return
         }
-        lastTransitionDuration = Self.fadeDuration
+        // The editor waits for the window's height animation too (see `SettingsWindowController.tabDidChange`).
+        lastTransitionDuration = max(Self.fadeDuration, SettingsWindowController.resizeDuration)
 
         // Add the incoming view and finish its layout and drawing now, so no first-render work lands inside the fade.
         incoming.wantsLayer = true
@@ -389,6 +447,8 @@ private final class SettingsTabViewController: NSTabViewController {
         container.addSubview(incoming, positioned: .above, relativeTo: outgoing)
         incoming.layoutSubtreeIfNeeded()
         incoming.displayIfNeeded()
+        // With the incoming tab laid out, its height is current: the window animates to it alongside the fade.
+        onWillTransition?(toViewController)
 
         fadeGeneration += 1
         let generation = fadeGeneration

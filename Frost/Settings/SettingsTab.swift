@@ -33,25 +33,42 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     }
 }
 
-/// Root of one settings tab: the tab's content filling the content area. It has no background of its own: the window's
-/// translucent background lies behind all tabs (see `SettingsWindowController`), so only the content cross-fades.
-///
-/// The pane starts at the toolbar's bottom edge. The space between the toolbar and the content is an empty top bar
-/// rather than padding, so a tab that scrolls (larger text, a long translation) gets the standard scroll edge effect
-/// there: content scrolling up disappears under the bar's hard edge (the style for a toolbar with text labels) instead
-/// of being cut off at the pane's edge.
-struct SettingsPane<Content: View>: View {
-    /// Space between the toolbar and the tab's content.
-    static var topSpacing: CGFloat { 12 }
+/// Reports the content height of one settings tab to its container (see `SettingsTabContainerController`).
+@MainActor
+final class SettingsHeightReporter {
+    /// The tab's content height as last measured by SwiftUI; nil until the first layout.
+    private(set) var height: CGFloat?
+    var onChange: ((CGFloat) -> Void)?
 
+    func report(_ newHeight: CGFloat) {
+        guard newHeight > 0, newHeight != height else { return }
+        height = newHeight
+        onChange?(newHeight)
+    }
+}
+
+/// Root of one settings tab: the content at the window's fixed width. It has no background of its own (the window's
+/// standard background lies behind all tabs), so only the content cross-fades.
+///
+/// The window's height follows the selected tab: a tab either fills a fixed height (`fixedHeight`, the layout editor)
+/// or is as tall as its content, which it reports through `reporter` (also when the content changes while the tab is
+/// shown, e.g. a notice appearing). The content sits at the top of whatever space the window gives it, so resizing the
+/// window never moves or relayouts it.
+struct SettingsPane<Content: View>: View {
+    static var width: CGFloat { 640 }
+
+    let reporter: SettingsHeightReporter
+    var fixedHeight: CGFloat?
     @ViewBuilder var content: Content
 
     var body: some View {
-        content
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scrollEdgeEffectStyle(.hard, for: .top)
-            .safeAreaBar(edge: .top, spacing: 0) {
-                Color.clear.frame(height: Self.topSpacing)
+        Group {
+            if let fixedHeight {
+                content.frame(width: Self.width, height: fixedHeight)
+            } else {
+                content.frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
             }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reporter.report($0) }
     }
 }
