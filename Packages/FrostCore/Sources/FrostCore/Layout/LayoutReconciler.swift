@@ -53,10 +53,14 @@ public enum LayoutReconciler {
             let order = previous[section, default: []].map(\.windowID)
             var list = result[section, default: []]
             let position = order.firstIndex(of: item.windowID) ?? 0
-            let predecessors = order[..<position].reversed()
-            let insertAt = predecessors.lazy
-                .compactMap { id in list.firstIndex { $0.windowID == id } }
-                .first.map { $0 + 1 } ?? 0
+            // Right after the nearest predecessor already in the list, else at the start.
+            var insertAt = 0
+            for id in order[..<position].reversed() {
+                if let index = list.firstIndex(where: { $0.windowID == id }) {
+                    insertAt = index + 1
+                    break
+                }
+            }
             list.insert(item, at: insertAt)
             result[section] = list
         }
@@ -67,7 +71,7 @@ public enum LayoutReconciler {
     /// `InsertionIndex` / `DropResolver`). Returns the layout unchanged if the item isn't found.
     public static func moving(_ id: CGWindowID, to section: MenuBarSection, at index: Int,
                               in layout: MenuBarLayout) -> MenuBarLayout {
-        guard let item = layout.values.lazy.flatMap({ $0 }).first(where: { $0.windowID == id }) else { return layout }
+        guard let item = layout.values.joined().first(where: { $0.windowID == id }) else { return layout }
         var result = layout.mapValues { $0.filter { $0.windowID != id } }
         var list = result[section, default: []]
         list.insert(item, at: min(max(index, 0), list.count))

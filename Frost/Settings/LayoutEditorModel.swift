@@ -386,7 +386,7 @@ final class LayoutEditorModel {
     func drop(_ windowID: CGWindowID, into section: MenuBarSection, at index: Int) async {
         guard isActive, !isWaitingForMover, let controls = model.sections.controlWindows else { return }
         let layout = layout
-        guard let item = layout.values.lazy.flatMap({ $0 }).first(where: { $0.windowID == windowID }),
+        guard let item = layout.values.joined().first(where: { $0.windowID == windowID }),
               let destination = DropResolver.destination(dragging: item, to: section, index: index,
                                                          layout: layout, controls: controls)
         else { return }

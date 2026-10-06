@@ -327,7 +327,7 @@ public enum ItemClicker {
 
     static func newWindows(in windows: [WindowInfo], ownedBy ownerPID: pid_t, excluding baseline: Set<CGWindowID>,
                            statusWindows: Set<CGWindowID>) -> Set<CGWindowID> {
-        Set(windows.lazy
+        Set(windows
             .filter { !baseline.contains($0.windowID) && !statusWindows.contains($0.windowID) }
             .filter { $0.ownerPID == ownerPID && ownedPresentationLayers.contains($0.layer) }
             .map(\.windowID))
@@ -338,7 +338,7 @@ public enum ItemClicker {
     /// y = 31, height 106), so they don't count. Items pushed off screen have a negative x but are still on the
     /// row.
     static func statusWindowIDs(in windows: [RawStatusWindow], displays: [CGRect]) -> Set<CGWindowID> {
-        Set(windows.lazy
+        Set(windows
             .filter { window in
                 window.frame.height <= maxMenuBarHeight
                     && displays.contains { abs(window.frame.minY - $0.minY) < 1 }
