@@ -18,7 +18,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let capturer = model.capturer, items = model.scanner.items
             Task { await capturer.preloadCached(items) }
         }
-        let controller = shared ?? SettingsWindowController(model: model, initialTab: tab ?? .layout)
+        let controller = shared ?? SettingsWindowController(model: model, initialTab: tab ?? SettingsTab.lastSelected)
         shared = controller
         if let tab { controller.select(tab) }
         controller.show()
@@ -171,6 +171,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private func tabDidChange(_ tab: SettingsTab) {
         guard tab != reportedTab else { return }
         reportedTab = tab
+        SettingsTab.lastSelected = tab
         window.title = tab.title
         #if DEBUG
         FrameProbe.mark("tab-\(tab.rawValue)", in: window)

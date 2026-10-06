@@ -6,6 +6,15 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var id: Self { self }
 
+    private static let lastSelectedKey = "settingsTab"
+
+    /// The tab the settings window opens on when the caller doesn't ask for one: the one the user last had selected
+    /// (Layout on the first run).
+    static var lastSelected: SettingsTab {
+        get { UserDefaults.standard.string(forKey: lastSelectedKey).flatMap(SettingsTab.init(rawValue:)) ?? .layout }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: lastSelectedKey) }
+    }
+
     /// Toolbar item label, and the window title while the tab is selected.
     var title: String {
         switch self {
