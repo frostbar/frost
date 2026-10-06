@@ -21,6 +21,7 @@ shows the hidden ones in a glass panel below the menu bar (the Frost Bar).
 make test-core                     # FrostCore unit tests (Swift Testing)
 make build                         # xcodegen generates the project + xcodebuild (Debug, arm64)
 make ci-build                      # unsigned universal Release build, the same command CI runs
+make lint                          # Swift source lint checks of CI's Lint job (lazy sequence chains)
 make vm-deploy && make vm-run      # deploy and run in the test VM (see below)
 scripts/release/release.sh 0.2.0   # package a release locally (DMG + appcast) without publishing; see docs/releasing.md
 ```
@@ -30,7 +31,8 @@ exception is the SwiftPM pin file `Frost.xcodeproj/project.xcworkspace/xcsharedd
 XcodeGen preserves and which is committed (Sparkle is pinned with `exactVersion`; `make ci-build` and releases only use
 the committed pins). When changing a package version, commit the updated `Package.resolved` from `make build`.
 
-Before finishing any change, `make test-core` and `make build` must both pass without new warnings.
+Before finishing any change, `make test-core` and `make build` must both pass without new warnings, and so must
+`make lint`.
 
 ## Layout
 
@@ -38,7 +40,8 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   `import Testing`, not XCTest).
   - `Model/`: `MenuBarItem`, sections and section state, screen geometry (`NSScreen.displayID`, `ScreenCoordinates`)
   - `Scanning/`: merges CGWindowList (layer 25) + Accessibility into `MenuBarItem`; multi-display resolution
-  - `Layout/`: section classification, drop indices, layout reconciliation, panel positioning, placement of new items
+  - `Layout/`: section classification, drop indices, layout reconciliation, panel positioning, placement of new items,
+    the persisted item memory (`ItemMemoryStore`: seen icons, remembered sections, identity migration)
   - `Moving/`: ⌘-drag moves (`ItemMover`), click forwarding (`ItemClicker`), restore plans, activation handoff
   - `Capture/`: ScreenCaptureKit captures, glyph brightness, the disk cache, live refresh policy
   - `Permissions/`
@@ -49,7 +52,8 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   `Resources/Localizable.xcstrings`: the String Catalog (English base, zh-Hans).
 - `Tools/FakeItems/`: a fake third-party menu bar app for testing (VM testing only).
 - `scripts/vm/`: VM testing scripts. `scripts/release/`: release scripts (`config.sh` is the single release
-  configuration). `Spikes/`: early proof-of-concept programs, not part of the build.
+  configuration). `scripts/lint/`: lint checks run by CI and `make lint`. `Spikes/`: early proof-of-concept
+  programs, not part of the build.
 - `docs/macos-behavior.md`: measured macOS 26 menu bar behavior (read it before changing low-level code).
 - `docs/manual-test-checklist.md` (including "Known limitations"), `docs/testing-vm.md` (including "Verification
   techniques"), `docs/releasing.md` (releases, signing and keys), `docs/ux-journeys.md` (end-to-end user journeys,
@@ -206,6 +210,19 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   clicks, lost windows, lingering prompts, stale state, dead ends), not only failures. New flows get a journey.
 
 - Pure logic goes into FrostCore, tests first (TDD); keep the system-call parts thin.
+- **Migrations of persisted data are tested through the real launch path with previous-release data**: anything an
+  earlier release stored (UserDefaults keys and formats, the image disk cache) gets a test that seeds real storage (a
+  `UserDefaults` suite, a temporary cache directory) exactly as that release wrote it (take the keys and format from
+  that release's tag, `git show v<x.y.z>:<path>`), drives the code that runs at launch over several items at once
+  (some with data in each earlier format, some with none, some ambiguous), and checks that a second launch changes
+  nothing (`ItemImageCacheUpgradeTests`, `ItemMemoryUpgradeTests`). Tests of the individual helpers are not enough:
+  0.3.1 crashed at launch in the composition of two separately tested helpers. Launch-time logic in the app layer
+  moves to FrostCore so it can be tested this way (`ItemMemoryStore`).
+- **No lazy sequence chains with closures**: `.lazy` followed by `map` / `compactMap` / `filter` / `flatMap` runs its
+  closures each time an element is accessed, so a closure may run more than once for one element (`first` on a lazy
+  `compactMap` runs it twice for the element it returns); with side effects that is a bug (the 0.3.1 crash). Use a
+  loop, an eager chain or a closure-free lazy view (`joined()`). `scripts/lint/lazy-chains.sh` (CI, `make lint`)
+  enforces it; a deliberate lazy chain with pure closures carries `// lint: lazy-ok (<reason>)` on its `.lazy` line.
 - Log with `FrostLog.<category>` (`os.Logger`, subsystem `dev.frost.Frost`), not `NSLog` (on a real Mac Frost is
   launched by launchd with stderr = `/dev/null`, so `NSLog` output is lost). To view:
   `/usr/bin/log show --last 10m --info --style compact --predicate 'subsystem == "dev.frost.Frost"'` (in the VM:
