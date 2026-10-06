@@ -296,6 +296,28 @@ import Foundation
         #expect(keeper.memory.count == 4)
     }
 
+    @Test(arguments: [CGWindowID(1), 9])
+    func anItemThatVanishesBrieflyKeepsItsSection(returningAs windowID: CGWindowID) {
+        // A chat-app-like item disappears for a scan or two (its icon blinking) and comes back, as the same window or a
+        // new one, first without an owner (a new window waits for the next AX read). Nothing is seeded, restored or
+        // recorded as a user move, and the memory stays as it was.
+        var keeper = SectionKeeper(memory: [id("com.a"): .alwaysHidden, id("com.c"): .hidden])
+        _ = keeper.observe(layout: layout, restoreEnabled: true, canMove: true)
+        let memory = keeper.memory
+        let without: MenuBarLayout = [.alwaysHidden: [item(2, "com.b")], .hidden: [item(3, "com.c")]]
+        for _ in 0..<2 {
+            #expect(keeper.observe(layout: without, restoreEnabled: true, canMove: true) == .init())
+        }
+        let unresolved: MenuBarLayout = [.alwaysHidden: [item(windowID, nil, ""), item(2, "com.b")],
+                                         .hidden: [item(3, "com.c")]]
+        #expect(keeper.observe(layout: unresolved, restoreEnabled: true, canMove: true) == .init())
+        let back: MenuBarLayout = [.alwaysHidden: [item(windowID, "com.a"), item(2, "com.b")],
+                                   .hidden: [item(3, "com.c")]]
+        #expect(keeper.observe(layout: back, restoreEnabled: true, canMove: true) == .init())
+        #expect(keeper.memory == memory)
+        #expect(keeper.unsettled.isEmpty)
+    }
+
     // MARK: - Destinations and persistence
 
     @Test func destinationsAreTheSectionBoundaries() {
