@@ -211,6 +211,8 @@ private struct SectionBand: View {
     /// Horizontal scroll state of the band, to show that more tiles lie beyond an edge and to page with the arrows.
     @State private var scroll = BandScroll()
     @State private var scrollPosition = ScrollPosition(edge: .leading)
+    /// The user scrolled the row (wheel, trackpad or arrows): stop pinning it to its leading edge.
+    @State private var userScrolled = false
 
     private var isTargeted: Bool { drag.targetSection == section }
 
@@ -283,6 +285,16 @@ private struct SectionBand: View {
                        viewport: geometry.containerSize.width)
         } action: { _, new in
             scroll = new
+            // Until the user scrolls, the row stays at its leading edge: tiles that appear or change width while the
+            // row lays out (the editor starting, a counter growing) must not leave it scrolled by a few points.
+            if new.offset <= 1 {
+                userScrolled = false
+            } else if !userScrolled {
+                scrollPosition.scrollTo(edge: .leading)
+            }
+        }
+        .onScrollPhaseChange { _, phase in
+            if phase == .interacting { userScrolled = true }
         }
         // Fade both ends: at rest only over the insets, and over a wider stretch on the side where more tiles lie
         // beyond the edge, so overflow is visible.
@@ -328,6 +340,7 @@ private struct SectionBand: View {
         Button {
             let step = max(scroll.viewport * 0.7, 80)
             let target = forward ? scroll.offset + step : scroll.offset - step
+            userScrolled = true
             withAnimation(.snappy) {
                 scrollPosition.scrollTo(x: min(max(0, target), max(0, scroll.content - scroll.viewport)))
             }
