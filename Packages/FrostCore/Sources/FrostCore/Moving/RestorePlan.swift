@@ -49,4 +49,28 @@ public struct RestorePlan: Hashable, Sendable {
         let present = Set(layout[section, default: []].map(\.windowID)).subtracting([itemID])
         return candidates.first { $0 == boundary || present.contains($0.targetWindowID) } ?? boundary
     }
+
+    /// Whether the item is back in its slot in `layout` (a trusted one): in `section`, next to the anchor
+    /// `destination(in:)` picks (the last item of the section for the boundary).
+    public func isInPlace(in layout: MenuBarLayout) -> Bool {
+        let ids = layout[section, default: []].map(\.windowID)
+        guard let index = ids.firstIndex(of: itemID) else { return false }
+        switch destination(in: layout) {
+        case boundary:
+            return index == ids.count - 1
+        case .leftOf(let anchor):
+            return index + 1 < ids.count && ids[index + 1] == anchor
+        case .rightOf(let anchor):
+            return index > 0 && ids[index - 1] == anchor
+        }
+    }
+
+    /// The one move that puts the item back into its slot when a move back left it elsewhere (e.g. at the section's
+    /// edge after its anchor move failed, or one slot off after the user's click cut the ⌘-drag short): nil when it
+    /// is in place, gone (its app quit) or `layout` is unavailable.
+    public func correction(in layout: MenuBarLayout) -> MoveDestination? {
+        guard !layout.isEmpty, layout.values.joined().contains(where: { $0.windowID == itemID }),
+              !isInPlace(in: layout) else { return nil }
+        return destination(in: layout)
+    }
 }

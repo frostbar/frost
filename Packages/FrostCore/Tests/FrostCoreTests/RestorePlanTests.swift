@@ -70,6 +70,42 @@ import CoreGraphics
         #expect(plan.destination(in: layout(hidden: [1], visible: [2, 3])) == .rightOf(1))
     }
 
+    // MARK: - Checking the slot after moving back
+
+    @Test func inPlaceNextToItsRightNeighbour() throws {
+        let plan = try #require(RestorePlan.make(for: 2, in: layout(hidden: [1, 2, 3]), controls: controls))
+        #expect(plan.isInPlace(in: layout(hidden: [1, 2, 3])))
+        // In its section, but at the edge (a fall back to the boundary): not its slot while 3 is there.
+        #expect(!plan.isInPlace(in: layout(hidden: [1, 3, 2])))
+        #expect(plan.correction(in: layout(hidden: [1, 3, 2])) == .leftOf(3))
+        // Still out (in Visible).
+        #expect(!plan.isInPlace(in: layout(hidden: [1, 3], visible: [2])))
+        #expect(plan.correction(in: layout(hidden: [1, 2, 3])) == nil)
+    }
+
+    @Test func inPlaceNextToItsLeftNeighbourWhenTheRightOneIsGone() throws {
+        let plan = try #require(RestorePlan.make(for: 2, in: layout(hidden: [1, 2, 3]), controls: controls))
+        // 3's app quit: right of 1 is its slot.
+        #expect(plan.isInPlace(in: layout(hidden: [4, 1, 2])))
+        #expect(!plan.isInPlace(in: layout(hidden: [2, 4, 1])))
+        #expect(plan.correction(in: layout(hidden: [2, 4, 1])) == .rightOf(1))
+    }
+
+    @Test func atTheEdgeIsInPlaceOnlyWithoutNeighbours() throws {
+        let plan = try #require(RestorePlan.make(for: 5, in: layout(alwaysHidden: [5], hidden: [1]), controls: controls))
+        #expect(plan.isInPlace(in: layout(alwaysHidden: [6, 5], hidden: [1])))
+        #expect(!plan.isInPlace(in: layout(alwaysHidden: [5, 6], hidden: [1])))
+        #expect(plan.correction(in: layout(alwaysHidden: [5, 6], hidden: [1])) == .leftOf(102))
+        // In the wrong section.
+        #expect(!plan.isInPlace(in: layout(alwaysHidden: [6], hidden: [1, 5])))
+    }
+
+    @Test func noCorrectionWhenTheItemIsGoneOrTheLayoutUnavailable() throws {
+        let plan = try #require(RestorePlan.make(for: 2, in: layout(hidden: [1, 2, 3]), controls: controls))
+        #expect(plan.correction(in: layout(hidden: [1, 3])) == nil)
+        #expect(plan.correction(in: [:]) == nil)
+    }
+
     @Test func destinationIsBoundaryWhenLayoutUnavailable() throws {
         let plan = try #require(RestorePlan.make(for: 2, in: layout(hidden: [1, 2, 3]), controls: controls))
         #expect(plan.destination(in: [:]) == .leftOf(101))

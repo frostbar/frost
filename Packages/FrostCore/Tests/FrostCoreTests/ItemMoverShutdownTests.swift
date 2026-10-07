@@ -45,12 +45,17 @@ import CoreGraphics
     }
 
     @Test func shutdownCapsTheAttemptsOfEachMove() {
-        #expect(ItemMover.attemptLimit(requested: 3, isShuttingDown: false, shutdownLimit: 1) == 3)
-        #expect(ItemMover.attemptLimit(requested: 3, isShuttingDown: true, shutdownLimit: 1) == 1)
-        #expect(ItemMover.attemptLimit(requested: 1, isShuttingDown: true, shutdownLimit: 2) == 1)
+        func attempts(limit: Int, shutdownLimit: Int, failing failures: Int) -> MoveAttempts {
+            var attempts = MoveAttempts(limit: limit, interruptionLimit: 4, shutdownLimit: shutdownLimit)
+            for _ in 0..<failures { attempts.record(.failed) }
+            return attempts
+        }
+        #expect(attempts(limit: 3, shutdownLimit: 1, failing: 2).mayAttempt(isShuttingDown: false))
+        #expect(!attempts(limit: 3, shutdownLimit: 1, failing: 1).mayAttempt(isShuttingDown: true))
+        #expect(!attempts(limit: 1, shutdownLimit: 2, failing: 1).mayAttempt(isShuttingDown: true))
         // Always at least one attempt.
-        #expect(ItemMover.attemptLimit(requested: 0, isShuttingDown: false, shutdownLimit: 1) == 1)
-        #expect(ItemMover.attemptLimit(requested: 3, isShuttingDown: true, shutdownLimit: 0) == 1)
+        #expect(attempts(limit: 0, shutdownLimit: 1, failing: 0).mayAttempt(isShuttingDown: false))
+        #expect(attempts(limit: 3, shutdownLimit: 0, failing: 0).mayAttempt(isShuttingDown: true))
     }
 
     @Test func waitUntilIdleReturnsAtOnceWhenIdle() async {

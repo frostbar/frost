@@ -53,7 +53,18 @@ public final class ItemMover {
     /// attempt first waits for the buttons to be released (`waitForMouseButtonsReleased`).
     public var isMouseButtonHeld: () -> Bool = { UserMouseButtons.isAnyHeld }
 
+    /// Whether a menu is open (injectable for tests). A ⌘-drag posted while one is open doesn't take effect (menu
+    /// tracking takes the mouse-down) and closes the menu: measured in the VM, a menu the user opened on the menu bar
+    /// right before a Frost Bar move back closed ~0.4 s later and the move needed a second attempt. Moves that can wait
+    /// (`yieldingToMenus`) wait for it to close first.
+    public var isMenuOpen: () -> Bool = { ItemClicker.isMenuOnScreen() }
+    /// How long a move `yieldingToMenus` waits for an open menu before it goes ahead anyway.
+    public var menuYieldTimeout: Duration = .seconds(30)
+
     public var maxAttempts = 3
+    /// Attempts the user's own mouse may cut short (or keep from being posted) on top of `maxAttempts`
+    /// (`MoveAttempts`).
+    public var maxInterruptions = 4
     /// Delay after posting events before the first check; then poll every `pollInterval` until the order is
     /// correct and frames are stable, for at most `settleTimeout`.
     /// Measured: the order is correct after 32–40 ms; on-screen move animations finish in 390–540 ms, moves
@@ -147,10 +158,13 @@ public final class ItemMover {
     /// is cancelled.
     /// `completion`: see `Completion`. `cursor`: where the pointer ends up (`CursorDisposition`); it is hidden while
     /// the ⌘-drag moves it either way.
+    /// `yieldingToMenus`: before each attempt, wait (up to `menuYieldTimeout`, not while quitting) for an open menu to
+    /// close, so a move the user isn't waiting for (moving an item back) doesn't close the menu they just opened.
     public func move(_ itemID: CGWindowID, to destination: MoveDestination,
-                     until completion: Completion = .settled, cursor: CursorDisposition = .restore) async throws {
+                     until completion: Completion = .settled, cursor: CursorDisposition = .restore,
+                     yieldingToMenus: Bool = false) async throws {
         try await move(itemID, to: destination, attempts: maxAttempts, checkingControls: true, completion: completion,
-                       cursor: cursor)
+                       cursor: cursor, yieldingToMenus: yieldingToMenus)
     }
 
     /// - `checkingControls`: after each attempt, check the order of Frost's controls (see `controlsInOrder`); if
@@ -158,14 +172,16 @@ public final class ItemMover {
     ///   retrying would just keep dragging the icon).
     private func move(_ itemID: CGWindowID, to destination: MoveDestination, attempts: Int,
                       checkingControls: Bool, completion: Completion = .settled,
-                      cursor disposition: CursorDisposition = .restore) async throws {
+                      cursor disposition: CursorDisposition = .restore, yieldingToMenus: Bool = false) async throws {
         assert(isBusy, "ItemMover.move must be called inside transaction")
-        for attempt in 1...max(1, attempts) {
+        var tally = MoveAttempts(limit: attempts, interruptionLimit: maxInterruptions,
+                                 shutdownLimit: shutdownMaxAttempts)
+        // Quitting began during this move: stop retrying (checked per attempt, so a move that was already retrying
+        // finishes its current attempt and then gives up).
+        while tally.mayAttempt(isShuttingDown: isShuttingDown) {
             try Task.checkCancellation()
-            // Quitting began during this move: stop retrying (checked per attempt, so a move that was already
-            // retrying finishes its current attempt and then gives up).
-            guard attempt <= Self.attemptLimit(requested: attempts, isShuttingDown: isShuttingDown,
-                                               shutdownLimit: shutdownMaxAttempts) else { break }
+            let attempt = tally.count + 1
+            if yieldingToMenus, !isShuttingDown { try await waitForMenusToClose(timeout: menuYieldTimeout) }
             // Before reading any frame: the mouse-down must land on the Frost icon where it is when posting.
             try await waitForMouseButtonsReleased(timeout: Self.mouseReleaseTimeout(isShuttingDown: isShuttingDown))
             scanner.rescan()
@@ -199,6 +215,14 @@ public final class ItemMover {
             // A move out left the pointer hidden at the drop point: it reappears once the item has landed (below). On
             // every other way out of this attempt (an error, cancellation, a retry) it goes back where it was.
             defer { posted.concealment?.end(warpingTo: posted.savedCursor) }
+            guard posted.downAt != nil else {
+                // The user pressed a mouse button between the check above and the mouse-down: nothing was posted.
+                FrostLog.mover.notice("""
+                    ⌘-drag of \(itemID, privacy: .public) not posted: a mouse button went down right before it
+                    """)
+                tally.record(.notPosted)
+                continue
+            }
             FrostLog.mover.info("""
                 ⌘-drag of \(itemID, privacy: .public) to \(String(describing: destination), privacy: .public) \
                 (attempt \(attempt, privacy: .public)): \(posted.description, privacy: .public)
@@ -248,6 +272,13 @@ public final class ItemMover {
                 scanner.rescan()
                 return
             }
+            if posted.interrupted {
+                FrostLog.mover.notice("""
+                    ⌘-drag of \(itemID, privacy: .public) was cut short by the user's mouse button and didn't take \
+                    effect; trying again once the button is released
+                    """)
+            }
+            tally.record(posted.interrupted ? .interrupted : .failed)
         }
         throw ItemMoveError.didNotMove
     }
@@ -265,6 +296,25 @@ public final class ItemMover {
         }
     }
 
+    /// Waits (polling every `poll`) while a menu is open, at most `timeout` and only until quitting begins; returns
+    /// whether none is open any more. Throws `CancellationError` when cancelled.
+    @discardableResult
+    func waitForMenusToClose(timeout: Duration, poll: Duration = .milliseconds(50)) async throws -> Bool {
+        guard isMenuOpen() else { return true }
+        FrostLog.mover.notice("waiting for the open menu to close before the next ⌘-drag")
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        // Quitting doesn't wait for the user's menu.
+        while isMenuOpen(), !isShuttingDown {
+            guard clock.now < deadline else {
+                FrostLog.mover.notice("a menu is still open after \(timeout, privacy: .public); moving anyway")
+                return false
+            }
+            try await Task.sleep(for: poll)
+        }
+        return true
+    }
+
     /// How long a move waits for the user to let go of a mouse button: as long as a deliberate drag takes, but briefly
     /// while quitting (which gives up after a few seconds anyway).
     public nonisolated static func mouseReleaseTimeout(isShuttingDown: Bool) -> Duration {
@@ -278,11 +328,6 @@ public final class ItemMover {
     }
 
     // MARK: - Pure logic (unit tested)
-
-    /// How many attempts a move may make: `requested`, capped at `shutdownLimit` while shutting down; at least one.
-    nonisolated static func attemptLimit(requested: Int, isShuttingDown: Bool, shutdownLimit: Int) -> Int {
-        max(1, isShuttingDown ? min(requested, shutdownLimit) : requested)
-    }
 
     /// Whether the item is already immediately left/right of the target (sorted by minX; `frames` holds every
     /// item on the scanned menu bar, excluding copies on other displays).
@@ -446,8 +491,10 @@ public final class ItemMover {
     /// Called on a background thread (it sleeps between events) so Frost's own main thread can handle the events.
     /// Posts the mouse-down on the Frost icon, waits until `release` says the item has been lifted (and, if the target
     /// may slide, that the menu bar has stopped moving), then posts the mouse-up at the target's position at that moment
-    /// (`plannedMouseUp`, computed from the frames before the drag, if the item was never seen lifted). Posts the mouse-up early if the user presses a
-    /// mouse button meanwhile, so a ⌘-drag never overlaps the user's own for long. The pointer is hidden from before
+    /// (`plannedMouseUp`, computed from the frames before the drag, if the item was never seen lifted). Posts nothing if
+    /// a mouse button is down right before the mouse-down (`downAt` stays nil), and the mouse-up early if the user
+    /// presses a mouse button meanwhile (`interrupted`; also set for a click between two polls, by the HID press count),
+    /// so a ⌘-drag never overlaps the user's own for long. The pointer is hidden from before
     /// the mouse-down; with `.restore` it is put back and shown right after the mouse-up, with `.onMovedItem` it stays
     /// hidden at the drop point (`PostedDrag.concealment`) until the caller puts it on the landed item.
     nonisolated static func postCommandDrag(windowID: CGWindowID, mouseDown down: CGPoint, plannedMouseUp: CGPoint,
@@ -474,11 +521,16 @@ public final class ItemMover {
             session.localEventsSuppressionInterval = 0
         }
         let savedCursor = CGEvent(source: nil)?.location
+        var report = PostedDrag(releasedAfter: 0, mouseUp: plannedMouseUp, plannedMouseUp: plannedMouseUp,
+                                savedCursor: savedCursor)
+        // The last moment to stay out of the user's way: the caller waited for the buttons to be released, but reading
+        // the menu bar since took a while. A ⌘-drag posted while a button is down gets mixed up with the user's own
+        // click or drag; post nothing (`downAt` stays nil) and let the caller wait and try again.
+        let presses = UserMouseButtons.pressCount
+        guard !UserMouseButtons.isAnyHeld else { return report }
         let clock = ContinuousClock()
         let hiddenAt = clock.now
         let concealment = CursorConcealment.begin()
-        var report = PostedDrag(releasedAfter: 0, mouseUp: plannedMouseUp, plannedMouseUp: plannedMouseUp,
-                                savedCursor: savedCursor)
         let keepsHidden = !CursorPlacement.restoresRightAfterDrag(disposition)
 
         func event(_ type: CGEventType, _ point: CGPoint) -> CGEvent? {
@@ -509,7 +561,10 @@ public final class ItemMover {
             }
             if let point = release.dropPoint(in: frames), release.isLifted { up = point }
             if ready { break }
-            if UserMouseButtons.isAnyHeld { report.interrupted = true; break }
+            if UserMouseButtons.isAnyHeld || UserMouseButtons.pressCount != presses {
+                report.interrupted = true
+                break
+            }
             let waited = clock.now - start
             if waited >= releaseTimeout || (!release.isLifted && waited >= liftTimeout) { break }
         }
@@ -518,6 +573,8 @@ public final class ItemMover {
         event(.leftMouseUp, up)?.post(tap: .cgSessionEventTap)
         report.releasedAt = clock.now
         usleep(20_000)
+        // A click that came and went between two polls (or right with the mouse-up) still got mixed up with the drag.
+        if UserMouseButtons.pressCount != presses { report.interrupted = true }
         if keepsHidden {
             report.concealment = concealment
         } else {

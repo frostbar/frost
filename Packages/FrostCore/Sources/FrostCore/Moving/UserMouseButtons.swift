@@ -10,4 +10,12 @@ public enum UserMouseButtons {
     public static var isAnyHeld: Bool {
         [CGMouseButton.left, .right, .center].contains { CGEventSource.buttonState(.hidSystemState, button: $0) }
     }
+
+    /// How many mouse-downs (any button) the user has made so far (HID state, like `isAnyHeld`: the ⌘-drags Frost posts
+    /// at the session tap don't count). Two reads that differ mean the user pressed a button in between, even a click
+    /// too short for a poll of `isAnyHeld` to see.
+    public static var pressCount: UInt32 {
+        [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown]
+            .reduce(0) { $0 &+ CGEventSource.counterForEventType(.hidSystemState, eventType: $1) }
+    }
 }
