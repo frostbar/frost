@@ -49,8 +49,16 @@ struct OnboardingActions {
 struct OnboardingRootView: View {
     @Environment(AppModel.self) private var model
     let actions: OnboardingActions
+    /// The content's height changed (a notice appearing or going, also every frame of its animation): the window
+    /// follows it (`OnboardingWindowController`).
+    var onHeightChange: @MainActor (CGFloat) -> Void = { _ in }
 
     var body: some View {
+        content
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onHeightChange($0) }
+    }
+
+    private var content: some View {
         OnboardingView(state: OnboardingState(accessibility: model.permissions.accessibility,
                                               screenRecording: model.permissions.screenRecording,
                                               screenRecordingRequested: model.permissions.screenRecordingRequested,
@@ -72,8 +80,10 @@ struct OnboardingView: View {
     let state: OnboardingState
     let actions: OnboardingActions
 
-    /// Size of the whole window (including the transparent title bar area).
-    static let size = CGSize(width: 520, height: 560)
+    /// Width of the whole window. Its height is the content's (`OnboardingWindowController`), including the
+    /// transparent title bar area the header extends under, so nothing is clipped whatever the system's fonts and
+    /// metrics (macOS 27's are taller than 26's) or the notice shown.
+    static let width: CGFloat = 520
 
     /// Toggled once on appear so the snowflake plays a one-shot animation (no continuously running animations in
     /// windows).
@@ -123,13 +133,14 @@ struct OnboardingView: View {
             }
             .padding(.top, 14)
 
-            Spacer(minLength: 12)
-
             footer
+                .padding(.top, 22)
         }
         .padding(.horizontal, 28)
         .padding(.bottom, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: Self.width)
+        // As tall as the content: the window follows this height.
+        .fixedSize(horizontal: false, vertical: true)
         .animation(.spring(duration: 0.45, bounce: 0.2), value: state)
     }
 
