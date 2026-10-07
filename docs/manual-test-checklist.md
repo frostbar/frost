@@ -34,6 +34,9 @@ For each item, record: environment (model / displays / macOS version) and result
   traffic lights don't cover content; text and cards are clear in both Light and Dark Mode. The permission
   descriptions read exactly like the About tab's (English and Simplified Chinese), and the prominent buttons have white
   text on the accent color.
+- [ ] The onboarding window is exactly as tall as its content: the footer buttons are never cut off (also on macOS 27's
+  taller fonts and in Simplified Chinese), and when a notice appears or goes (granting, the relaunch note) the window
+  grows or shrinks with a short animation while its top edge stays put.
 - [ ] Click the **Grant Access** button on the Accessibility card (first time, `defaults delete dev.frost.Frost` and no
   TCC row): only the system prompt appears, nothing opens behind it; its "Open System Settings" button opens Privacy &
   Security → Accessibility with Frost listed. Once the switch is on, no stray prompt remains, also after a relaunch.
@@ -46,7 +49,8 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] Click the **Grant Access** button on the Screen Recording card: only the system prompt when Frost has no
   Screen Recording entry yet (fresh TCC, `tccutil reset`, removed with "−": also after a relaunch); the pane opens
   directly (about 2 s later, Frost listed) only when the system stays silent (Frost already listed and denied, new
-  process). Never both. The card shows "Needs Relaunch" instead of the button, a note below says Frost must be relaunched, and
+  process). Never both. While the system prompt is up the card shows a spinner (not "Needs Relaunch" underneath the
+  prompt); once it closes the card shows "Needs Relaunch" instead of the button, a note below says Frost must be relaunched, and
   **Relaunch** is the prominent default button (Return) while "Open Layout Editor" is not shown. The description
   mentions the purple recording dot.
 - [ ] Deny the system prompt (or close it): the note's **Open System Settings** link opens Privacy & Security →
@@ -562,7 +566,34 @@ local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
 - [ ] The updated app has no quarantine attribute (`xattr -p com.apple.quarantine /Applications/Frost.app` reports an
   error), and no Gatekeeper prompt appears at launch.
 
+## 11. Unsupported macOS (macOS 27)
+
+On macOS 27, or in the macOS 26 VM with `make vm-run FROST_ENV="FROST_TEST_UNSUPPORTED_OS=1"` (Debug builds). Compare
+the menu bar with Frost quit and with Frost running: in the VM, `dump-status-windows.swift` on macOS 26; on macOS 27,
+which has no per-item windows, the menu bar extras' AX frames (`testing-vm.md`, "macOS 27 VM").
+
+- [ ] Launch: the log says `macOS <version> isn't supported: leaving the menu bar alone (snowflake only)` once; there
+  are no `managing the menu bar` / Frost Bar warm-up lines.
+- [ ] Only the snowflake is added to the menu bar: no Frost separators, and every other icon keeps its order (the same
+  as with Frost quit, plus the snowflake). Nothing expands, collapses or moves at any time, also with Settings open.
+- [ ] A left click and a right click on the snowflake both show its menu: a disabled first item "This version of macOS
+  isn't supported yet" with "Frost can't hide icons on macOS 27. An update is on the way." below it, then Settings…,
+  Check for Updates… and Quit Frost. No Frost Bar, no Grant Access.
+- [ ] Settings → About shows the same notice above Updates and no Permissions section; Layout shows the notice instead
+  of the editor; Behavior's Menu Bar controls are disabled with the explanation as their footer, while Launch at login
+  still works.
+- [ ] First launch (`defaults delete dev.frost.Frost`): no onboarding window; `hasCompletedOnboarding` stays unset, so
+  a release that supports this macOS still runs onboarding.
+- [ ] Check for Updates… (menu and About) works, and so do automatic checks.
+- [ ] Upgrade: install the previous release first, launch it so it creates its separators, quit, then install this
+  build over it: the separators are gone, the icons are in the same order as with Frost quit, no crash
+  (`vm-crash-check.sh`). Their saved `NSStatusItem Preferred Position` values stay in the defaults.
+- [ ] English and Simplified Chinese, Light and Dark Mode.
+
 ## Known limitations
+
+- macOS 27 isn't supported yet: Frost only shows the snowflake with a notice there (section 11, and
+  [`macos-behavior.md`](macos-behavior.md), "macOS 27").
 
 - Without Screen Recording, an icon's identity comes from its AX attributes. An app whose icons have neither an AX
   identifier nor a description (or help) is identified by the order in which it created them; one whose icon's

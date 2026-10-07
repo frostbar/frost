@@ -6,6 +6,18 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+### Changed
+- On macOS 27, which Frost doesn't support yet, Frost now leaves the menu bar alone and says so: it only adds the
+  snowflake, whose menu explains that this version of macOS isn't supported yet, and Settings shows the same notice.
+  Frost no longer adds its separators there, which macOS 27 drops from the menu bar and which could put your icons
+  in a different order when they came back. Updates keep working, so a version that supports macOS 27 can arrive
+  automatically.
+
+### Fixed
+- The onboarding window fits its content, so its buttons are no longer cut off (as they were on macOS 27).
+- After you ask for Screen Recording in onboarding, the card waits while the system prompt is up instead of asking you
+  to relaunch underneath it.
+
 ## [0.3.4] - 2026-10-07
 
 ### Fixed

@@ -7,7 +7,8 @@ Instructions for AI coding agents working in this repository. User documentation
 Frost: a macOS menu bar manager (similar to [Ice](https://github.com/jordanbaird/Ice)) that hides menu bar items and
 shows the hidden ones in a glass panel below the menu bar (the Frost Bar).
 
-- Supports **macOS 26+** only (Liquid Glass); no compatibility with older systems.
+- Supports **macOS 26** only (Liquid Glass); no compatibility with older systems. On macOS 27 and later Frost runs in
+  a notice-only mode (see "Key facts", supported OS gate).
 - Stack: Swift 6.4 (Swift 6 language mode, `SWIFT_STRICT_CONCURRENCY: complete`), Xcode 27, SwiftUI + AppKit,
   XcodeGen, Sparkle 2 (SPM, automatic updates).
 - Not sandboxed, distributed directly. Basic hiding and showing needs no permissions; the Frost Bar, the layout editor
@@ -55,7 +56,8 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
 - `scripts/vm/`: VM testing scripts. `scripts/release/`: release scripts (`config.sh` is the single release
   configuration). `scripts/lint/`: lint checks run by CI and `make lint`. `Spikes/`: early proof-of-concept
   programs, not part of the build.
-- `docs/macos-behavior.md`: measured macOS 26 menu bar behavior (read it before changing low-level code).
+- `docs/macos-behavior.md`: measured macOS 26 menu bar behavior, and how macOS 27 differs (read it before changing
+  low-level code).
 - `docs/manual-test-checklist.md` (including "Known limitations"), `docs/testing-vm.md` (including "Verification
   techniques"), `docs/releasing.md` (releases, signing and keys), `docs/ux-journeys.md` (end-to-end user journeys,
   walked from a clean state).
@@ -87,6 +89,16 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
 
 ## Key facts on macOS 26 (pitfalls we hit)
 
+- **Supported OS gate**: everything below holds on macOS 26 only. macOS 27 draws the whole menu bar in one system
+  process (no per-item windows, a too-wide separator is dropped from the bar instead of pushing icons out and scrambles
+  the order when it comes back, no ⌘-drags routed by `0x33`; `macos-behavior.md`, "macOS 27").
+  `PlatformSupport.isMenuBarSupported` (major version 26 only; later versions are unsupported until measured) decides
+  once at launch (`UnsupportedOS`, `AppModel.isMenuBarSupported`). Unsupported, Frost creates only the snowflake
+  (`SectionController.installNoticeOnly`): no separators (never removed either, so their saved positions stay), no
+  scanner, Frost Bar, new-item placement, captures, freeze frames or layout editing, and no onboarding; the snowflake's
+  menu and Settings show the notice, and Sparkle keeps working so a supporting release can arrive. Anything new that
+  touches the menu bar must stay behind this gate. Test it on macOS 26 with `FROST_TEST_UNSUPPORTED_OS=1`, and on
+  macOS 27 in the `frost-test-27` VM (`testing-vm.md`, "macOS 27 VM").
 - The owner of every status item window is Control Center; the real owner must be matched through AX
   (`kAXExtrasMenuBarAttribute`) by midX (4 pt tolerance).
 - `button.window.windowNumber` is **not** the CG window ID, and converting it crashes; Frost locates its own control

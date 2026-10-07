@@ -549,3 +549,27 @@ lists from `dump-status-windows.swift --all`. Method: see `docs/testing-vm.md`.
 - Resulting implementation: `MenuBarDisplayResolver` (active display = the display holding the real window of Frost's
   icon; replicas on same-row, same-height displays are paired by per-segment offset and removed, unpaired ones are
   judged by contiguity), and `DisplayFilter.axItems` (by row, not by x range).
+
+---
+
+## macOS 27
+
+Measured in the VM `frost-test-27` (macOS 27.0, build 26A428; `testing-vm.md`, "macOS 27 VM") on 2026-10-07 with
+FakeItems A + B, spike programs and Frost 0.3.3 / 0.3.4. macOS 27 rebuilt the menu bar, and nothing Frost relies on
+works there, so Frost doesn't support it yet (`PlatformSupport`): it creates only the snowflake, whose menu and
+Settings say so, and leaves the menu bar alone.
+
+| | macOS 26 | macOS 27 |
+| --- | --- | --- |
+| Who draws the items | one layer-25 window per status item and display (owner Control Center) | the whole bar is drawn by one system process (`com.apple.MenuBarAgent`); there are no per-item windows in `CGWindowList` or ScreenCaptureKit, so Frost finds no icons ("Can't Read Menu Bar Icons") and can't capture one |
+| Accessibility | `kAXExtrasMenuBarAttribute` children, matched to windows by midX | the same children, with frames in bar order (Control Center's own items now belong to MenuBarAgent); the only per-item geometry left |
+| A wide separator | `length = 10_000` → a 5016 pt window that pushes the items on its left off screen | up to about 450 pt it pushes items left as before; from about 500 pt the item is **dropped from the bar** (its AX frame lies below the screen, 5002 pt wide) and nothing is pushed out. When it shrinks back it can return at another slot, and the items around it come back reordered: a separator that grows and shrinks scrambles the user's layout |
+| Too many icons | they run under the notch / off screen | macOS shows its own overflow chevron (`«`) left of the icons; a click shows the ones that don’t fit in the bar, over the app menus |
+| Moves | a ⌘-drag whose mouse-down lands on Frost's icon, routed to the target by event field `0x33` | a ⌘ mouse-down / mouse-up routed by `0x33` moves nothing; only a real ⌘-drag with drag events starting on the item itself moves it (MenuBarAgent shows a layer-102 drag image), which for third-party items would mean pressing on them (`AGENTS.md`, rule 3) |
+| Saved positions | `NSStatusItem Preferred Position` decides where a new item appears | the seeds don't place it (a fresh snowflake with seed 0 didn't land next to Control Center) |
+| Fonts and metrics | | taller: the onboarding window's fixed 520×560 frame cut off its footer buttons (it is sized to its content since 0.3.5) |
+
+What Frost 0.3.5 does there, checked in the same VM: a fresh install shows only the snowflake and no onboarding; an
+upgrade over 0.3.4 (whose separators had been dropped from the bar) leaves every icon in the order it has with Frost
+quit, plus the snowflake; the snowflake's menu, Settings → About / Layout / Behavior show the notice; Check for
+Updates… works; no crash.

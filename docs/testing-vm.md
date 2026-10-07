@@ -109,6 +109,31 @@ deploying to `/Applications/Frost.app` with the same signing identity so the gra
 sticks. Alternatively, disable SIP once with `tart run --recovery frost-test`, then
 `csrutil disable` in the Recovery Terminal.
 
+## macOS 27 VM
+
+Frost doesn't support macOS 27 yet (it only shows the snowflake with a notice there, `PlatformSupport`), but its
+behavior there and upgrades onto it are checked in a second VM, `frost-test-27`, made from
+`ghcr.io/cirruslabs/macos-golden-gate-base:latest` (macOS 27.0, build 26A428; about 41 GB on disk). It keeps its own
+state directory (SSH key, `run.log` with the VNC URL, vncdotool venv), so the two VMs never share a VNC session:
+
+```sh
+export FROST_VM=frost-test-27 FROST_VM_STATE=~/.local/share/frost-vm-27 \
+  FROST_VM_IMAGE=ghcr.io/cirruslabs/macos-golden-gate-base:latest
+scripts/vm/vm-setup.sh           # once
+scripts/vm/vm-up.sh; scripts/vm/vm-deploy.sh; scripts/vm/vm-run.sh   # and the other scripts, with the same variables
+```
+
+- Run **one VM at a time** (`vm-down.sh` the other first): both need the host's CPU and memory, and screenshots and
+  input go to whichever VM the variables name.
+- Like the macOS 26 image, SIP is disabled: `vm-grant-tcc.sh` grants permissions, and `vm-fake-items.sh` works.
+- macOS 27 draws the whole menu bar in one system process, so `dump-status-windows.swift` finds no per-item windows.
+  Compare menu bars through Accessibility instead: every app's `kAXExtrasMenuBarAttribute` children still have frames
+  in bar order (a status item too wide for the bar is dropped from it and reports a frame below the screen), plus the
+  VNC framebuffer. See `macos-behavior.md`, "macOS 27".
+- Upgrade check by hand (the automated upgrade test reads windows and doesn't apply): install the previous release's
+  DMG (`vm_install_dmg` in `common.sh`), launch it so it creates its separators, quit it, record the bar, then
+  `vm-deploy.sh` and `vm-run.sh` this build and compare.
+
 ## Guest-side helpers (copy with `vm_scp`, compile with `swiftc` in the guest, run with `vm_gui`)
 
 | file | what it does |
@@ -141,6 +166,7 @@ them out. Pass them with `make vm-run FROST_ENV="NAME=value"`.
 
 | variable | effect |
 | --- | --- |
+| `FROST_TEST_UNSUPPORTED_OS=1` | behaves as on an unsupported macOS version (macOS 27, `PlatformSupport`): only the snowflake with the notice in its menu, no separators, scanning or moves, the notice in Settings, no onboarding |
 | `FROST_TEST_DROP_REPLICA_CLICKS=1` | drops the click the VM redelivers to the snowflake after a click on its replica on another display, like a real Mac that loses it, so the `ReplicaClickDetector` fallback can be tested with left clicks (see "Notes") |
 | `FROST_TEST_NOTCH_PRIMARY_DISPLAY=1` | display mode Automatic treats the primary display as notched (the VM has no notch) |
 | `FROST_TEST_FRAME_PROBE=1` | `FrameProbe`: frame timing of settings tab switches, the Frost Bar's opens and the launch warm-up; the distributed notification `dev.frost.Frost.frameProbe` (object = label) starts an idle baseline (see "Verification techniques") |

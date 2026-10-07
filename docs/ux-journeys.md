@@ -77,7 +77,8 @@ before. When you fix a finding, add it to "Watch for" so the next run checks it.
 1. Launch Frost. Onboarding appears in front, centered.
 2. Grant Accessibility: one click shows the system prompt, which leads to System Settings with Frost listed. Turn on
    the switch. The card turns Granted within a second or two, without switching back to Frost.
-3. Grant Screen Recording the same way. The card shows Needs Relaunch, and Relaunch becomes the default button.
+3. Grant Screen Recording the same way. While the system prompt is up the card waits with a spinner; once it closes
+   the card shows Needs Relaunch, and Relaunch becomes the default button.
 4. Relaunch. Frost comes back with onboarding in front, both cards Granted.
 5. Finish (Done / Open Layout Editor) and check where each one leads.
 
@@ -85,6 +86,8 @@ before. When you fix a finding, add it to "Watch for" so the next run checks it.
 - The system prompt staying behind System Settings and resurfacing after the grant.
 - Relaunch not being the obvious next step while a relaunch is pending.
 - Onboarding coming back behind other apps after the relaunch.
+- The card saying Needs Relaunch underneath the system prompt.
+- The window clipping its footer buttons (it is as tall as its content, on every macOS version and language).
 
 ### J2. Not now, no permissions
 
@@ -226,7 +229,24 @@ look of the Frost Bar, prompts.
 - Icons moving sections after the upgrade, including icons with live numbers in their tooltip or description
   (their identity keys changed format).
 
-### J11. Real Mac only
+### J11. Unsupported macOS (macOS 27)
+
+**Start:** macOS 27 (the `frost-test-27` VM), or macOS 26 with `FROST_TEST_UNSUPPORTED_OS=1`; once fresh, once
+upgrading over the previous release with a layout arranged.
+
+1. Launch Frost: nothing in the menu bar moves; only the snowflake appears. No onboarding.
+2. Click the snowflake (left, then right): the menu says this version of macOS isn't supported yet and that an update
+   is on the way, then Settings…, Check for Updates…, Quit Frost.
+3. Open Settings: About shows the notice above Updates; Layout shows it instead of the editor; Behavior's Menu Bar
+   controls are disabled with the explanation below them.
+4. Check for Updates… from the menu and from About.
+
+**Watch for:**
+- Any icon changing place compared with the bar with Frost quit (the separators coming back would scramble it).
+- A dead end: a click on the snowflake that does nothing, or a window asking for permissions that change nothing.
+- The notice truncated in Simplified Chinese, or hard to read in Dark Mode.
+
+### J12. Real Mac only
 
 These can't be reproduced in the VM; run them on a test Mac before releases that touch the related code: a notched
 display (icons behind the notch, Automatic mode), an external display (switching the active menu bar), and real
