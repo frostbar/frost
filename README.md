@@ -44,9 +44,9 @@
 Hiding and showing icons needs **no permissions**. The Frost Bar and the layout editor need only **Accessibility**;
 Screen Recording is optional and shows real images of the icons.
 
-| Settings → Layout | Settings → Behavior |
+| Settings → Layout | Settings → About |
 | --- | --- |
-| <img src="docs/images/layout-editor.png" width="420" alt="The layout editor with Visible, Hidden and Always Hidden sections"> | <img src="docs/images/behavior.png" width="420" alt="Behavior settings"> |
+| <img src="docs/images/layout-editor.png" width="420" alt="The layout editor with Visible, Hidden and Always Hidden sections"> | <img src="docs/images/about.png" width="420" alt="The About tab with update settings and the status of the Accessibility and Screen Recording permissions"> |
 
 ## Install
 
@@ -76,16 +76,18 @@ Frost entry and grant it again. Later updates keep the permissions.
 | Accessibility | Required | Identifying each icon and the app that owns it; moving icons between sections; opening them from the Frost Bar; keeping icons in their sections | The Frost Bar and layout editor ask for it; hiding and showing still work (hidden icons expand in the menu bar) |
 | Screen Recording | Optional | Real images of the icons in the Frost Bar and the layout editor, kept current while the Frost Bar is open | Everything still works; icons are shown as their app's icon (or a system symbol), with a short label where it helps tell them apart |
 
-Onboarding opens on first launch. **Settings → About** shows each permission's status, and **Grant Access** reopens
-onboarding. Without Screen Recording, the Frost Bar and the layout editor offer it in a small hint you can close.
-Frost has to be relaunched after granting Screen Recording; onboarding offers a button for it.
+Onboarding opens on first launch. **Settings → About** shows each permission's status, and **Grant Access** asks for
+it right away (the system prompt, or System Settings if there is no prompt). Without Screen Recording, the Frost Bar
+and the layout editor offer it in a small hint you can close. Frost has to be relaunched after granting Screen
+Recording: a **Relaunch** button (next to **Open System Settings**) appears right where you granted it, and Frost
+reopens the window you were in.
 
 ## Updates and privacy
 
 - Frost checks for updates once a day with [Sparkle](https://sparkle-project.org) and installs nothing without asking.
   When an update is available, a dot appears on the snowflake and its right-click menu shows **Update Available…**.
-  You can check manually or turn automatic checks off in **Settings → About**. Updates are verified with an EdDSA
-  signature.
+  You can check manually (**Settings → About** also shows when Frost last checked) or turn automatic checks off
+  there. Updates are verified with an EdDSA signature.
 - The update check is Frost's only network access: it downloads `appcast.xml` (and the update, if you accept it) from
   this repository's GitHub Releases. No analytics, no accounts.
 - Menu bar icon images are used only for display and cached in `~/Library/Caches/dev.frost.Frost/items/` (entries not
