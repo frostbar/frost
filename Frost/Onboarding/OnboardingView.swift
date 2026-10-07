@@ -9,6 +9,10 @@ struct OnboardingState: Equatable {
     /// The user clicked Grant for Screen Recording: `CGPreflightScreenCaptureAccess` only reflects a new grant after
     /// a relaunch.
     var screenRecordingRequested: Bool
+    /// The system's Screen Recording prompt of that request is expected or still on screen
+    /// (`PermissionsService.isScreenRecordingPromptPending`): the user hasn't decided yet, so the card waits instead of
+    /// asking for a relaunch underneath the prompt.
+    var screenRecordingPromptPending = false
     /// First run with existing icons in the Always Hidden section: once Accessibility is granted they are moved to the
     /// Hidden section automatically (see `NewItemPlacer`).
     var firstRunPlacementPending = false
@@ -18,7 +22,12 @@ struct OnboardingState: Equatable {
     var isReady: Bool {
         PermissionCapabilities(accessibility: accessibility, screenRecording: screenRecording).canManageItems
     }
-    var needsRelaunch: Bool { screenRecordingRequested && !screenRecording }
+    /// Same rule as `PermissionsService.screenRecordingNeedsRelaunch` (About's row).
+    var needsRelaunch: Bool { screenRecordingRequested && !screenRecording && !screenRecordingPromptPending }
+    /// Requested, and the system prompt is expected or on screen.
+    var isWaitingForScreenRecordingPrompt: Bool {
+        screenRecordingRequested && !screenRecording && screenRecordingPromptPending
+    }
     /// Explains where existing icons are for now while Accessibility is missing and no relaunch is pending.
     var showsPlacementNote: Bool { firstRunPlacementPending && !isReady && !needsRelaunch }
 }
@@ -45,6 +54,7 @@ struct OnboardingRootView: View {
         OnboardingView(state: OnboardingState(accessibility: model.permissions.accessibility,
                                               screenRecording: model.permissions.screenRecording,
                                               screenRecordingRequested: model.permissions.screenRecordingRequested,
+                                              screenRecordingPromptPending: model.permissions.isScreenRecordingPromptPending,
                                               firstRunPlacementPending: firstRunPlacementPending),
                        actions: actions)
     }
@@ -93,6 +103,7 @@ struct OnboardingView: View {
                                    tag: "Optional",
                                    detail: "Shows real images of icons. Without it, they appear as app icons. macOS shows a purple dot in the menu bar while Frost captures them.",
                                    status: state.screenRecording ? .granted
+                                       : state.isWaitingForScreenRecordingPrompt ? .waiting
                                        : state.needsRelaunch ? .needsRelaunch : .notGranted,
                                    grant: actions.grantScreenRecording)
                 }
@@ -195,6 +206,9 @@ private struct PermissionCard: View {
     let detail: LocalizedStringKey
     enum Status {
         case notGranted
+        /// Requested, and the system's prompt is expected or still on screen (Screen Recording): neither Grant Access
+        /// (a second request) nor Needs Relaunch fits yet.
+        case waiting
         /// Requested, but it takes effect only after a relaunch (Screen Recording).
         case needsRelaunch
         case granted
@@ -229,6 +243,10 @@ private struct PermissionCard: View {
                 if isGranted {
                     GrantedCheckmark()
                         .transition(.scale(scale: 0.4).combined(with: .opacity))
+                } else if status == .waiting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .transition(.blurReplace)
                 } else if status == .needsRelaunch {
                     Label("Needs Relaunch", systemImage: "arrow.clockwise")
                         .font(.callout.weight(.medium))
@@ -247,8 +265,15 @@ private struct PermissionCard: View {
         .padding(.horizontal, 18)
         .glassEffect(isGranted ? .regular.tint(.green.opacity(0.12)) : .regular, in: .rect(cornerRadius: 22))
         .accessibilityElement(children: .combine)
-        .accessibilityValue(isGranted ? Text("Granted") : status == .needsRelaunch ? Text("Needs Relaunch")
-                                                                                  : Text("Not granted"))
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var accessibilityValue: Text {
+        switch status {
+        case .granted: Text("Granted")
+        case .needsRelaunch: Text("Needs Relaunch")
+        case .waiting, .notGranted: Text("Not granted")
+        }
     }
 }
 
