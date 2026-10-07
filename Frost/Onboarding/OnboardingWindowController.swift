@@ -63,7 +63,8 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
                 self.window.close()
                 self.model.openSettings(tab: .layout)
             })
-        let root = OnboardingRootView(actions: actions, onHeightChange: { [weak self] _ in self?.contentHeightChanged() })
+        let root = OnboardingRootView(actions: actions,
+                                      onHeightChange: { [weak self] _ in self?.contentHeightChanged() })
             .environment(model)
         let hosting = NSHostingController(rootView: AnyView(root))
         // The window's size comes from the measured content height, not from the hosting controller; no safe area

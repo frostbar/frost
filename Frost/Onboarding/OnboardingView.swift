@@ -59,12 +59,17 @@ struct OnboardingRootView: View {
     }
 
     private var content: some View {
-        OnboardingView(state: OnboardingState(accessibility: model.permissions.accessibility,
-                                              screenRecording: model.permissions.screenRecording,
-                                              screenRecordingRequested: model.permissions.screenRecordingRequested,
-                                              screenRecordingPromptPending: model.permissions.isScreenRecordingPromptPending,
-                                              firstRunPlacementPending: firstRunPlacementPending),
-                       actions: actions)
+        OnboardingView(state: state, actions: actions)
+    }
+
+    private var state: OnboardingState {
+        let permissions = model.permissions
+        var state = OnboardingState(accessibility: permissions.accessibility,
+                                    screenRecording: permissions.screenRecording,
+                                    screenRecordingRequested: permissions.screenRecordingRequested,
+                                    firstRunPlacementPending: firstRunPlacementPending)
+        state.screenRecordingPromptPending = permissions.isScreenRecordingPromptPending
+        return state
     }
 
     /// First run, and the Always Hidden section really has existing icons (the system puts icons without a saved
