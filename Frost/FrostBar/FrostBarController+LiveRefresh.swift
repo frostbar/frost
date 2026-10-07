@@ -12,7 +12,7 @@ extension FrostBarController {
     /// rules: `LiveRefreshPolicy.skipReason`.
     func restartLiveRefresh(immediately: Bool) {
         liveTask?.cancel()
-        guard isOpen else { return }
+        guard isOpen, !Self.screenCaptureDisabledForTests else { return }
         if immediately { lastCycleStart = nil }
         liveTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -39,6 +39,17 @@ extension FrostBarController {
                 await self.runLiveCycle()
             }
         }
+    }
+
+    /// Environment variable `FROST_TEST_NO_SCREEN_CAPTURE=1` (VM testing only): no live refresh rounds and no capture of a forwarded item after its menu closes, so the panel
+    /// shows the cached images and Frost does not capture the screen while it is open (the system's screen-recording
+    /// indicator stays off, e.g. for README recordings made from outside the guest).
+    static var screenCaptureDisabledForTests: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["FROST_TEST_NO_SCREEN_CAPTURE"] == "1"
+        #else
+        false
+        #endif
     }
 
     /// Stops the loop (panel closed). A round in progress ends at its next checkpoint, still collapsing and removing the

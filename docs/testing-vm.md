@@ -35,7 +35,7 @@ Scripts (all in `scripts/vm/`, each has a usage header):
 | `vm-exec.sh [cmd]` | run a shell command in the guest as `admin` over SSH; no args = interactive shell; `--gui cmd...` runs it inside the Aqua session via `launchctl asuser` |
 | `vm-screenshot.sh [--guest] <out.png>` | default: grab the VM framebuffer through VNC (no guest permissions involved); `--guest`: run `screencapture` in the guest and copy the PNG back |
 | `vm-vnc.sh <vncdotool cmds>` | mouse/keyboard input into the VM (e.g. `move 2956 30 click 1`, `key cmd-space`, `type text`). Coordinates are framebuffer pixels = points × 2. |
-| `vm-fake-items.sh deploy\|launch [A\|B] [extra] [polite\|net\|live\|demo]\|quit\|reset\|log` | build / install / run the FakeItems test apps (`Tools/FakeItems`): `dev.frost.FakeItems` (9 items: menus, 2 popovers, a no-op, the ticking `FIClock`) and `dev.frost.FakeItemsB` (2 items); `extra` adds N more text items; `net` makes `FIClock` show network-speed-like text whose width changes every second (like a network-speed item); `live` adds `FILiveHelp` / `FILiveDesc` (a number in the AX help / description that changes every second) and `FIBlink` (hidden 4 s out of every 20 s), for identity stability tests; `demo` shows a tidy set of 7 items with neutral names and realistic menus (for README recordings); every click / menu / popover is logged to guest `/tmp/fakeitems.log` |
+| `vm-fake-items.sh deploy\|launch [A\|B\|D] [extra] [polite\|net\|live]\|quit\|reset\|log` | build / install / run the FakeItems test apps (`Tools/FakeItems`): `dev.frost.FakeItems` (9 items: menus, 2 popovers, a no-op, the ticking `FIClock`) and `dev.frost.FakeItemsB` (2 items); `extra` adds N more text items; `net` makes `FIClock` show network-speed-like text whose width changes every second (like a network-speed item); `live` adds `FILiveHelp` / `FILiveDesc` (a number in the AX help / description that changes every second) and `FIBlink` (hidden 4 s out of every 20 s), for identity stability tests; `launch D` runs `dev.frost.FakeItemsDemo`, shown as "Menu Extras", a tidy set of 7 items with neutral names and realistic menus (for README recordings); every click / menu / popover is logged to guest `/tmp/fakeitems.log` |
 | `vm-logs.sh [10m\|1h\|-f]` | `/tmp/frost-stdout.log` plus `log show --info --predicate 'subsystem == "dev.frost.Frost"'`; `-f` streams |
 | `vm-grant-tcc.sh [--grant\|--revoke\|--show] [accessibility\|screen\|post-event]...` | write/remove Frost's rows in the guest's system TCC.db (all three services by default; e.g. `--revoke screen` leaves Accessibility only, to test Frost without Screen Recording; relaunch Frost afterwards) |
 | `vm-upgrade-test.sh [--previous TAG] [--build dev\|DMG\|app\|TAG] [--no-build]` | the upgrade test (see "Upgrade test"); `make vm-upgrade-test [PREVIOUS=…] [BUILD=…]` |
@@ -121,7 +121,7 @@ sticks. Alternatively, disable SIP once with `tart run --recovery frost-test`, t
 | `guest-axpress.swift pid [index]` | list / AXPress an app's menu bar extras |
 | `guest-click-latency.swift title tile [--ah] [--dwell s] [--runs n]` | Frost Bar click-to-menu latency: opens the panel with a HID click on the snowflake (⌥ with `--ah`), waits `--dwell` s, clicks the tile whose accessibility label contains `tile` (`--list` prints them), samples the window list every ~4 ms until the menu / popover appears, checks it is anchored at the item's final frame right of the snowflake, closes it and waits for the item to return; one JSON line per run plus a median / p90 summary |
 | `guest-cursor-probe.swift hide [--background] \| trace s [file] \| forward tile left\|right file` | pointer facts: whether an inactive process can hide the pointer (with / without `SetsCursorInBackground`; PNGs in `/tmp/cursor-hide-*.png`); a 10 ms trace of the pointer position; a scripted Frost Bar forward (open, rest on the tile, click, Esc, move away, wait for the move back) with a 5 ms pointer trace and event markers. Pair it with `screencapture -v -C -x -V 12 out.mov` to see whether the pointer was visible |
-| `guest-demo-drive.swift snowflakeX snowflakeY tile [--list]` | drives the README demo with real HID events: the pointer glides to the snowflake, clicks it, glides to the Frost Bar tile whose accessibility label contains `tile` (`--list` prints them), clicks it, reads the menu, presses Esc and glides away. Record it with `screencapture -v -C` (see "README demo GIF") |
+| `guest-demo-drive.swift snowflakeX snowflakeY tile [--list]` | drives the README demo with real HID events: the pointer glides to the snowflake, clicks it, glides to the Frost Bar tile whose accessibility label contains `tile` (`--list` prints them), clicks it, reads the menu, presses Esc and glides away. The README demo is recorded from outside the guest instead (`vm-record-demo.py`, see "README demo GIF"); this is mainly for `--list` |
 | `guest-menubar-probe.swift seconds out` | a 10 ms log of Frost's freeze-frame windows (whole bar or not), drag-image windows (layer 500), the pointer and the status item order, written whenever one changes; for checking the background capture of items behind the notch against a recording |
 | `guest-moveback-click.swift lift <id> x y [delayMs] [holdMs] [timeout] [right]` / `away awayX awayY x y delayMs [holdMs] [right]` | a real HID click on the menu bar timed against a move back: `lift` clicks the moment the item's window is lifted (its frame changes after it sat on screen), `away` moves the pointer off the item and clicks `delayMs` later (sweep ~750–950 ms around the linger's 0.75 s) |
 | `guest-interrupt.swift x y delayMs holdMs [timeout] [right]` | waits for the background capture's whole-bar freeze frame, then presses a real HID mouse button at (x, y) for `holdMs` (a click on the frozen snowflake, a button held on the desktop) |
@@ -145,6 +145,7 @@ them out. Pass them with `make vm-run FROST_ENV="NAME=value"`.
 | `FROST_TEST_NOTCH_PRIMARY_DISPLAY=1` | display mode Automatic treats the primary display as notched (the VM has no notch) |
 | `FROST_TEST_FRAME_PROBE=1` | `FrameProbe`: frame timing of settings tab switches, the Frost Bar's opens and the launch warm-up; the distributed notification `dev.frost.Frost.frameProbe` (object = label) starts an idle baseline (see "Verification techniques") |
 | `FROST_TEST_OBSCURED_RESTORE_PAUSE_MS=<ms>` | the background capture of items behind the notch pauses that long between the capture and the move back, so `guest-interrupt` can reliably hold a button while the item sits right of the Frost icon |
+| `FROST_TEST_NO_SCREEN_CAPTURE=1` | no live refresh rounds and no capture of a forwarded item after its menu closes: the Frost Bar shows the cached images and doesn't capture the screen, so the system's screen-recording indicator stays off (README recordings) |
 | `FROST_LIVE_REFRESH_TRACE=1` | logs one timing line per live refresh round (not just the first) and items whose frame changed around a strip capture |
 
 ## Upgrade test
@@ -323,15 +324,22 @@ timing. Evidence (recordings, logs, analysis scripts) goes under `build/vm-shots
   second; that's not a misplaced menu.
 - **Popover dismissal timing**: post the outside click from inside the guest and sample the window list every 10 ms
   on the same clock; FakeItems logs every click / menu / popover open and close to `/tmp/fakeitems.log`.
-- **README demo GIF** (`docs/images/demo.gif`, retake it when the Frost Bar's look or the click flow changes): Light
-  Mode, a calm pastel gradient wallpaper (made with ffmpeg's `geq`, copied to the guest and set with System Events),
-  `vm-fake-items.sh launch A 0 demo` (7 icons with neutral names and realistic menus, all in Hidden), both
-  permissions granted. Compile `guest-demo-drive` in the guest and start the recording over SSH first
-  (`nohup screencapture -v -V 14 -C -x -R<x>,0,480,328 /tmp/demo.mov &`, a 480x328 pt region at the top right is
-  960x656 px), then run `vm_gui /tmp/guest-demo-drive <snowflake x> 15 FIDemoSun` (find the snowflake's x with
-  `dump-status-windows`). Copy the movie out, cut it from just before the pointer enters to the moment the icon is
-  back (the item returns ~0.75 s after the pointer leaves it) and convert with ffmpeg: `fps=25`, `palettegen=
-  max_colors=192:stats_mode=diff`, `paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`. Error diffusion
-  dithering (`sierra2_4a`) makes the smooth wallpaper 2.5x larger. The recording shows the system's purple
-  screen-recording dot next to the Control Center icon; it is not part of Frost. Don't grab the VNC framebuffer
-  while recording.
+- **README demo GIF** (`docs/images/demo.gif`; retake it when the Frost Bar's look or the click flow changes). Record
+  it from **outside** the guest: `screencapture -v` inside the guest makes macOS show its purple screen-recording
+  indicator next to the Control Center icon (and shifts the icons), Frost's own captures do the same for a few seconds,
+  and neither belongs in the picture. Setup: Light Mode, a calm pastel gradient wallpaper (made with ffmpeg's `geq`,
+  copied to the guest and set with System Events), `vm-fake-items.sh launch D` ("Menu Extras", 7 icons with neutral
+  names and realistic menus, all in Hidden), both permissions granted. Open the Frost Bar once with a normal run so the
+  icons' images are cached, then `make vm-run FROST_ENV="FROST_TEST_NO_SCREEN_CAPTURE=1"` (no live refresh and no
+  capture after a forwarded click, so Frost never captures the screen; the panel shows the cached images). Find the
+  snowflake (`dump-status-windows`) and the tile's centre (`guest-demo-drive <x> 15 x --list`, in points), then run
+  `~/.local/share/frost-vm/venv/bin/python -W ignore scripts/vm/vm-record-demo.py OUTDIR <snowflake x> 15 <tile x> <tile y>`.
+  It drives the pointer through VNC input and saves the top-right 480x328 pt region at 25 fps (960x656 px) from the VNC
+  framebuffer, which has no pointer: the script pastes an arrow at the commanded position, and after the click moves
+  it onto the forwarded item, where Frost leaves the real pointer. VNC capture keeps up (the guest stays smooth, the
+  clock doesn't skip) because the script asks for incremental updates from inside the client's reactor thread; calling
+  `refreshScreen` from a pump thread serializes with the input calls (0.8 s per pointer move), and per-frame
+  `captureRegion` gets 1 fps. Cut the frames from just before the arrow enters to the moment the icon is back (the item
+  returns ~0.75 s after the pointer leaves it, plus a fade) and convert with ffmpeg:
+  `ffmpeg -framerate 25 -start_number N -i f%05d.bmp -frames:v M -vf "split[a][b];[a]palettegen=max_colors=192:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" -loop 0 demo.gif`.
+  Error diffusion dithering (`sierra2_4a`) makes the smooth wallpaper several times larger.

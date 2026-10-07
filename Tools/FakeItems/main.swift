@@ -291,8 +291,8 @@ let extra = Int(ProcessInfo.processInfo.environment["FAKEITEMS_EXTRA"] ?? "") ??
 let extraSpecs = (0..<extra).map { Spec(autosave: "FIExtra\($0)", title: "Extra \($0)", symbol: nil, behaviour: .menu) }
     + (ProcessInfo.processInfo.environment["FAKEITEMS_LIVE"] == "1" ? liveSpecs : [])
 MainActor.assumeIsolated {
-    if ProcessInfo.processInfo.environment["FAKEITEMS_DEMO"] == "1" {
-        if Bundle.main.bundleIdentifier != "dev.frost.FakeItemsB" { controller.install(demoSpecs) }
+    if Bundle.main.bundleIdentifier == "dev.frost.FakeItemsDemo" {
+        controller.install(demoSpecs)
     } else {
         controller.install((Bundle.main.bundleIdentifier == "dev.frost.FakeItemsB" ? specsB : specsA) + extraSpecs)
     }

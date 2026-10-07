@@ -366,7 +366,7 @@ extension FrostBarController {
         // Warm the screenshot cache while we're here: the item is in the Visible section with its menu closed (no
         // pressed highlight); once back in the Hidden section it can't be captured. Skipped when the Frost Bar is
         // waiting to open (it ends the linger at once; its live refresh captures the item anyway).
-        if app.permissions.screenRecording, !endLingerRequested {
+        if app.permissions.screenRecording, !endLingerRequested, !Self.screenCaptureDisabledForTests {
             app.scanner.rescan()
             if let fresh = app.scanner.items.first(where: { $0.windowID == id && $0.isOnScreen }) {
                 await app.capturer.capture([fresh])
