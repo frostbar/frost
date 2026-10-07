@@ -184,6 +184,17 @@ For each item, record: environment (model / displays / macOS version) and result
   stays where it is, with no flash over the menu bar (log `⌘-drag … pointer away N ms`, ~60–90 ms in the VM, hidden
   throughout). Same for layout editor drops and new-item placement. After every move, including quitting during a
   linger, the pointer is visible. VM evidence: `guest-cursor-probe.swift forward` with `screencapture -v -C`.
+- [ ] **A click on the menu bar as the item moves back (known issue: "an item ended up in the wrong slot")**: forward
+  a menu item from Hidden, close its menu with a click on the desktop and click the menu bar right as the item moves
+  back, on empty space, on the snowflake, on the moved item's spot and on another item's menu (VM:
+  `guest-moveback-click lift <id> <x> <y>` clicks the moment the move back lifts the item, `away … <delayMs>` sweeps
+  the timing around 750–950 ms). The item always ends up in its exact slot (`guest-sections` before and after lists
+  the same order). A menu the click opened stays open: the move back waits for it (log `waiting for the open menu to
+  close before the next ⌘-drag`) and happens once it closes; before, the ⌘-drag closed it about 0.4 s after it opened
+  and needed a second attempt. A ⌘-drag the click cut short that didn't take effect is retried without using up the
+  retries (log `was cut short by the user's mouse button and didn't take effect`, then `attempt 2`); if the anchor
+  move fails anyway and the item lands at its section's edge, one corrective move follows (log `is not back in its
+  slot; moving it …`).
 - [ ] **Snowflake click during a linger opens the Frost Bar in one click (user report: "after a right-click from the
   Frost Bar, clicking the snowflake again seems to do nothing")**: right-click (and, separately, left-click) the
   `FIDual` tile, close its menu with Esc (or leave it open), then click the snowflake once while the item still
@@ -265,6 +276,13 @@ For each item, record: environment (model / displays / macOS version) and result
   slot`) and the Frost Bar opens right after (`handling a Frost icon click taken by a background capture's freeze
   frame`); press and hold the mouse on the desktop — it moves back once the button is released; neither leaves an item
   in the Visible section. An interrupted item is retried about 10 s later; a failed one backs off (1, 2, 4… min).
+- [ ] **Quitting with an item moved out puts it back into its exact slot on the next launch (known issue: "it went
+  to the section's edge")**: with `FROST_TEST_OBSCURED_RESTORE_PAUSE_MS=8000`, wait for a background capture to move an
+  item out (`guest-sections` lists it in Visible) and kill Frost (`pkill -9 -x Frost`); `pendingItemReturns.v1` holds
+  the item with its neighbours (`"right"` / `"left"`). Relaunch: it goes back left of its old right neighbour (log
+  `moved … back to hidden (leftOf(<id>)): Frost had moved it out before quitting`), the order is the one before the
+  move out, and the entry is gone. With its neighbours' apps quit meanwhile it goes to the section's edge; a pending
+  return written by 0.3.2 (no neighbours) also goes to the edge.
 - [ ] **CPU**: with the panel open for 30 s, Frost's average CPU is well below 15% (about 3–5% measured in the VM); back
   to 0 after closing.
 - [ ] The image cache stays fresh: after expanding the Hidden section in In Menu Bar mode, opening the layout editor,
@@ -339,6 +357,15 @@ For each item, record: environment (model / displays / macOS version) and result
   pop, no stutter, also on the first visit to each tab and when clicking tabs in quick succession (the last clicked
   tab ends up shown cleanly). A notice appearing in a tab (Behavior's Accessibility notice) grows the window too. With System Settings → Accessibility → Display → Reduce motion on, switching is
   instant. The window title follows the selected tab. Returning to Layout expands the menu bar only after the fade.
+- [ ] **First switch to Layout after a launch (known issue: "a ~0.25 s stall")**: delete the image cache, launch with
+  `FROST_TEST_FRAME_PROBE=1`, open Settings on About, wait a second and switch to Layout: `frame-probe tab-layout` shows
+  no hitch during the fade (no `at=` entry below ~300 ms; the Layout tab was built off screen ~0.4 s after the window
+  opened) and gaps of at most ~50 ms afterwards, while the editor fills in (`notes=editor@…,editing@…,settled@…,
+  owners@…,captured@…`). Measured in the VM (4 fresh launches each): 84–201 ms of hitches with gaps up to 68 ms
+  before (230–640 ms in worse runs, gaps up to 139 ms), 45–103 ms with gaps up to 50 ms after.
+- [ ] **The window's top-left corner stays put across opens**: open Settings on About, close it, relaunch Frost with
+  Layout as the last tab and open Settings again: the window's top edge and left edge are where they were (it isn't
+  centered again); it is centered only the very first time, or when its display is gone.
 - [ ] Switch the system between Light and Dark Mode: the Settings window, onboarding window and Frost Bar update
   immediately; images in the layout editor and Frost Bar refresh with the appearance (white / black glyphs never end
   up on a background of the same color; monochrome glyphs in the Frost Bar are tinted by the glass's actual
@@ -358,7 +385,12 @@ For each item, record: environment (model / displays / macOS version) and result
 - [ ] About tab: the real app icon (not a symbol), "Frost" and the version; **Updates** (automatic checks; a row
   "Last checked: today at 15:58" / "Never checked" with **Check for Updates…** trailing, updating after a check) and
   **Permissions** (Accessibility and Screen Recording with Granted / Grant Access / Open System
-  Settings + Relaunch) in grouped sections; nothing truncates in zh-Hans.
+  Settings + Relaunch) in grouped sections; nothing truncates in zh-Hans. In zh-Hans with an English region the
+  last-checked date is in Chinese too (not "Today at 6:31 AM" inside the Chinese label), with the region's clock
+  setting.
+- [ ] About → Screen Recording → **Grant Access** (no TCC entry yet): while the system prompt is up the row shows a
+  small spinner, not "Needs Relaunch"; once the prompt closes (either button) it offers **Open System Settings** and
+  **Relaunch**.
 - [ ] App icon: the icon is crisp in Finder, the About tab, Login Items and the System Settings privacy lists; on
   macOS 26 it is not placed inside a gray rounded "container" (the asset catalog icon matches the system icon shape).
 
@@ -507,7 +539,9 @@ local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
 - [ ] **Automatically check for updates** in Settings → About is on by default; after turning it off,
   `defaults read dev.frost.Frost SUEnableAutomaticChecks` is 0, and it is still off after a relaunch.
 - [ ] Right-click the snowflake → "Check for Updates…" (or **Check for Updates…** on the About tab): when already up
-  to date, Sparkle says so; while a check is in progress, the menu item and the button are disabled.
+  to date, Sparkle says so; while a check is in progress, the menu item and the button are disabled. From the
+  snowflake menu, Settings opens on About first (its "Last checked" row in view) with Sparkle's window above it;
+  "Update Available…" only brings the update window back.
 - [ ] **Errors**: with an unreachable feed (`defaults write dev.frost.Frost SUFeedURL http://127.0.0.1:9/appcast.xml`),
   "Check for Updates…" shows Sparkle's "Update Error!" alert in front; clicking the snowflake while it is up brings it
   to the front (log `Frost icon clicked while a Sparkle alert is up`) instead of doing nothing. A scheduled check with
@@ -576,7 +610,8 @@ local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
   unknown ownership get neither the hand-off nor the fallback. Menus are unaffected: they have no time limit and move
   back as soon as they close.
 - Keeping icons in their sections only remembers the section, not the position within it: a re-added icon goes to
-  the section's boundary (right end of Hidden / Always Hidden, right of the snowflake in Visible). Icons are recognized
+  the section's boundary (right end of Hidden / Always Hidden, right of the snowflake in Visible); only an icon Frost
+  itself had moved out when it quit (a background capture) goes back next to its old neighbours. Icons are recognized
   by app and status item name; when several current items of an app share a name, Frost neither remembers nor
   restores them. A ⌘-drag in the menu bar is noticed at the next scan (e.g. when the menu bar collapses); if Frost
   quits before that, the next launch may move the icon back to its previous section. Moves made while Frost isn't

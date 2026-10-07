@@ -130,6 +130,7 @@ before. When you fix a finding, add it to "Watch for" so the next run checks it.
 **Watch for:**
 - A Needs Relaunch state with no way back to System Settings.
 - Settings not reopening after a relaunch.
+- The row saying Needs Relaunch while the system prompt is still up (it waits with a spinner until the prompt closes).
 
 ### J5. Losing permissions
 
@@ -162,6 +163,8 @@ before. When you fix a finding, add it to "Watch for" so the next run checks it.
 - Flicker in the strip of menu bar above the panel.
 - Icons whose tooltip or description shows live numbers (fan speeds, temperatures) or that blink away for a moment
   (an unread-message icon) staying in their sections, without `moved N remembered section(s)` repeating in the log.
+- A click on the menu bar just as the icon goes back (another icon, an app menu, the snowflake): the icon still ends
+  up in its exact slot, and a menu that click opened stays open (the icon goes back once it closes).
 
 ### J7. Arranging icons: the layout editor
 
@@ -187,6 +190,9 @@ before. When you fix a finding, add it to "Watch for" so the next run checks it.
 **Watch for:**
 - Controls that need a relaunch without saying so.
 - A tab that always opens instead of the last one.
+- The window's top edge moving between opens, also after a relaunch onto a tab of another height.
+- A stutter on the first switch to Layout after a launch (the fade must be smooth; the editor fills in after it).
+- In zh-Hans with an English region: English words in About's last-checked date.
 
 ### J9. The snowflake's menu
 
@@ -194,6 +200,10 @@ before. When you fix a finding, add it to "Watch for" so the next run checks it.
 
 1. Right-click the snowflake and use every item: each one does what it says, and windows come to the front even when
    another app is active.
+
+**Watch for:**
+- "Check for Updates…" showing only Sparkle's window: Settings → About comes forward first, its "Last checked" row in
+  view.
 
 ### J10. Upgrading
 
