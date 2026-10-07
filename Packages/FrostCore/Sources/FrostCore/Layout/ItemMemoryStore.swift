@@ -27,8 +27,9 @@ public final class ItemMemoryStore {
     private static let sectionsKeyV1 = "itemSections.v1"
     /// The window title last seen with each identity (`IdentityMigration.encodeTitles`).
     private static let titlesKey = "itemTitles.v1"
-    /// Icons Frost moved out temporarily and must move back (`SectionKeeper.pendingReturns`; same format as the
-    /// remembered sections): written before the background capture moves an item out, removed once it is back.
+    /// Icons Frost moved out temporarily and must move back (`SectionKeeper.pendingReturns`, `PendingReturn.encode`: the
+    /// remembered sections' format, as 0.3.2 stored it, plus each icon's neighbours): written before the background
+    /// capture moves an item out, removed once it is back.
     private static let pendingReturnsKey = "pendingItemReturns.v1"
 
     /// Icons seen so far; nil means the first scan hasn't happened yet (seeded on the next decision).
@@ -40,7 +41,7 @@ public final class ItemMemoryStore {
     public private(set) var titles: [ItemIdentity: String] = [:]
     /// Returns recorded during this run (`notePendingReturn`); the ones loaded at launch are in `keeper`. Both are
     /// persisted together.
-    private var runPendingReturns: [ItemIdentity: MenuBarSection] = [:]
+    private var runPendingReturns: [ItemIdentity: PendingReturn] = [:]
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -60,7 +61,7 @@ public final class ItemMemoryStore {
         } catch {
             FrostLog.newItems.error("failed to read the remembered sections: \(error, privacy: .public)")
         }
-        let pending = defaults.data(forKey: Self.pendingReturnsKey).flatMap { try? SectionKeeper.decode($0) } ?? [:]
+        let pending = defaults.data(forKey: Self.pendingReturnsKey).flatMap { try? PendingReturn.decode($0) } ?? [:]
         if !pending.isEmpty {
             FrostLog.newItems.notice("\(pending.count) item(s) Frost moved out temporarily before quitting go back")
         }
@@ -171,13 +172,15 @@ public final class ItemMemoryStore {
         if returnsChanged { savePendingReturns() }
     }
 
-    /// Frost is about to move `item` out of `section` temporarily: records that it must go back, so that if Frost quits
-    /// before it can, the next launch moves it back (`SectionKeeper.pendingReturns`). Returns the identity recorded
-    /// (nil: unresolved or shared with another of `items`, nothing recorded).
-    public func notePendingReturn(of item: MenuBarItem, to section: MenuBarSection,
+    /// Frost is about to move `item` out of its slot in `layout` (trusted, collapsed) temporarily: records that it must go
+    /// back there, so that if Frost quits before it can, the next launch moves it back into that slot
+    /// (`SectionKeeper.pendingReturns`, `PendingReturn`). Returns the identity recorded (nil: unresolved, shared with
+    /// another of `items` or not in `layout`; nothing recorded).
+    public func notePendingReturn(of item: MenuBarItem, in layout: MenuBarLayout,
                                   among items: [MenuBarItem]) -> ItemIdentity? {
-        guard let identity = item.identity, items.filter({ $0.identity == identity }).count <= 1 else { return nil }
-        runPendingReturns[identity] = section
+        guard let identity = item.identity, items.filter({ $0.identity == identity }).count <= 1,
+              let slot = PendingReturn.make(for: item, in: layout) else { return nil }
+        runPendingReturns[identity] = slot
         savePendingReturns()
         return identity
     }
@@ -197,7 +200,7 @@ public final class ItemMemoryStore {
             return
         }
         do {
-            defaults.set(try SectionKeeper.encode(all), forKey: Self.pendingReturnsKey)
+            defaults.set(try PendingReturn.encode(all), forKey: Self.pendingReturnsKey)
         } catch {
             FrostLog.newItems.error("failed to save the items to move back: \(error, privacy: .public)")
         }

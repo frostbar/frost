@@ -392,10 +392,12 @@ import Foundation
     // MARK: Pending returns (Frost quit before moving an item back)
 
     @Test func aPendingReturnMovesTheItemBackOnTheNextLaunchEvenWithKeepingOff() {
-        var keeper = SectionKeeper(memory: [id("com.a"): .visible], pendingReturns: [id("com.a"): .hidden])
+        var keeper = SectionKeeper(memory: [id("com.a"): .visible],
+                                   pendingReturns: [id("com.a"): PendingReturn(section: .hidden)])
         let outcome = keeper.observe(layout: [.visible: [item(1, "com.a")]], restoreEnabled: false, canMove: true)
         #expect(outcome.restores == [SectionKeeper.Restore(item: item(1, "com.a"), identity: id("com.a"),
-                                                           from: .visible, to: .hidden)])
+                                                           from: .visible, to: .hidden,
+                                                           slot: PendingReturn(section: .hidden))])
         let changed = keeper.restoreAttempted(1, identity: id("com.a"))
         #expect(changed)
         #expect(keeper.pendingReturns.isEmpty)
@@ -405,7 +407,7 @@ import Foundation
     }
 
     @Test func aPendingReturnWaitsUntilMovingIsPossible() {
-        var keeper = SectionKeeper(pendingReturns: [id("com.a"): .alwaysHidden])
+        var keeper = SectionKeeper(pendingReturns: [id("com.a"): PendingReturn(section: .alwaysHidden)])
         let waiting = keeper.observe(layout: [.visible: [item(1, "com.a")]], restoreEnabled: true, canMove: false)
         #expect(waiting.restores.isEmpty)
         #expect(waiting.seeded.isEmpty)
@@ -414,7 +416,7 @@ import Foundation
     }
 
     @Test func aPendingReturnFoundInPlaceIsDropped() {
-        var keeper = SectionKeeper(pendingReturns: [id("com.a"): .hidden])
+        var keeper = SectionKeeper(pendingReturns: [id("com.a"): PendingReturn(section: .hidden)])
         let outcome = keeper.observe(layout: [.hidden: [item(1, "com.a")]], restoreEnabled: true, canMove: true)
         #expect(outcome.restores.isEmpty)
         #expect(outcome.pendingReturnsChanged)

@@ -39,9 +39,11 @@ public struct SectionKeeper: Equatable, Sendable {
     /// Loaded at launch; a window with such an identity is moved back when first seen (regardless of the "keep icons in
     /// their sections" setting: it was Frost's own move), and the entry is dropped once that was attempted or the window
     /// is seen in that section.
-    public private(set) var pendingReturns: [ItemIdentity: MenuBarSection]
+    /// The slot is kept too (`PendingReturn`), so the icon goes back next to its old neighbours, not to the section's
+    /// edge.
+    public private(set) var pendingReturns: [ItemIdentity: PendingReturn]
 
-    public init(memory: [ItemIdentity: MenuBarSection] = [:], pendingReturns: [ItemIdentity: MenuBarSection] = [:]) {
+    public init(memory: [ItemIdentity: MenuBarSection] = [:], pendingReturns: [ItemIdentity: PendingReturn] = [:]) {
         self.memory = memory
         self.pendingReturns = pendingReturns
     }
@@ -52,12 +54,23 @@ public struct SectionKeeper: Equatable, Sendable {
         public let identity: ItemIdentity
         public let from: MenuBarSection
         public let to: MenuBarSection
+        /// A pending return's slot (nil: a remembered section, which goes to the section's boundary).
+        public let slot: PendingReturn?
 
-        public init(item: MenuBarItem, identity: ItemIdentity, from: MenuBarSection, to: MenuBarSection) {
+        public init(item: MenuBarItem, identity: ItemIdentity, from: MenuBarSection, to: MenuBarSection,
+                    slot: PendingReturn? = nil) {
             self.item = item
             self.identity = identity
             self.from = from
             self.to = to
+            self.slot = slot
+        }
+
+        /// The move that puts the icon back, against `layout` (the current one): a pending return's slot while one of
+        /// its neighbours is still there (`PendingReturn.destination`), otherwise the section's boundary.
+        public func destination(in layout: MenuBarLayout, controls: FrostControlWindows) -> MoveDestination {
+            slot?.destination(for: item.windowID, in: layout, controls: controls)
+                ?? SectionKeeper.destination(for: to, controls: controls)
         }
     }
 
@@ -148,12 +161,13 @@ public struct SectionKeeper: Equatable, Sendable {
             }
             guard unsettled.contains(id) else { continue }
             if let pending = pendingReturns[identity] {
-                if pending == section {
+                if pending.section == section {
                     pendingReturns[identity] = nil
                     outcome.pendingReturnsChanged = true
                     unsettled.remove(id)
                 } else if canMove {
-                    outcome.restores.append(Restore(item: item, identity: identity, from: section, to: pending))
+                    outcome.restores.append(Restore(item: item, identity: identity, from: section, to: pending.section,
+                                                    slot: pending))
                 }
                 continue
             }
