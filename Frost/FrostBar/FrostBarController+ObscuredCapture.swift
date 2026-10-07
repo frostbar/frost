@@ -195,9 +195,9 @@ extension FrostBarController {
                 var moveFailed = false
                 if !shouldAbortObscuredCapture {
                     do {
-                        // If Frost quits before the item is back, the next launch moves it back.
+                        // If Frost quits before the item is back, the next launch moves it back into this slot.
                         returnIdentity = scanner.items.first { $0.windowID == id }
-                            .flatMap { app.newItems.notePendingReturn(of: $0, to: plan.section) }
+                            .flatMap { app.newItems.notePendingReturn(of: $0, in: before) }
                         mark = clock.now
                         try await moveOutUnlessInterrupted(id, controls: controls)
                         timing.moveOut = clock.now - mark

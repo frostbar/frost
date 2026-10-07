@@ -117,12 +117,20 @@ final class NewItemPlacer {
     private(set) var isIdle = true
     private var evaluations = 0
 
-    /// A move to make: a new icon to Hidden, or a re-added icon back to its remembered section.
+    /// A move to make: a new icon to Hidden, or a re-added icon back to its remembered section (`restore`).
     private struct Placement {
         enum Kind { case new, restore }
         let item: MenuBarItem
         let section: MenuBarSection
         let kind: Kind
+        var restore: SectionKeeper.Restore?
+
+        /// Where to move the icon, against the current `layout` (earlier moves of the batch changed it): a pending
+        /// return's exact slot while its neighbours are there, otherwise the section's boundary.
+        func destination(in layout: MenuBarLayout, controls: FrostControlWindows) -> MoveDestination {
+            restore?.destination(in: layout, controls: controls)
+                ?? SectionKeeper.destination(for: section, controls: controls)
+        }
     }
 
     private func evaluate() async {
@@ -201,15 +209,16 @@ final class NewItemPlacer {
                 """)
         }
         loggedAmbiguous = outcome.ambiguous
-        return outcome.restores.map { Placement(item: $0.item, section: $0.to, kind: .restore) }
+        return outcome.restores.map { Placement(item: $0.item, section: $0.to, kind: .restore, restore: $0) }
     }
 
-    /// Frost is about to move `item` out of `section` temporarily (the background capture of items behind the notch):
-    /// records that it must go back, so that if Frost quits before it can, the next launch moves it back
-    /// (`SectionKeeper.pendingReturns`). Returns the identity recorded (nil: unresolved or shared, nothing recorded).
+    /// Frost is about to move `item` out of its slot in `layout` (collapsed) temporarily (the background capture of
+    /// items behind the notch): records that it must go back there, so that if Frost quits before it can, the next
+    /// launch moves it back into that slot (`SectionKeeper.pendingReturns`). Returns the identity recorded (nil:
+    /// unresolved or shared, nothing recorded).
     @discardableResult
-    func notePendingReturn(of item: MenuBarItem, to section: MenuBarSection) -> ItemIdentity? {
-        store.notePendingReturn(of: item, to: section, among: scanner.items)
+    func notePendingReturn(of item: MenuBarItem, in layout: MenuBarLayout) -> ItemIdentity? {
+        store.notePendingReturn(of: item, in: layout, among: scanner.items)
     }
 
     /// The item recorded by `notePendingReturn` is back (or gone).
@@ -251,12 +260,19 @@ final class NewItemPlacer {
                     }
                     attempted.append(placement)
                     do {
-                        try await mover.move(item.windowID,
-                                             to: SectionKeeper.destination(for: placement.section, controls: controls))
+                        let destination = placement.destination(
+                            in: SectionAssigner.layout(of: scanner.items, controls: controls), controls: controls)
+                        try await mover.move(item.windowID, to: destination)
                         moved.append(placement)
                         switch placement.kind {
                         case .new:
                             FrostLog.newItems.notice("moved new item \(item.bundleID ?? "?", privacy: .public) out of Always Hidden")
+                        case .restore where placement.restore?.slot != nil:
+                            FrostLog.newItems.notice("""
+                                moved \(item.bundleID ?? "?", privacy: .public) (\(item.identityKey ?? "?", privacy: .private)) \
+                                back to \(placement.section.rawValue, privacy: .public) \
+                                (\(String(describing: destination), privacy: .public)): Frost had moved it out before quitting
+                                """)
                         case .restore:
                             FrostLog.newItems.notice("""
                                 moved \(item.bundleID ?? "?", privacy: .public) (\(item.identityKey ?? "?", privacy: .private)) \
