@@ -227,7 +227,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     func show() {
         if !hasBeenShown {
             fitWindowToContent()
-            window.center()
+            placeAtSavedTopLeft()
             hasBeenShown = true
         }
         WindowActivation.bringToFront(window)
@@ -240,6 +240,33 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             isAwaitingKey = true
         }
         scheduleLayoutTabWarmUp()
+    }
+
+    /// Where the window's top-left corner was when it last moved or closed (`WindowTopLeft`, AppKit coordinates).
+    private static let topLeftKey = "settingsWindowTopLeft"
+
+    /// The first open in this process: the top-left corner goes where it was last time (also after a relaunch, which
+    /// may open another tab of another height), so the top edge doesn't jump between opens; centered only the very
+    /// first time, or when that spot is on no screen any more.
+    private func placeAtSavedTopLeft() {
+        guard let saved = WindowTopLeft.decode(UserDefaults.standard.string(forKey: Self.topLeftKey)),
+              let frame = WindowTopLeft.frame(size: window.frame.size, topLeft: saved,
+                                              visibleFrames: NSScreen.screens.map(\.visibleFrame))
+        else {
+            window.center()
+            return
+        }
+        window.setFrame(frame, display: false)
+    }
+
+    private func saveTopLeft() {
+        guard hasBeenShown else { return }
+        let frame = window.frame
+        UserDefaults.standard.set(WindowTopLeft.encode(CGPoint(x: frame.minX, y: frame.maxY)), forKey: Self.topLeftKey)
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        saveTopLeft()
     }
 
     /// Whether the Layout tab's content has been built and laid out (`scheduleLayoutTabWarmUp`).
@@ -309,6 +336,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // Closing the settings window ends editing and collapses the menu bar; if a move is in progress the editor
         // collapses after it finishes. (SwiftUI does not always send onDisappear to the Layout tab on close, so the
         // window reports it directly.)
+        saveTopLeft()
         isAwaitingKey = false
         layoutEditor.setWindowVisible(false)
     }
