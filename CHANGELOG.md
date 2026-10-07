@@ -6,6 +6,8 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-10-07
+
 ### Fixed
 - An icon opened from the Frost Bar goes back to its exact slot even when you click the menu bar just as it moves
   back, and a menu you open at that moment stays open instead of closing again.
