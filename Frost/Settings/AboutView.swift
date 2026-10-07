@@ -1,7 +1,8 @@
 import FrostCore
 import SwiftUI
 
-/// About tab: app icon, name and version, update settings and permission status.
+/// About tab: app icon, name and version, update settings and permission status (on an unsupported macOS, the notice
+/// at the top and no permissions: they change nothing there).
 struct AboutView: View {
     @Environment(AppModel.self) private var model
 
@@ -14,6 +15,12 @@ struct AboutView: View {
                 .padding(.top, 8)
 
             Form {
+                if !model.isMenuBarSupported {
+                    Section {
+                        UnsupportedOSNotice()
+                    }
+                }
+
                 Section("Updates") {
                     SettingRow(title: "Automatically check for updates",
                                subtitle: "Checks GitHub Releases once a day and asks before installing.") {
@@ -29,22 +36,9 @@ struct AboutView: View {
                     }
                 }
 
-                Section {
-                    PermissionRow(title: "Accessibility",
-                                  subtitle: "Required to move icons and to click them in the Frost Bar.",
-                                  status: permissions.accessibility ? .granted : .notGranted,
-                                  grant: { permissions.requestAccessibility() })
-                    PermissionRow(title: "Screen Recording",
-                                  subtitle: "Optional. Shows real icon images instead of app icons. macOS shows a purple dot in the menu bar while Frost captures them.",
-                                  status: permissions.screenRecording ? .granted
-                                      : permissions.isScreenRecordingPromptPending ? .waiting
-                                      : permissions.screenRecordingNeedsRelaunch ? .needsRelaunch : .notGranted,
-                                  grant: { permissions.requestScreenRecording() },
-                                  openSettings: { permissions.openScreenRecordingSettings() })
-                } header: {
-                    Text("Permissions")
-                } footer: {
-                    Text("Hiding and showing icons doesn’t require any permissions.")
+                // On an unsupported macOS permissions change nothing: no rows to grant.
+                if model.isMenuBarSupported {
+                    permissionsSection(permissions)
                 }
             }
             .formStyle(.grouped)
@@ -54,8 +48,28 @@ struct AboutView: View {
         .animation(.snappy, value: permissions.screenRecordingNeedsRelaunch)
         .animation(.snappy, value: permissions.isScreenRecordingPromptPending)
         // Granting access in System Settings does not necessarily reactivate Frost, so poll while visible.
-        .onAppear { permissions.startPolling() }
-        .onDisappear { permissions.stopPolling() }
+        .onAppear { if model.isMenuBarSupported { permissions.startPolling() } }
+        .onDisappear { if model.isMenuBarSupported { permissions.stopPolling() } }
+    }
+
+    private func permissionsSection(_ permissions: PermissionsService) -> some View {
+        Section {
+            PermissionRow(title: "Accessibility",
+                          subtitle: "Required to move icons and to click them in the Frost Bar.",
+                          status: permissions.accessibility ? .granted : .notGranted,
+                          grant: { permissions.requestAccessibility() })
+            PermissionRow(title: "Screen Recording",
+                          subtitle: "Optional. Shows real icon images instead of app icons. macOS shows a purple dot in the menu bar while Frost captures them.",
+                          status: permissions.screenRecording ? .granted
+                              : permissions.isScreenRecordingPromptPending ? .waiting
+                              : permissions.screenRecordingNeedsRelaunch ? .needsRelaunch : .notGranted,
+                          grant: { permissions.requestScreenRecording() },
+                          openSettings: { permissions.openScreenRecordingSettings() })
+        } header: {
+            Text("Permissions")
+        } footer: {
+            Text("Hiding and showing icons doesn’t require any permissions.")
+        }
     }
 
     private var header: some View {

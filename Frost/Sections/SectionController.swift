@@ -106,45 +106,7 @@ final class SectionController {
 
         // Creation order icon -> H -> AH (created earlier = further right). Never call removeStatusItem on quit:
         // it deletes the Preferred Position.
-        let icon = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        icon.autosaveName = Self.iconAutosaveName
-        icon.isVisible = true
-        if let button = icon.button {
-            button.setAccessibilityLabel("Frost")
-            button.target = self
-            button.action = #selector(iconClicked(_:))
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            // NSButton doesn't expose its internal image view; add our own to control symbol size and centering.
-            let imageView = NSImageView()
-            imageView.image = NSImage(systemSymbolName: "snowflake", accessibilityDescription: "Frost")
-            // The status bar button configures a `button.image` symbol to the menu bar glyph size, but not our own
-            // image view: unconfigured, the snowflake looks noticeably smaller and thinner than neighboring Wi-Fi or
-            // third-party icons. (SF Symbols are template images and follow the menu bar's appearance.)
-            imageView.symbolConfiguration = Self.iconSymbolConfiguration
-            imageView.imageScaling = .scaleNone
-            imageView.translatesAutoresizingMaskIntoConstraints = false
-            imageView.setAccessibilityElement(false)
-            button.addSubview(imageView)
-            NSLayoutConstraint.activate([
-                imageView.centerXAnchor.constraint(equalTo: button.centerXAnchor),
-                imageView.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-            ])
-            iconImageView = imageView
-            let badge = NSView()
-            badge.wantsLayer = true
-            badge.layer?.cornerRadius = Self.updateBadgeSize / 2
-            badge.translatesAutoresizingMaskIntoConstraints = false
-            badge.isHidden = true
-            badge.setAccessibilityElement(false)
-            button.addSubview(badge)
-            NSLayoutConstraint.activate([
-                badge.widthAnchor.constraint(equalToConstant: Self.updateBadgeSize),
-                badge.heightAnchor.constraint(equalToConstant: Self.updateBadgeSize),
-                badge.centerXAnchor.constraint(equalTo: imageView.trailingAnchor),
-                badge.centerYAnchor.constraint(equalTo: imageView.topAnchor, constant: 1),
-            ])
-            updateBadge = badge
-        }
+        let icon = makeIcon()
         iconItem = icon
         if let window = icon.button?.window {
             // When the active menu bar moves to another display, the real window moves with it: rescan right away
@@ -186,6 +148,69 @@ final class SectionController {
         applyLengths()
         settleAndRescan()
         trackUpdateReminder()
+    }
+
+    /// Unsupported macOS (`AppModel.isMenuBarSupported`): only the snowflake, whose clicks show its menu with the
+    /// notice. The separators are not created, so the menu bar stays as the system arranges it; their saved Preferred
+    /// Positions are kept (never `removeStatusItem`) for a version that supports this macOS. Only the icon's seed is
+    /// written (next to Control Center); the separators' seeds and the first-run mark are left to that version.
+    func installNoticeOnly() {
+        guard iconItem == nil else { return }
+        isManagingMenuBar = false
+        let key = "NSStatusItem Preferred Position \(Self.iconAutosaveName)"
+        if UserDefaults.standard.object(forKey: key) == nil {
+            UserDefaults.standard.set(Self.seeds[0].position, forKey: key)
+        }
+        iconItem = makeIcon()
+        trackUpdateReminder()
+    }
+
+    /// Whether Frost manages the menu bar (separators, sections, the Frost Bar); false on an unsupported macOS
+    /// (`installNoticeOnly`).
+    @ObservationIgnored private(set) var isManagingMenuBar = true
+
+    /// The snowflake status item, with its own image view and the update badge.
+    private func makeIcon() -> NSStatusItem {
+        let icon = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        icon.autosaveName = Self.iconAutosaveName
+        icon.isVisible = true
+        if let button = icon.button {
+            button.setAccessibilityLabel("Frost")
+            button.target = self
+            button.action = #selector(iconClicked(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            // NSButton doesn't expose its internal image view; add our own to control symbol size and centering.
+            let imageView = NSImageView()
+            imageView.image = NSImage(systemSymbolName: "snowflake", accessibilityDescription: "Frost")
+            // The status bar button configures a `button.image` symbol to the menu bar glyph size, but not our own
+            // image view: unconfigured, the snowflake looks noticeably smaller and thinner than neighboring Wi-Fi or
+            // third-party icons. (SF Symbols are template images and follow the menu bar's appearance.)
+            imageView.symbolConfiguration = Self.iconSymbolConfiguration
+            imageView.imageScaling = .scaleNone
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            imageView.setAccessibilityElement(false)
+            button.addSubview(imageView)
+            NSLayoutConstraint.activate([
+                imageView.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+                imageView.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            ])
+            iconImageView = imageView
+            let badge = NSView()
+            badge.wantsLayer = true
+            badge.layer?.cornerRadius = Self.updateBadgeSize / 2
+            badge.translatesAutoresizingMaskIntoConstraints = false
+            badge.isHidden = true
+            badge.setAccessibilityElement(false)
+            button.addSubview(badge)
+            NSLayoutConstraint.activate([
+                badge.widthAnchor.constraint(equalToConstant: Self.updateBadgeSize),
+                badge.heightAnchor.constraint(equalToConstant: Self.updateBadgeSize),
+                badge.centerXAnchor.constraint(equalTo: imageView.trailingAnchor),
+                badge.centerYAnchor.constraint(equalTo: imageView.topAnchor, constant: 1),
+            ])
+            updateBadge = badge
+        }
+        return icon
     }
 
     // MARK: - Update reminder
@@ -526,6 +551,11 @@ final class SectionController {
 
     @objc private func iconClicked(_ sender: NSStatusBarButton) {
         guard let event = NSApp.currentEvent else { return }
+        // Unsupported macOS: every click shows the menu with the notice; nothing toggles.
+        guard isManagingMenuBar else {
+            showMenu()
+            return
+        }
         if Self.dropRedeliveredReplicaClicks, replicaClicks.hasPendingClick {
             FrostLog.sections.notice("test: dropping the redelivered click on the replica (FROST_TEST_DROP_REPLICA_CLICKS)")
             return
@@ -595,7 +625,16 @@ final class SectionController {
         let menu = NSMenu()
         menu.autoenablesItems = false
         permissions.refresh()
-        if !permissions.canManageItems {
+        if !isManagingMenuBar {
+            // Unsupported macOS: say so first (one disabled item, the explanation as its subtitle). Permissions don't
+            // help here, so no Grant Access.
+            let notice = NSMenuItem(title: UnsupportedOS.title, action: nil, keyEquivalent: "")
+            notice.subtitle = UnsupportedOS.detail
+            notice.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
+            notice.isEnabled = false
+            menu.addItem(notice)
+            menu.addItem(.separator())
+        } else if !permissions.canManageItems {
             // A reminder for users who chose "Not Now": the Frost Bar and the layout editor need Accessibility, and
             // until then hidden icons expand in the menu bar.
             let grant = NSMenuItem(

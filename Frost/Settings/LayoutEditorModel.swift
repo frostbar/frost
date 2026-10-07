@@ -105,7 +105,8 @@ final class LayoutEditorModel {
     }
 
     private func updateActivation() {
-        let shouldBeActive = isWindowVisible && isTabSelected
+        // Never on an unsupported macOS: the tab only shows the notice, and the menu bar is left alone.
+        let shouldBeActive = model.isMenuBarSupported && isWindowVisible && isTabSelected
         guard shouldBeActive != isActive else { return }
         if shouldBeActive { activate() } else { deactivate() }
     }

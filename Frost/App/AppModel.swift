@@ -6,6 +6,10 @@ import Observation
 @Observable
 @MainActor
 final class AppModel {
+    /// Whether Frost manages the menu bar on this macOS version (`PlatformSupport`, `UnsupportedOS`). When it doesn't,
+    /// Frost leaves the menu bar alone: only the snowflake is created (it shows a notice), and nothing scans, moves,
+    /// captures or places items; Settings shows the notice and updates keep working.
+    let isMenuBarSupported: Bool
     let preferences: Preferences
     let permissions: PermissionsService
     let scanner: MenuBarItemScanner
@@ -64,7 +68,8 @@ final class AppModel {
         obscuredItemsChanged()
     }
 
-    init() {
+    init(isMenuBarSupported: Bool) {
+        self.isMenuBarSupported = isMenuBarSupported
         preferences = Preferences()
         permissions = PermissionsService()
         scanner = MenuBarItemScanner()
@@ -117,6 +122,12 @@ final class AppModel {
     }
 
     func start() {
+        guard isMenuBarSupported else {
+            // Only the snowflake, with the notice in its menu: no separators (their saved positions stay for a version
+            // that supports this macOS), no scanning, no moves.
+            sections.installNoticeOnly()
+            return
+        }
         presence.start()
         sections.install()
         scanner.start()

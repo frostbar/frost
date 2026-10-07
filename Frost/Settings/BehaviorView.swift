@@ -11,7 +11,7 @@ struct BehaviorView: View {
         @Bindable var preferences = model.preferences
 
         Form {
-            Section("Menu Bar") {
+            Section {
                 LabeledContent {
                     Picker("Show hidden icons", selection: $preferences.displayMode) {
                         ForEach(Preferences.DisplayMode.allCases, id: \.self) { mode in
@@ -26,7 +26,7 @@ struct BehaviorView: View {
                         DisplayModeExplanation(mode: preferences.displayMode)
                     }
                 }
-                if preferences.displayMode != .inline && !model.permissions.canManageItems {
+                if model.isMenuBarSupported && preferences.displayMode != .inline && !model.permissions.canManageItems {
                     HStack(spacing: 12) {
                         InlineNotice(text: String(localized: "The Frost Bar needs the Accessibility permission. Until it’s granted, hidden icons expand in the menu bar."),
                                      symbol: "info.circle.fill", tint: .secondary)
@@ -49,7 +49,15 @@ struct BehaviorView: View {
                     Toggle("Keep icons in their sections", isOn: $preferences.keepItemSections)
                         .labelsHidden().toggleStyle(.switch)
                 }
+            } header: {
+                Text("Menu Bar")
+            } footer: {
+                // Unsupported macOS: the settings are kept for a version that supports it, but change nothing now.
+                if !model.isMenuBarSupported {
+                    Text(UnsupportedOS.detail)
+                }
             }
+            .disabled(!model.isMenuBarSupported)
 
             Section("General") {
                 LaunchAtLoginRow()
@@ -59,8 +67,8 @@ struct BehaviorView: View {
         .animation(.snappy, value: preferences.autoRehide)
         .animation(.snappy, value: model.permissions.canManageItems)
         // The notice goes away once Accessibility is granted in System Settings, which may not reactivate Frost.
-        .onAppear { model.permissions.startPolling() }
-        .onDisappear { model.permissions.stopPolling() }
+        .onAppear { if model.isMenuBarSupported { model.permissions.startPolling() } }
+        .onDisappear { if model.isMenuBarSupported { model.permissions.stopPolling() } }
     }
 }
 

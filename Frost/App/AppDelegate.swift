@@ -9,9 +9,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         FrostLog.app.notice("Frost \(version, privacy: .public) launched")
-        let model = AppModel()
+        let model = AppModel(isMenuBarSupported: UnsupportedOS.isMenuBarSupported)
         self.model = model
         model.showSettings = { [unowned model] tab in SettingsWindowController.show(model: model, tab: tab) }
+        let menus = MainMenu.make(target: self)
+        guard model.isMenuBarSupported else {
+            startUnsupported(model, menus: menus)
+            return
+        }
         model.openOnboarding = { [unowned model] in OnboardingWindowController.show(model: model) }
         let frostBar = FrostBarController(app: model)
         self.frostBar = frostBar
@@ -20,7 +25,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.newItems.isPaused = { [unowned frostBar] in frostBar.isOpen || frostBar.pendingActivation != nil }
         model.start()
         frostBar.warmUp()
-        let menus = MainMenu.make(target: self)
         NSApp.mainMenu = menus.menu
         NSApp.windowsMenu = menus.windowsMenu
         // Reopen the window the user was granting Screen Recording in before the relaunch, and open onboarding on
@@ -31,6 +35,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if resume == .onboarding || !model.preferences.hasCompletedOnboarding {
             model.openOnboarding()
+        }
+    }
+
+    /// An unsupported macOS (`PlatformSupport`): Frost leaves the menu bar alone. No Frost Bar (so no live refresh,
+    /// background captures or freeze frames), no new-item placement or section memory, no scanning, no separators: only
+    /// the snowflake, whose menu shows the notice next to Settings…, Check for Updates… and Quit. Sparkle keeps running,
+    /// so a release that supports this macOS can arrive. Permission onboarding doesn't run (permissions change
+    /// nothing here); anything that would open it shows the notice in Settings → About instead, and
+    /// `hasCompletedOnboarding` stays as it is for that release.
+    private func startUnsupported(_ model: AppModel, menus: (menu: NSMenu, windowsMenu: NSMenu)) {
+        FrostLog.app.notice("""
+            macOS \(UnsupportedOS.versionDescription, privacy: .public) isn't supported: leaving the menu bar alone \
+            (snowflake only)
+            """)
+        model.openOnboarding = { [unowned model] in model.openSettings(tab: .about) }
+        model.start()
+        NSApp.mainMenu = menus.menu
+        NSApp.windowsMenu = menus.windowsMenu
+        // Settings reopens after a relaunch it was waiting for; onboarding never opens by itself here.
+        if case .settings(let rawTab) = RelaunchResume.consume() {
+            model.openSettings(tab: SettingsTab(rawValue: rawTab) ?? .about)
         }
     }
 

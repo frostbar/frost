@@ -493,6 +493,17 @@
         }
       }
     },
+    "Frost can’t hide icons on macOS %lld. An update is on the way." : {
+      "comment" : "Notice shown on a macOS version Frost can't manage the menu bar on; the number is the macOS major version",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frost 目前无法在 macOS %lld 上隐藏图标。更新即将推出。"
+          }
+        }
+      }
+    },
     "Frost needs Accessibility; Screen Recording is optional." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1167,6 +1178,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系统没有返回任何菜单栏图标。\nFrost 会自动重试；若一直如此，请尝试重新启动 Frost。"
+          }
+        }
+      }
+    },
+    "This version of macOS isn’t supported yet" : {
+      "comment" : "Notice shown on a macOS version Frost can't manage the menu bar on (snowflake menu, Settings)",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚不支持此版本的 macOS"
           }
         }
       }

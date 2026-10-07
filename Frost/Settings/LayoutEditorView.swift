@@ -6,8 +6,17 @@ import UniformTypeIdentifiers
 /// sections or reordered.
 struct LayoutEditorView: View {
     @Environment(LayoutEditorModel.self) private var editor
+    @Environment(AppModel.self) private var model
 
     var body: some View {
+        if model.isMenuBarSupported {
+            content
+        } else {
+            UnsupportedOSPlaceholder()
+        }
+    }
+
+    private var content: some View {
         LayoutEditorContent(state: editor.state, actions: LayoutEditorActions(
             drop: { id, section, index in Task { await editor.drop(id, into: section, at: index) } },
             grantAccessibility: { editor.grantAccessibility() },
@@ -657,6 +666,40 @@ private struct EditorPlaceholder<Actions: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
+    }
+}
+
+/// The Layout tab on an unsupported macOS (`AppModel.isMenuBarSupported`): the notice in the placeholders' glass card,
+/// with no editor and no menu bar expansion.
+private struct UnsupportedOSPlaceholder: View {
+    /// Shorter than the editor's placeholders: the editor never replaces it, so the window has no height to keep.
+    private static let height: CGFloat = 300
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "exclamationmark.triangle")
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 40, weight: .regular))
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            VStack(spacing: 6) {
+                Text(UnsupportedOS.title)
+                    .font(.title3.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                Text(UnsupportedOS.detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(28)
+        .frame(maxWidth: 400)
+        .glassEffect(.regular, in: .rect(cornerRadius: 24))
+        .frame(maxWidth: .infinity, minHeight: Self.height)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
+        .accessibilityElement(children: .combine)
     }
 }
 
