@@ -209,6 +209,11 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   Settings, the Frost Bar, the snowflake menu, updates), walk the affected journeys in `docs/ux-journeys.md` in the VM
   from a clean state, granting permissions through the real System Settings switches. Look for friction (extra
   clicks, lost windows, lingering prompts, stale state, dead ends), not only failures. New flows get a journey.
+- **Keep the README in step with the UI**: after changing how a window looks or what it shows (Settings, the Frost
+  Bar, onboarding, the snowflake menu), check `README.md`: the screenshots in `docs/images/` (retake them in the VM:
+  Light Mode, a colorful wallpaper, the window only, neutral test item names), the wording that names tabs, buttons
+  or flows (e.g. "Settings → About", what Grant Access does), and the Features / Permissions / Updates sections.
+  Update them in the same change.
 
 - Pure logic goes into FrostCore, tests first (TDD); keep the system-call parts thin.
 - **Migrations of persisted data are tested through the real launch path with previous-release data**: anything an
