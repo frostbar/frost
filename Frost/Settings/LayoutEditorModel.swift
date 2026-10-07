@@ -118,10 +118,14 @@ final class LayoutEditorModel {
     }
 
     private func activate() {
+        #if DEBUG
+        FrameProbe.note("editor")
+        #endif
         isActive = true
-        hasSettled = false
+        // Assigned only when they change: every assignment redraws the editor, in the middle of the tab switch.
+        if hasSettled { hasSettled = false }
         obscuredGate.reset()
-        obscuredNoteCount = 0
+        if obscuredNoteCount != 0 { obscuredNoteCount = 0 }
         session += 1
         let permissions = model.permissions
         permissions.refresh()
@@ -165,7 +169,7 @@ final class LayoutEditorModel {
         // notch, unreliable). As `deactivate` waits for transactions before collapsing, wait for it to end first.
         let deferEditing = !model.sections.isEditing && model.mover.isBusy
         if !model.sections.isEditing, !deferEditing { enterEditing() }
-        isWaitingForMover = deferEditing
+        if isWaitingForMover != deferEditing { isWaitingForMover = deferEditing }
 
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
@@ -181,6 +185,9 @@ final class LayoutEditorModel {
             // After beginEditing the separators narrow and items rearrange; wait for frames to settle before a full refresh.
             await self?.model.sections.waitForSettle()
             guard let self, self.isActive, !Task.isCancelled else { return }
+            #if DEBUG
+            FrameProbe.note("settled")
+            #endif
             self.hasSettled = true
             await self.fullRefresh()
             var tick = 0
@@ -212,6 +219,9 @@ final class LayoutEditorModel {
         model.scanner.rescan()
         previous = model.layout
         model.sections.beginEditing()
+        #if DEBUG
+        FrameProbe.note("editing")
+        #endif
     }
 
     private func deactivate() {
@@ -253,7 +263,11 @@ final class LayoutEditorModel {
         switch model.scanner.status {
         case .notScanned: return .loading
         case .noWindows: return .noWindows
-        case .ok: return model.layout.isEmpty ? .controlsMissing : .ready
+        case .ok:
+            // Until the menu bar has settled after entering editing the snapshot is shown (`layout`), so the rescans of
+            // the menu bar rearranging mustn't redraw the editor.
+            if !hasSettled, !previous.isEmpty { return .ready }
+            return model.layout.isEmpty ? .controlsMissing : .ready
         }
     }
 
@@ -320,7 +334,8 @@ final class LayoutEditorModel {
             tones: model.capturer.tones, names: names, accessibilityLabels: labels, fallbackLabels: fallbackLabels,
             appIcons: icons, pending: pending,
             obscured: obscured, obscuredNoteCount: hasSettled ? obscuredNoteCount : 0, errorMessage: errorMessage,
-            isRetrying: isActive && fullRefreshSession == session,
+            // Read only while it shows (the full refresh's start and end redraw the editor otherwise).
+            isRetrying: phase.isFailure && isActive && fullRefreshSession == session,
             permissions: .init(accessibility: model.permissions.accessibility,
                                screenRecording: model.permissions.screenRecording,
                                screenRecordingNeedsRelaunch: model.permissions.screenRecordingNeedsRelaunch),
@@ -349,13 +364,22 @@ final class LayoutEditorModel {
         defer { if fullRefreshSession == session { fullRefreshSession = nil } }
         model.permissions.refresh()
         await model.scanner.refreshOwnership()
+        #if DEBUG
+        FrameProbe.note("owners")
+        #endif
         // The editor closed, a new session started, or a drop began during the read: don't modify state (the drop
         // refreshes when done).
         guard self.session == session, isActive, pending.isEmpty else { return }
         commitLayout()
         // Owners just resolved (e.g. items pushed off screen since launch): show their disk-cached images first.
         if model.permissions.screenRecording { await model.capturer.preloadCached(model.scanner.items) }
+        #if DEBUG
+        FrameProbe.note("preloaded")
+        #endif
         await capture(all: true)
+        #if DEBUG
+        FrameProbe.note("captured")
+        #endif
     }
 
     /// Some displayed item has an unknown owner, or is on screen without an image (e.g. a just-launched app's icon):

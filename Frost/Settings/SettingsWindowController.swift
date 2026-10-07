@@ -188,10 +188,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private func tabDidChange(_ tab: SettingsTab) {
         guard tab != reportedTab else { return }
         reportedTab = tab
+        if tab == .layout { isLayoutTabWarm = true }
         SettingsTab.lastSelected = tab
         window.title = tab.title
         #if DEBUG
-        FrameProbe.mark("tab-\(tab.rawValue)", in: window)
+        // Layout: long enough to cover the editor starting after the switch (rescans, the first captures).
+        FrameProbe.mark("tab-\(tab.rawValue)", in: window, duration: tab == .layout ? .seconds(2) : .milliseconds(1200))
         #endif
         editorStartTask?.cancel()
         editorStartTask = nil
@@ -236,6 +238,34 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             layoutEditor.setWindowVisible(true)
         } else {
             isAwaitingKey = true
+        }
+        scheduleLayoutTabWarmUp()
+    }
+
+    /// Whether the Layout tab's content has been built and laid out (`scheduleLayoutTabWarmUp`).
+    private var isLayoutTabWarm = false
+    private var warmUpTask: Task<Void, Never>?
+    /// How long after the window appears the Layout tab is built in the background (after the window's own appearance).
+    private static let warmUpDelay: Duration = .milliseconds(400)
+
+    /// Opened on another tab: builds and lays out the Layout tab's content (its SwiftUI view graph, the editor's tiles)
+    /// shortly after the window has appeared, while nothing animates, so the first switch to it doesn't do that work
+    /// inside the cross-fade and the window's resize. Measured in the VM (FrameProbe): the first switch after a launch
+    /// otherwise spent 30-60 ms building the tab right at its start and missed frames during the fade.
+    private func scheduleLayoutTabWarmUp() {
+        guard !isLayoutTabWarm, warmUpTask == nil, reportedTab != .layout,
+              let index = SettingsTab.allCases.firstIndex(of: .layout),
+              let container = tabs.tabViewItems[index].viewController as? SettingsTabContainerController
+        else { return }
+        warmUpTask = Task { [weak self] in
+            defer { self?.warmUpTask = nil }
+            do { try await Task.sleep(for: Self.warmUpDelay) } catch { return }
+            guard let self, !self.isLayoutTabWarm, self.window.isVisible, self.reportedTab != .layout else { return }
+            self.isLayoutTabWarm = true
+            container.warmUp()
+            #if DEBUG
+            FrostLog.app.debug("Layout tab warmed up off screen")
+            #endif
         }
     }
 
@@ -374,6 +404,14 @@ private final class SettingsTabContainerController: NSViewController {
         if let reported = reporter.height { return reported.rounded(.up) }
         let height = measure()
         return height.isFinite && height > 0 ? height.rounded(.up) : SettingsWindowController.defaultContentHeight
+    }
+
+    /// Builds the tab's content and lays it out while it isn't in the window (see
+    /// `SettingsWindowController.scheduleLayoutTabWarmUp`).
+    func warmUp() {
+        let view = view
+        view.frame.size = NSSize(width: SettingsPane<EmptyView>.width, height: contentHeight)
+        view.layoutSubtreeIfNeeded()
     }
 
     override func loadView() {
