@@ -35,6 +35,8 @@ struct Spec {
     var ticking = false
     /// FAKEITEMS_LIVE=1 items (see the header).
     var live: Live?
+    /// Menu entries instead of "<autosave> option N" (FAKEITEMS_DEMO=1).
+    var entries: [String]?
 }
 
 enum Live { case help, description, blink }
@@ -56,6 +58,24 @@ let specsA: [Spec] = [
     Spec(autosave: "FIBeta", title: "Beta ◆", symbol: nil, behaviour: .popover),
     Spec(autosave: "FIClock", title: "0s", symbol: nil, behaviour: .menu, ticking: true),
     Spec(autosave: "FIDual", title: nil, symbol: "gearshape.fill", behaviour: .dual),
+]
+
+/// FAKEITEMS_DEMO=1: a tidy set of items with neutral names and realistic menus, for README recordings.
+let demoSpecs: [Spec] = [
+    Spec(autosave: "FIDemoPercent", title: "42%", symbol: nil, behaviour: .menu,
+         entries: ["Battery: 42%", "Power Source: Battery", "Low Power Mode", "Energy Settings…"]),
+    Spec(autosave: "FIDemoSun", title: nil, symbol: "cloud.sun.fill", behaviour: .menu,
+         entries: ["Sunny, 22°", "Tomorrow: 24°", "Refresh"]),
+    Spec(autosave: "FIDemoBolt", title: nil, symbol: "bolt.fill", behaviour: .menu,
+         entries: ["Charging: Off", "Optimized Charging", "Show Battery Health"]),
+    Spec(autosave: "FIDemoLeaf", title: nil, symbol: "leaf.fill", behaviour: .menu,
+         entries: ["Focus: Off", "Do Not Disturb", "Reading", "Work"]),
+    Spec(autosave: "FIDemoStar", title: nil, symbol: "star.fill", behaviour: .menu,
+         entries: ["Favorites", "Recent Items", "Edit Favorites…"]),
+    Spec(autosave: "FIDemoTimer", title: nil, symbol: "timer", behaviour: .menu,
+         entries: ["Start Timer", "5 Minutes", "25 Minutes", "1 Hour"]),
+    Spec(autosave: "FIDemoGear", title: nil, symbol: "gearshape.fill", behaviour: .menu,
+         entries: ["Preferences…", "Check for Updates", "Quit"]),
 ]
 
 let specsB: [Spec] = [
@@ -104,8 +124,9 @@ final class Controller: NSObject, NSMenuDelegate, NSPopoverDelegate {
                 let menu = NSMenu(title: spec.autosave)
                 menu.delegate = self
                 names[ObjectIdentifier(menu)] = spec.autosave
-                for i in 1...3 {
-                    let entry = NSMenuItem(title: "\(spec.autosave) option \(i)", action: #selector(pick(_:)), keyEquivalent: "")
+                let titles = spec.entries ?? (1...3).map { "\(spec.autosave) option \($0)" }
+                for title in titles {
+                    let entry = NSMenuItem(title: title, action: #selector(pick(_:)), keyEquivalent: "")
                     entry.target = self
                     menu.addItem(entry)
                 }
@@ -270,6 +291,10 @@ let extra = Int(ProcessInfo.processInfo.environment["FAKEITEMS_EXTRA"] ?? "") ??
 let extraSpecs = (0..<extra).map { Spec(autosave: "FIExtra\($0)", title: "Extra \($0)", symbol: nil, behaviour: .menu) }
     + (ProcessInfo.processInfo.environment["FAKEITEMS_LIVE"] == "1" ? liveSpecs : [])
 MainActor.assumeIsolated {
-    controller.install((Bundle.main.bundleIdentifier == "dev.frost.FakeItemsB" ? specsB : specsA) + extraSpecs)
+    if ProcessInfo.processInfo.environment["FAKEITEMS_DEMO"] == "1" {
+        if Bundle.main.bundleIdentifier != "dev.frost.FakeItemsB" { controller.install(demoSpecs) }
+    } else {
+        controller.install((Bundle.main.bundleIdentifier == "dev.frost.FakeItemsB" ? specsB : specsA) + extraSpecs)
+    }
 }
 app.run()
