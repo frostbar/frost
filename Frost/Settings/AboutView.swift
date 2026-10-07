@@ -37,6 +37,7 @@ struct AboutView: View {
                     PermissionRow(title: "Screen Recording",
                                   subtitle: "Optional. Shows real icon images instead of app icons. macOS shows a purple dot in the menu bar while Frost captures them.",
                                   status: permissions.screenRecording ? .granted
+                                      : permissions.isScreenRecordingPromptPending ? .waiting
                                       : permissions.screenRecordingNeedsRelaunch ? .needsRelaunch : .notGranted,
                                   grant: { permissions.requestScreenRecording() },
                                   openSettings: { permissions.openScreenRecordingSettings() })
@@ -51,6 +52,7 @@ struct AboutView: View {
         .animation(.snappy, value: permissions.accessibility)
         .animation(.snappy, value: permissions.screenRecording)
         .animation(.snappy, value: permissions.screenRecordingNeedsRelaunch)
+        .animation(.snappy, value: permissions.isScreenRecordingPromptPending)
         // Granting access in System Settings does not necessarily reactivate Frost, so poll while visible.
         .onAppear { permissions.startPolling() }
         .onDisappear { permissions.stopPolling() }
@@ -93,6 +95,9 @@ struct AboutView: View {
 private struct PermissionRow: View {
     enum Status {
         case notGranted
+        /// Requested, and the system's prompt is expected or still on screen (Screen Recording): the user hasn't
+        /// decided yet, so neither Grant Access (a second request) nor Relaunch fits.
+        case waiting
         /// Requested, but it takes effect only after a relaunch (Screen Recording).
         case needsRelaunch
         case granted
@@ -131,6 +136,10 @@ private struct PermissionRow: View {
                 }
                 .fixedSize()
                 .transition(.blurReplace)
+            case .waiting:
+                ProgressView()
+                    .controlSize(.small)
+                    .transition(.blurReplace)
             case .notGranted:
                 Button("Grant Access", action: grant)
                     .buttonStyle(.borderedProminent)
