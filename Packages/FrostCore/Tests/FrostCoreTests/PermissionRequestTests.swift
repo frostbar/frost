@@ -54,6 +54,15 @@ import Testing
         #expect(PermissionRequest.promptVisible(baseline: [], current: [renamed]))
     }
 
+    /// The prompt's own windows, so its closing can be followed by ID.
+    @Test func thePromptWindowsAreIdentified() {
+        let existing = Self.window(800, owner: "Finder", path: "/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder")
+        let app = Self.window(801, owner: "Some App")
+        #expect(PermissionRequest.promptWindowIDs(baseline: [existing], current: [existing, app, Self.promptWindow()])
+                == [900])
+        #expect(PermissionRequest.promptWindowIDs(baseline: [existing], current: [existing, app]).isEmpty)
+    }
+
     /// A window that was already on screen before the request is never the prompt (the prompt only appears because of
     /// the request).
     @Test func windowsPresentBeforeTheRequestAreIgnored() {

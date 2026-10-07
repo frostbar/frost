@@ -10,8 +10,14 @@ public final class PermissionsService {
     /// The user asked for Screen Recording in this process (onboarding, About, the layout editor). A new grant only
     /// shows in `CGPreflightScreenCaptureAccess` after a relaunch, so the UI offers one meanwhile.
     public private(set) var screenRecordingRequested = false
-    /// Screen Recording was requested but isn't in effect yet: Frost has to relaunch once it is turned on.
-    public var screenRecordingNeedsRelaunch: Bool { screenRecordingRequested && !screenRecording }
+    /// The system's Screen Recording prompt of the latest request is expected or on screen (`PermissionPromptWatch`):
+    /// the user hasn't decided yet.
+    public private(set) var isScreenRecordingPromptPending = false
+    /// Screen Recording was requested but isn't in effect yet: Frost has to relaunch once it is turned on. Not while the
+    /// system prompt is still up (the row would say "Needs Relaunch" under a prompt the user is still reading).
+    public var screenRecordingNeedsRelaunch: Bool {
+        screenRecordingRequested && !screenRecording && !isScreenRecordingPromptPending
+    }
     /// What the current permissions allow (`PermissionCapabilities`): gate features on these, not on "all granted".
     public var capabilities: PermissionCapabilities {
         PermissionCapabilities(accessibility: accessibility, screenRecording: screenRecording)
@@ -70,6 +76,8 @@ public final class PermissionsService {
     /// Asks through the system API; when no prompt shows up (it only prompts once per process), Frost is already
     /// listed and the pane is opened directly (`PermissionRequest`).
     public func requestScreenRecording() {
+        // Pending first, so the UI never shows "Needs Relaunch" for a moment before the prompt appears.
+        isScreenRecordingPromptPending = true
         screenRecordingRequested = true
         // The windows on screen right before the request: what appears afterwards is what the request caused
         // (`PermissionRequest.promptVisible`).
@@ -77,15 +85,24 @@ public final class PermissionsService {
         _ = CGRequestScreenCaptureAccess()
         promptTask?.cancel()
         promptTask = Task { [weak self] in
+            defer { if !Task.isCancelled { self?.isScreenRecordingPromptPending = false } }
             let start = ContinuousClock.now
+            var watch = PermissionPromptWatch()
+            // The prompt's windows once seen: it has closed when none of them is on screen any more.
+            var prompt: Set<CGWindowID> = []
             while !Task.isCancelled {
-                let visible = PermissionRequest.promptVisible(baseline: baseline, current: Self.windowSnapshots())
-                switch PermissionRequest.decide(elapsed: ContinuousClock.now - start, promptVisible: visible) {
-                case .promptShown: return
+                let current = Self.windowSnapshots()
+                if prompt.isEmpty {
+                    prompt = PermissionRequest.promptWindowIDs(baseline: baseline, current: current)
+                }
+                let visible = current.contains { $0.isOnScreen && prompt.contains($0.windowID) }
+                switch watch.observe(elapsed: ContinuousClock.now - start, promptVisible: visible) {
+                case .promptClosed, .finished:
+                    return
                 case .openSettings:
                     self?.open(PrivacySettingsPane.screenRecording)
                     return
-                case .keepWaiting:
+                case .keepWatching:
                     do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
                 }
             }

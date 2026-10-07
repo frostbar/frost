@@ -10,6 +10,53 @@
 ///   the permission has no entry; otherwise it is silent. A silent call means the app is already listed, so the pane
 ///   is opened. Whether the prompt appeared is read from the window list (`promptVisible(baseline:current:)`): wait up
 ///   to `promptTimeout` for it, then open the pane.
+/// Follows one Screen Recording request until the user has dealt with the system prompt (`PermissionRequest`): pending
+/// while Frost waits for the prompt to appear and while it is on screen, so the UI doesn't flip to "Needs Relaunch"
+/// under the prompt the user is still reading; finished once the prompt has closed, or when none appeared by
+/// `PermissionRequest.promptTimeout` (then the Settings pane is opened instead).
+public struct PermissionPromptWatch: Sendable {
+    public enum Step: Equatable, Sendable {
+        case keepWatching
+        /// No prompt appeared: open the Settings pane.
+        case openSettings
+        /// The prompt was shown and has closed.
+        case promptClosed
+        /// Already finished earlier.
+        case finished
+    }
+
+    private enum Phase { case awaitingPrompt, promptShown, finished }
+    private var phase = Phase.awaitingPrompt
+
+    public init() {}
+
+    /// Whether the user may still be looking at (or about to see) the prompt.
+    public var isPending: Bool { phase != .finished }
+
+    /// `elapsed` since the request; `promptVisible`: the prompt is on screen (`PermissionRequest.promptVisible`).
+    public mutating func observe(elapsed: Duration, promptVisible: Bool) -> Step {
+        switch phase {
+        case .finished:
+            return .finished
+        case .awaitingPrompt:
+            switch PermissionRequest.decide(elapsed: elapsed, promptVisible: promptVisible) {
+            case .promptShown:
+                phase = .promptShown
+                return .keepWatching
+            case .openSettings:
+                phase = .finished
+                return .openSettings
+            case .keepWaiting:
+                return .keepWatching
+            }
+        case .promptShown:
+            guard !promptVisible else { return .keepWatching }
+            phase = .finished
+            return .promptClosed
+        }
+    }
+}
+
 public enum PermissionRequest {
     /// How long to wait for the system prompt after the Screen Recording request before concluding it was silent.
     public static let promptTimeout: Duration = .seconds(2)

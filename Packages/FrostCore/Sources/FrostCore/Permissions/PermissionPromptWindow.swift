@@ -63,8 +63,14 @@ extension PermissionRequest {
 
     /// Whether a permission prompt is on screen now, given the windows that were on screen just before the request.
     public static func promptVisible(baseline: [WindowSnapshot], current: [WindowSnapshot]) -> Bool {
+        !promptWindowIDs(baseline: baseline, current: current).isEmpty
+    }
+
+    /// The windows of `current` that are the prompt (see `promptVisible`). Once the prompt has been seen, following
+    /// these IDs tells when it closes, without later new system windows (a Finder window, say) counting as the prompt.
+    public static func promptWindowIDs(baseline: [WindowSnapshot], current: [WindowSnapshot]) -> Set<CGWindowID> {
         let before = Set(baseline.map(\.windowID))
-        return current.contains { isPromptWindow($0, appearingSince: before) }
+        return Set(current.filter { isPromptWindow($0, appearingSince: before) }.map(\.windowID))
     }
 
     /// One window, judged against the window IDs on screen before the request.
