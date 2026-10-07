@@ -170,10 +170,11 @@ public final class MenuBarItemScanner {
     }
 
     /// Builds `items` from the ownership cache (dropping leftover windows of apps that quit) and discards
-    /// cache entries for windows that are gone.
+    /// cache entries for windows that are gone. `items` and `status` are only assigned when they change: every assignment
+    /// notifies observers (the layout editor and the Frost Bar redraw), and most rescans find the menu bar as it was.
     private func publish(_ windows: [RawStatusWindow]) {
         let systemSlots = SystemItemRules.trailingSlots(windows, excluding: ownWindowIDs())
-        items = windows.map { window in
+        let fresh = windows.map { window in
             let owner = ownershipCache[window.windowID]
             return MenuBarItem(windowID: window.windowID, frame: window.frame, isOnScreen: window.isOnScreen,
                                windowTitle: window.title, bundleID: owner?.bundleID, pid: owner?.pid,
@@ -182,11 +183,13 @@ public final class MenuBarItemScanner {
                                numberedIdentityKey: owner?.numberedIdentityKey,
                                occupiesSystemSlot: systemSlots.contains(window.windowID))
         }.filter { !StaleWindowFilter.isStale($0) }
+        if fresh != items { items = fresh }
         let live = Set(windows.map(\.windowID))
         publishedWindowIDs = live
         ownershipCache = ownershipCache.filter { live.contains($0.key) }
         unresolvedSince = unresolvedSince.filter { live.contains($0.key) }
-        status = windows.isEmpty ? .noWindows : .ok
+        let scanned: ScanStatus = windows.isEmpty ? .noWindows : .ok
+        if scanned != status { status = scanned }
     }
 
     /// Assigns ownership of Frost's own windows directly (the AX read skips this process).
