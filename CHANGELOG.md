@@ -6,6 +6,18 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+### Fixed
+- An icon opened from the Frost Bar goes back to its exact slot even when you click the menu bar just as it moves
+  back, and a menu you open at that moment stays open instead of closing again.
+- An icon Frost had moved out to capture its image when it quit goes back to its exact slot on the next launch, not
+  to the edge of its section.
+- The first switch to the Layout tab after launching no longer stutters during the animation.
+- "Check for Updates…" in the snowflake's menu opens Settings → About first, so you see when Frost last checked.
+- The "Last checked" date in About is in the language Frost is shown in, also when it differs from your region's.
+- After you ask for Screen Recording in About, the row waits while the system prompt is up instead of asking you to
+  relaunch underneath it.
+- Settings opens where you left it, with its top edge in place, instead of centering again after a relaunch.
+
 ## [0.3.3] - 2026-10-07
 
 ### Changed
