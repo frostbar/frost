@@ -134,6 +134,9 @@ extension FrostBarController {
         }
 
         var failure: Error?
+        // The item lingered until the user was done with it: its presentation is closed, so an open menu is someone
+        // else's (the user may just have clicked another menu bar item), which the move back waits for.
+        var lingered = false
         // Window snapshot before the move, to detect a menu accidentally opened by the ⌘-drag (see `clickAndWait`).
         let beforeMove = ItemClicker.onscreenWindowIDs()
         do {
@@ -145,7 +148,10 @@ extension FrostBarController {
             forwardTrace?.mark("moved")
             let outcome = try await clickAndWait(id, click: click, strayBaseline: beforeMove, handOff: handOff)
             // A presentation still on screen (timed out / abandoned) isn't the user's to keep using: move back now.
-            if outcome == .closed || outcome == .notPresented { try await linger(id) }
+            if outcome == .closed || outcome == .notPresented {
+                try await linger(id)
+                lingered = true
+            }
         } catch {
             failure = error
         }
@@ -161,7 +167,8 @@ extension FrostBarController {
         let completion: ItemMover.Completion = returnAnchorMaxX != nil ? .itemLanded : .settled
         let restoreError = await Task { @MainActor in
             if cancelled { await self.closePresentation(of: id, openedAfter: beforeMove) }
-            return await self.restore(plan, controls: controls, until: completion)
+            return await self.restore(plan, controls: controls, until: completion,
+                                      yieldingToMenus: lingered && !opening && completion == .settled)
         }.value
         if let restoreError {
             if case ItemMoveError.controlsDisturbed = restoreError {
@@ -185,15 +192,16 @@ extension FrostBarController {
     }
 
     /// Moves the item back to its original section. If the anchor destination fails (anchor gone, move didn't take
-    /// effect, under the notch... any error except disturbed Frost control items), tries the section boundary once.
+    /// effect, under the notch... any error except disturbed Frost control items), tries the section boundary once, and
+    /// from there one corrective move into its slot (`RestorePlan.correction`) if its anchor is still in the section.
     /// A vanished item (its app quit) counts as success.
     func restore(_ plan: RestorePlan, controls: FrostControlWindows,
-                         until completion: ItemMover.Completion = .settled) async -> Error? {
+                 until completion: ItemMover.Completion = .settled, yieldingToMenus: Bool = false) async -> Error? {
         let scanner = app.scanner, mover = app.mover
         scanner.rescan()
         let destination = plan.destination(in: SectionAssigner.layout(of: scanner.items, controls: controls))
         do {
-            try await mover.move(plan.itemID, to: destination, until: completion)
+            try await mover.move(plan.itemID, to: destination, until: completion, yieldingToMenus: yieldingToMenus)
             return nil
         } catch ItemMoveError.itemNotFound {
             // The app quit: nothing to move back.
@@ -208,13 +216,36 @@ extension FrostBarController {
                 (\(error, privacy: .public)); falling back to the section boundary
                 """)
             do {
-                try await mover.move(plan.itemID, to: plan.boundary)
-                return nil
+                try await mover.move(plan.itemID, to: plan.boundary, yieldingToMenus: yieldingToMenus)
             } catch ItemMoveError.itemNotFound {
                 return nil
             } catch {
                 return error
             }
+            // Back in its section, but at the edge: put it into its slot if that is possible again now.
+            await correctSlot(plan, controls: controls, yieldingToMenus: yieldingToMenus)
+            return nil
+        }
+    }
+
+    /// One corrective move when the item isn't in its slot (`RestorePlan.correction`), e.g. left at its section's edge
+    /// by a fallback. If it fails, the item stays where it is (in its section).
+    private func correctSlot(_ plan: RestorePlan, controls: FrostControlWindows, yieldingToMenus: Bool) async {
+        let scanner = app.scanner
+        scanner.rescan()
+        guard let correction = plan.correction(in: SectionAssigner.layout(of: scanner.items, controls: controls))
+        else { return }
+        FrostLog.frostBar.notice("""
+            item \(plan.itemID, privacy: .public) is not back in its slot; moving it \
+            \(String(describing: correction), privacy: .public)
+            """)
+        do {
+            try await app.mover.move(plan.itemID, to: correction, yieldingToMenus: yieldingToMenus)
+        } catch {
+            FrostLog.frostBar.error("""
+                moving item \(plan.itemID, privacy: .public) into its slot failed (\(error, privacy: .public)); \
+                it stays at its section's edge
+                """)
         }
     }
 
@@ -240,13 +271,15 @@ extension FrostBarController {
             try await mover.transaction(allowedDuringShutdown: true) {
                 if sections.isEditing {
                     // While editing, positions may be under the notch and unreliable: collapse temporarily to move.
-                    try await sections.whileCollapsedForMove { try await self.restoreIfNeeded(plan, controls: controls) }
+                    try await sections.whileCollapsedForMove {
+                        try await self.restoreIfNeeded(plan, controls: controls, yieldingToMenus: true)
+                    }
                 } else {
                     if sections.state != .collapsed {
                         sections.setState(.collapsed)
                         await sections.waitForSettle()
                     }
-                    try await restoreIfNeeded(plan, controls: controls)
+                    try await restoreIfNeeded(plan, controls: controls, yieldingToMenus: true)
                 }
             }
             FrostLog.frostBar.notice("delayed restore succeeded")
@@ -255,16 +288,15 @@ extension FrostBarController {
         }
     }
 
-    /// Moves the item back if it's still outside its original section; does nothing if it's back or gone.
-    func restoreIfNeeded(_ plan: RestorePlan, controls: FrostControlWindows) async throws {
+    /// Moves the item back if it isn't in its slot (still outside its original section, or in it but elsewhere, e.g. at
+    /// its edge after a fallback); does nothing if it's back or gone.
+    /// `yieldingToMenus`: see `ItemMover.move` (not under a freeze frame, which hides menus).
+    func restoreIfNeeded(_ plan: RestorePlan, controls: FrostControlWindows, yieldingToMenus: Bool = false) async throws {
         let scanner = app.scanner
         scanner.rescan()
         let controls = app.sections.controlWindows ?? controls
-        let layout = SectionAssigner.layout(of: scanner.items, controls: controls)
-        guard let current = MenuBarSection.allCases.first(where: { section in
-            layout[section, default: []].contains { $0.windowID == plan.itemID }
-        }), current != plan.section else { return }
-        if let error = await restore(plan, controls: controls) { throw error }
+        guard plan.correction(in: SectionAssigner.layout(of: scanner.items, controls: controls)) != nil else { return }
+        if let error = await restore(plan, controls: controls, yieldingToMenus: yieldingToMenus) { throw error }
     }
 
     /// Clicks the item once its frame is stable and waits for its menu / popover to close (returns right away if
