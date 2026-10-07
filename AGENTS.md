@@ -143,7 +143,9 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   ⌘-drag draws the lifted item over the Frost icon in layer-500 drag windows, which show through a layer-26 freeze
   frame. The freeze frame stays up until the item is back (a held mouse button delays the move back; the overlay's
   safety net is extended meanwhile, `ObscuredCapturePolicy.RestoreStep`), and the item's return is persisted before it
-  is moved out, so quitting mid-wait leaves it for the next launch (`SectionKeeper.pendingReturns`).
+  is moved out, so quitting mid-wait leaves it for the next launch (`SectionKeeper.pendingReturns`), with the
+  identities of its neighbours (`PendingReturn`, same key and 0.3.2's format plus optional `right` / `left`), so it
+  goes back into its exact slot, or to the section's edge when they are gone.
 - AXPress blocks when it opens an NSMenu and returns `.cannotComplete`, but the menu is in fact open — don't add a
   click on top. `com.apple.*` items are always clicked directly with HID CGEvents.
 - After a ⌘-drag the dragged item may get stuck in the "pressed" state; post an extra mouse-up before clicking.
@@ -155,6 +157,17 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   (~0.4 s). The Frost Bar clicks as soon as the item has landed (`ItemMover.move(_:to:until: .itemLanded)`,
   `LandingDetector`): its menu still opens at the final position. Click-to-menu latency is measured with
   `scripts/vm/guest-click-latency.swift` and the per-forward `click forward of …` log line.
+- The user's own mouse during a ⌘-drag: `ItemMover` posts nothing if a button is down right before the mouse-down,
+  posts the mouse-up early when one goes down meanwhile (also a click between two polls, seen by the HID press count,
+  `UserMouseButtons.pressCount`; Frost's session-tap events don't count) and retries such an attempt without using up
+  `maxAttempts` (`MoveAttempts`). A ⌘-drag posted while a menu is open doesn't take effect and closes the menu
+  (measured: a menu the user opened right before a Frost Bar move back closed ~0.4 s later): moves that can wait pass
+  `yieldingToMenus` (never under a freeze frame, which covers menus). After a fallback to the section's edge, the Frost
+  Bar makes one corrective move into the slot (`RestorePlan.correction`). Time a click against a move back with
+  `scripts/vm/guest-moveback-click.swift`.
+- `@Observable` notifies on every assignment, equal or not: the scanner publishes `items` / `status` only when they
+  change, and the layout editor's `state` reads only what it shows (each notification re-renders the whole editor, a
+  30–70 ms hitch in the VM).
 - Views inside `.glassEffect` don't receive SwiftUI drops (put drop targets outside the glass layer).
 - Cooperative activation (macOS 14+): a forwarded click doesn't count as user intent, so the target app's polite
   `activate()` is refused, and transient popovers therefore don't close on outside clicks. After detecting a
