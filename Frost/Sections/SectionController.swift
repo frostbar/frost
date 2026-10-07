@@ -675,7 +675,18 @@ final class SectionController {
 
     @objc private func grantAccessibility() { permissions.requestAccessibility() }
 
-    @objc private func checkForUpdates() { model?.updates.checkForUpdates() }
+    /// "Check for Updates…" brings Settings → About forward first, so its "Last checked" row is in view next to
+    /// Sparkle's window when the check ends; "Update Available…" (the reminder) just brings the update window back.
+    @objc private func checkForUpdates() {
+        guard let model else { return }
+        guard model.updates.pendingUpdateVersion == nil else {
+            model.updates.checkForUpdates()
+            return
+        }
+        model.openSettings(tab: .about)
+        // On the next turn of the run loop, once the Settings window is ordered front: Sparkle's window opens above it.
+        Task { @MainActor in model.updates.checkForUpdates() }
+    }
 
     // MARK: - Snowflake replicas on other displays
 
