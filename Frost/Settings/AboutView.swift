@@ -71,10 +71,12 @@ struct AboutView: View {
         }
     }
 
-    /// "Last checked: today at 15:58" (the system's relative date style, in the user's language), or "Never checked".
+    /// "Last checked: today at 15:58" (the system's relative date style, in the language of Frost's UI with the user's
+    /// region settings, `UILocale`), or "Never checked".
     private static func lastCheckedText(_ date: Date?) -> String {
         guard let date else { return String(localized: "Never checked") }
         let formatter = DateFormatter()
+        formatter.locale = UILocale.app
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         formatter.doesRelativeDateFormatting = true
