@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/frostbar/frost/releases/latest"><img src="https://img.shields.io/github/v/release/frostbar/frost?label=download&color=2f7bf5" alt="Download the latest release"></a>
-  <img src="https://img.shields.io/badge/macOS-26%2B-black" alt="macOS 26 or later">
+  <img src="https://img.shields.io/badge/macOS-26-black" alt="macOS 26 (macOS 27 not supported yet)">
   <img src="https://img.shields.io/badge/notarized-Developer%20ID-success" alt="Signed with a Developer ID and notarized by Apple">
   <a href="https://github.com/frostbar/frost/actions/workflows/ci.yml"><img src="https://github.com/frostbar/frost/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/frostbar/frost" alt="MIT license"></a>
@@ -50,7 +50,8 @@ Screen Recording is optional and shows real images of the icons.
 
 ## Install
 
-Requires **macOS 26 Tahoe or later** (Apple silicon or Intel).
+Requires **macOS 26 Tahoe** (Apple silicon or Intel). **macOS 27 is not supported yet**: it changed how the menu bar
+works, and Frost can't hide or move icons there (see [Known limitations](#known-limitations)).
 
 1. Download **`Frost-<version>.dmg`** from the [latest release](https://github.com/frostbar/frost/releases/latest).
 2. Open it and drag **Frost** to **Applications** in Finder.
@@ -95,6 +96,9 @@ reopens the window you were in.
 
 ## Known limitations
 
+- **macOS 27 is not supported yet.** macOS 27 draws the whole menu bar in one system process, so Frost can no
+  longer see, hide or move icons. On macOS 27 Frost leaves the menu bar alone and says so in its menu and in
+  Settings → About (from 0.3.5). Support is being investigated.
 - With several displays, Frost manages the menu bar you last clicked; the other displays show macOS's copies of it.
 - macOS doesn't draw icons behind the notch, so Frost gets their images with a short background capture: while you
   aren't using the menu bar, it moves one such icon next to the snowflake under a still image of the menu bar and puts
