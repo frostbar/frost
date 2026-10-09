@@ -6,7 +6,7 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
-## [0.3.5] - 2026-10-08
+## [0.3.5] - 2026-10-09
 
 ### Changed
 - On macOS 27, which Frost doesn't support yet, Frost now leaves the menu bar alone and says so: it only adds the
