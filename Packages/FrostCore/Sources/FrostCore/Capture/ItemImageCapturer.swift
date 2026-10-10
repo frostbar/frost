@@ -376,10 +376,16 @@ public final class ItemImageCapturer {
         }
         // Held-back captures of items that stopped changing are written once their interval has passed.
         toSave += diskWrites.takeDue(now: .now)
-        // Prune by the status bar windows that still exist in the system (not by the given items), so capturing a
-        // subset does not clear other items' caches. Do not assign when nothing changed (the assignment itself
-        // notifies observers and makes Frost Bar redraw).
-        let existing = Set(StatusWindowParser.currentWindows().map(\.windowID))
+        // Prune by the items that still exist in the system (not by the given items), so capturing a subset does not
+        // clear other items' caches. Do not assign when nothing changed (the assignment itself notifies observers and
+        // makes Frost Bar redraw).
+        //
+        // On macOS 27 the window list is *empty* — there are no status windows at all — so pruning by it would drop
+        // every image on every round, right after capturing it. There, the items that exist are the ones the
+        // Accessibility scan reports.
+        let existing: Set<CGWindowID> = backend == .accessibility
+            ? Set(itemFrames().keys)
+            : Set(StatusWindowParser.currentWindows().map(\.windowID))
         if images.keys.contains(where: { !existing.contains($0) }) {
             images = images.filter { existing.contains($0.key) }
             tones = tones.filter { images[$0.key] != nil }
