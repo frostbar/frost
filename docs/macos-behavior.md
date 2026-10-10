@@ -633,3 +633,17 @@ hits and the framebuffer corroborated collapse. Neither that early sample nor a 
 The relayout is visible; no freeze-frame quietness is claimed. Only primary clicks were qualified in this correction.
 The return record keeps the existing UserDefaults format, with launch recovery and clear after observed placement;
 this is not a durable power-loss journal. Notched hardware and multiple displays remain unqualified on this backend.
+
+### Forwarding latency correction (2026-10-10)
+
+On the same SIP-on guest and seven-item Hidden arrangement, a before/after comparison reduced the visible expansion
+from 1.08–1.12 s per leg to 0.76–0.92 s across two final forwards. The click-forward trace fell from 1.386 s to
+0.977–0.997 s. These are observations under 25 fps VNC recording load, not latency guarantees or evidence of an
+invisible relayout. Both final forwards opened the native menu with the pointer on its moved icon, then restored the
+original revealed order, cleared the pending return and restored the hidden framebuffer baseline.
+
+The 27 path now snapshots own-control frames before changing divider lengths and uses the existing change-plus-stable
+detector instead of the general settle wait's minimum delay. That wait is pacing only; exact target hit tests and
+observed destination order remain required. Post-drag verification reads immediately and retains all ten observations
+with 150 ms between unsuccessful reads. The twenty travel events are spaced 10 ms apart instead of 15 ms; the down
+and pre-release waits are unchanged. The macOS 26 event and settle paths are unchanged.

@@ -119,7 +119,9 @@ extension FrostBarController {
         let baseline = ItemClicker.onscreenWindowIDs()
         do {
             try await sections.revealingForMove {
+                forwardTrace?.mark("revealed")
                 let item = try await settledAccessibilityItem(id)
+                forwardTrace?.mark("acquired")
                 guard let controls = sections.controlWindows,
                       let original = RestorePlan.make(for: id, in: app.layout, controls: controls)
                 else { throw FrostBarError.itemNotFound }
@@ -129,7 +131,9 @@ extension FrostBarController {
                 pending = identity
                 plan = original
                 try await app.mover.move(id, to: .rightOf(controls.icon), cursor: .onMovedItem)
+                forwardTrace?.mark("moved")
             }
+            forwardTrace?.mark("collapsed")
             let outcome = try await clickAndWait(id, click: click, strayBaseline: baseline, handOff: handOff,
                                                 resolve: { try await self.settledAccessibilityItem(id) },
                                                 perform: { item, kind in try await ItemClicker.clickVerified(item, kind: kind) })

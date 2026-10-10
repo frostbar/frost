@@ -667,8 +667,7 @@ final class SectionController {
     func revealingForMove<T>(_ body: () async throws -> T) async rethrows -> T {
         guard backend == .accessibility, !isRevealedForMove else { return try await body() }
         isRevealedForMove = true
-        applyLengths()
-        await waitForSettle()
+        await applyAccessibilityLengthsAndWait()
         scanner.rescan()
         do {
             let result = try await body()
@@ -684,9 +683,19 @@ final class SectionController {
     private func endRevealForMove() async {
         model?.rememberAccessibilityOrder()
         isRevealedForMove = false
-        applyLengths()
-        await waitForSettle()
+        await applyAccessibilityLengthsAndWait()
         scanner.rescan()
+    }
+
+    /// Observe the actual length change from its pre-change frames, without the general settle wait's minimum
+    /// delay. Already-narrow editing/placement needs no geometry wait. This is pacing only: callers still have
+    /// to reacquire and hit-test the exact item before input, and observe the resulting order after a move.
+    private func applyAccessibilityLengthsAndWait() async {
+        let baseline = statusFrames()
+        let lengths = [hidden?.item.length, alwaysHidden?.item.length]
+        applyLengths()
+        guard lengths != [hidden?.item.length, alwaysHidden?.item.length] else { return }
+        _ = await waitForFastSettle(baseline: baseline, timeout: .milliseconds(500))
     }
 
     /// Whether the dividers are currently held narrow for a move (`revealingForMove`).

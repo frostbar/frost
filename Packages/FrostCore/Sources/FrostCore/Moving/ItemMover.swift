@@ -378,8 +378,8 @@ public final class ItemMover {
                 """)
             var satisfied = false
             var landed: CGRect?
-            for _ in 0..<Self.directVerifyPolls {
-                try? await Task.sleep(for: Self.directVerifyInterval)
+            for poll in 0..<Self.directVerifyPolls {
+                if poll > 0 { try? await Task.sleep(for: Self.directVerifyInterval) }
                 await axRefresh()
                 let current = Self.frames(of: axItems())
                 landed = current[itemID]
@@ -441,8 +441,8 @@ public final class ItemMover {
         await Task.detached { AXExtrasReader.isItemAt(point, pid: pid, identityKey: identityKey) }.value
     }
 
-    /// How often and how long the order is read back after a direct drag (an Accessibility read takes about 100 ms
-    /// per app, so this is slow on purpose: the item has to be seen in its slot, not assumed to be).
+    /// Read the order immediately after the drag; only an unsuccessful observation waits before the next read.
+    /// Retain all ten observations and their spacing so slow layout updates still have the same retry allowance.
     nonisolated static let directVerifyInterval: Duration = .milliseconds(150)
     nonisolated static let directVerifyPolls = 10
 
@@ -499,7 +499,7 @@ public final class ItemMover {
             let point = CGPoint(x: mouseDown.x + (mouseUp.x - mouseDown.x) * t,
                                 y: mouseDown.y + (mouseUp.y - mouseDown.y) * t)
             event(.leftMouseDragged, point)?.post(tap: .cgSessionEventTap)
-            usleep(15_000)
+            usleep(10_000)
         }
         // The pause before the mouse-up lets the item settle where it was dropped. Not when the user's own input cut
         // the drag short: the synthetic button is still down, so waiting here would let their movement carry the
