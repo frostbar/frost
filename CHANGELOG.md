@@ -6,6 +6,20 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-11
+
+### Fixed
+- On macOS 27, section dividers now hide the configured icons within their bounded capacity, and the Frost Bar
+  shows the icons assigned to Hidden (and Always Hidden with Option-click).
+- Clicking a hidden icon in the macOS 27 Frost Bar now moves it beside the snowflake, leaves the pointer on it and
+  opens its native menu. After the menu closes and the pointer leaves, the icon returns to its original slot.
+- Clicking the snowflake again on macOS 27 closes the Frost Bar instead of immediately reopening it.
+
+### Changed
+- Reduced the time spent rearranging the macOS 27 menu bar during click forwarding. Its temporary expansion is
+  still visible; macOS 26 keeps its existing behavior.
+- Updated the macOS 27 demo to show a single snowflake click followed by opening an icon's menu and returning it.
+
 ## [0.4.0] - 2026-10-10
 
 ### Added
