@@ -266,4 +266,15 @@ import CoreGraphics
         // The transparent border is preserved (the alpha channel is copied as is).
         #expect(GlyphPixels(copy.image)?.opaque == 8 * 4)
     }
+
+    /// On a backend that can only refresh by expanding the menu bar *visibly* (`MenuBarBackend.accessibility`: there
+    /// is no per-item window to build a freeze frame from, so the expansion is the bar changing), the cycle never
+    /// runs — repeating it once a second is a visible flicker. Captures still happen when the panel opens and while
+    /// the layout editor is open.
+    @Test func theCycleNeverRunsWhereAnExpansionWouldBeVisible() {
+        #expect(LiveRefreshPolicy.skipReason(.init(canExpandInvisibly: false)) == .expandsVisibly)
+        #expect(LiveRefreshPolicy.skipReason(.init(canExpandInvisibly: true)) == nil)
+        // …and it takes precedence over the other conditions, so the reason logged is the real one.
+        #expect(LiveRefreshPolicy.skipReason(.init(isPanelOpen: false, canExpandInvisibly: false)) == .expandsVisibly)
+    }
 }

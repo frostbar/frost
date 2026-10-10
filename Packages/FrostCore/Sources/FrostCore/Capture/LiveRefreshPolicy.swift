@@ -66,12 +66,16 @@ public enum LiveRefreshPolicy {
         /// There are items worth expanding for (the panel has items, and not all of them are items that still cannot
         /// be captured after expanding; see `CaptureRetryPolicy`).
         public var hasCapturableItems: Bool
+        /// Whether this backend can expand the menu bar without the user seeing it (`MenuBarBackend`): only the
+        /// window-based one can. See `skipReason`.
+        public var canExpandInvisibly: Bool
 
         public init(isPanelOpen: Bool = true, hasPermissions: Bool = true, isActivationInFlight: Bool = false,
                     isMoveInFlight: Bool = false, isMouseButtonPressed: Bool = false, isMenuOnScreen: Bool = false,
                     isForwardedPresentationOnScreen: Bool = false, isEditing: Bool = false,
                     isCollapsed: Bool = true, isPointerOverChangingMenuBar: Bool = false,
-                    hasCapturableItems: Bool = true) {
+                    hasCapturableItems: Bool = true, canExpandInvisibly: Bool = true) {
+            self.canExpandInvisibly = canExpandInvisibly
             self.isPanelOpen = isPanelOpen
             self.hasPermissions = hasPermissions
             self.isActivationInFlight = isActivationInFlight
@@ -90,10 +94,19 @@ public enum LiveRefreshPolicy {
     public enum SkipReason: String, Sendable, CaseIterable {
         case panelClosed, permissionsMissing, activation, move, editing, notCollapsed, mouseDown, menuOpen,
              presentationOpen, pointerInMenuBar, nothingToCapture
+        /// The backend can't refresh without the user seeing it (`MenuBarBackend.accessibility`).
+        case expandsVisibly
     }
 
     /// nil = the cycle may run.
     public static func skipReason(_ c: Conditions) -> SkipReason? {
+        // The cycle works by *expanding the menu bar* under a freeze frame, capturing, and collapsing again. On macOS
+        // 26 the freeze frame is a screenshot of the bar taken through the status item windows, which hides that
+        // completely. On macOS 27 there are no such windows and the expansion simply *is* the bar changing — the
+        // icons the bar wasn't drawing appear and go again — so repeating it once a second is a visible flicker,
+        // which is worth less than the fresher images it would buy. Captures still happen when the panel opens and
+        // while the layout editor is open.
+        if !c.canExpandInvisibly { return .expandsVisibly }
         if !c.isPanelOpen { return .panelClosed }
         if !c.hasPermissions { return .permissionsMissing }
         if c.isActivationInFlight { return .activation }

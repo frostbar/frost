@@ -86,7 +86,10 @@ extension FrostBarController {
             isEditing: sections.isEditing,
             isCollapsed: sections.state == .collapsed,
             isPointerOverChangingMenuBar: isPointerOverChangingMenuBar(),
-            hasCapturableItems: !ids.isEmpty && !retryPolicy.expandable(ids, in: captureContext()).isEmpty)
+            hasCapturableItems: !ids.isEmpty && !retryPolicy.expandable(ids, in: captureContext()).isEmpty,
+            // Only the window-based backend can expand the bar out of sight; on macOS 27 a round would simply show
+            // the user the icons appearing and going again (`LiveRefreshPolicy.SkipReason.expandsVisibly`).
+            canExpandInvisibly: app.backend == .windowList)
         return LiveRefreshPolicy.skipReason(conditions)
     }
 
