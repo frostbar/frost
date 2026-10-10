@@ -6,10 +6,13 @@ import Observation
 @Observable
 @MainActor
 final class AppModel {
-    /// Whether Frost manages the menu bar on this macOS version (`PlatformSupport`, `UnsupportedOS`). When it doesn't,
-    /// Frost leaves the menu bar alone: only the snowflake is created (it shows a notice), and nothing scans, moves,
+    /// How the menu bar is managed on this macOS version (`PlatformSupport`, `RunningOS`). With `.noticeOnly` Frost
+    /// leaves the menu bar alone: only the snowflake is created (it shows a notice), and nothing scans, moves,
     /// captures or places items; Settings shows the notice and updates keep working.
-    let isMenuBarSupported: Bool
+    let backend: MenuBarBackend
+
+    /// Whether Frost manages the menu bar at all in this process.
+    var isMenuBarSupported: Bool { backend.managesMenuBar }
     let preferences: Preferences
     let permissions: PermissionsService
     let scanner: MenuBarItemScanner
@@ -68,23 +71,38 @@ final class AppModel {
         obscuredItemsChanged()
     }
 
-    init(isMenuBarSupported: Bool) {
-        self.isMenuBarSupported = isMenuBarSupported
+    init(backend: MenuBarBackend) {
+        self.backend = backend
         preferences = Preferences()
         permissions = PermissionsService()
-        scanner = MenuBarItemScanner()
+        // Screen Recording buys nothing on a macOS where Frost has no captures (`RunningOS.usesScreenRecording`), and
+        // a user may arrive with the grant already given: without this the macOS 26 capture and freeze-frame paths
+        // would run against the macOS 27 backend's synthesized window IDs.
+        permissions.capturesSupported = backend == .windowList
+        scanner = MenuBarItemScanner(source: backend == .accessibility ? .accessibility : .windowList)
         capturer = ItemImageCapturer()
         mover = ItemMover(scanner: scanner)
-        sections = SectionController(preferences: preferences, permissions: permissions, scanner: scanner)
+        // macOS 27 has no per-item windows and no `0x33` routing, so a move ⌘-drags the item itself from its own
+        // verified center (`ItemMover.Mechanism.directOnTarget`); the order and geometry come from Accessibility.
+        mover.mechanism = backend == .accessibility ? .directOnTarget : .windowIDRouting
+        sections = SectionController(preferences: preferences, permissions: permissions, scanner: scanner,
+                                     backend: backend)
         presence = UserPresenceMonitor()
+        // Moving an item that belongs to another app needs the ⌘-drag routing of macOS 26 (`ItemMover`); on 27 the
+        // section memory still describes the layout, but nothing moves items between sections.
         newItems = NewItemPlacer(scanner: scanner, mover: mover, sections: sections, permissions: permissions,
-                                 preferences: preferences, presence: presence)
+                                 preferences: preferences, presence: presence,
+                                 canMoveItems: backend == .windowList)
         updates = UpdateController()
         sections.model = self
         mover.controlWindows = { [weak sections] in sections?.controlWindows }
         mover.syntheticDragActive = { [weak sections] active in sections?.suppressIconHighlight(active) }
         scanner.ownWindowIDs = { [weak sections] in sections?.controlWindows?.all ?? [] }
         scanner.controlFrames = { [weak sections] in sections?.controlFrames }
+        // macOS 27: Frost's own items are the only ones with windows, so the scanner is told where they are.
+        scanner.ownItems = { [weak sections] in sections?.ownItems() ?? [] }
+        mover.axItems = { [weak scanner] in scanner?.items ?? [] }
+        mover.axRefresh = { [weak scanner] in await scanner?.refreshOwnership() }
         capturer.menuBarDisplayID = { [weak scanner] in scanner?.menuBarDisplay?.id ?? CGMainDisplayID() }
         capturer.capturesInvalidated = { [weak self] in self?.capturesInvalidated() }
     }
@@ -92,7 +110,13 @@ final class AppModel {
     /// Menu bar items in each of the three sections (left to right). Empty when the Frost control items are missing.
     var layout: MenuBarLayout {
         guard let controls = sections.controlWindows else { return [:] }
-        return SectionAssigner.layout(of: scanner.items, controls: controls)
+        guard backend == .accessibility else {
+            return SectionAssigner.layout(of: scanner.items, controls: controls)
+        }
+        // macOS 27: the sections are what the user arranged (`ArrangedLayout`, from `ItemMemoryStore`), not
+        // something read from the bar — see that type for why geometry cannot answer this.
+        return ArrangedLayout.layout(of: scanner.items, own: controls.all,
+                                     remembered: { [newItems] in newItems.rememberedSection(of: $0) })
     }
 
     /// Opens the settings window. A nil `tab` keeps the window's current (or initial) tab.
@@ -109,7 +133,7 @@ final class AppModel {
         // Fully expanded, every item should be on screen; expanded, the Always Hidden items are pushed out by their
         // separator, so only items under the notch count.
         noteExpandedScan(expected: sections.state == .expandedAll ? Set(scanner.items.map(\.windowID)) : nil)
-        guard opportunisticCapture == nil, permissions.screenRecording, !ItemClicker.isMenuOnScreen() else { return }
+        guard opportunisticCapture == nil, permissions.canCaptureImages, !ItemClicker.isMenuOnScreen() else { return }
         let layout = layout
         let shown = layout[.hidden, default: []]
             + (sections.state == .expandedAll ? layout[.alwaysHidden, default: []] : [])

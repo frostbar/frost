@@ -27,16 +27,38 @@ final class OutsideClickFallback {
     private var sentEscape = false
     private var stopped = false
 
+    /// How the item's frame is re-read (an app may change its icon while the presentation is open) and how it is
+    /// clicked again to toggle the presentation closed. The defaults are the macOS 26 ones: the item's window frame
+    /// from the window list, and a HID click at it. macOS 27 passes its own — there is no window to read, and the
+    /// item is pressed through Accessibility.
+    typealias Refresh = (MenuBarItem) -> MenuBarItem
+    typealias Toggle = (MenuBarItem) async -> Void
+
     /// Returns nil when not applicable (unknown owner, Apple system item). `baseline` is the on-screen windows before
     /// the click.
-    init?(item: MenuBarItem, baseline: Set<CGWindowID>) {
+    init?(item: MenuBarItem, baseline: Set<CGWindowID>, refresh: Refresh? = nil, toggle: Toggle? = nil) {
         guard OutsideClickDismissal.applies(ownerPID: item.pid, bundleID: item.bundleID), let pid = item.pid
         else { return nil }
         self.item = item
         self.pid = pid
         self.baseline = baseline
         owner = NSRunningApplication(processIdentifier: pid)
+        self.refresh = refresh ?? { item in
+            guard let window = StatusWindowParser.windows(withIDs: [item.windowID]).first else { return item }
+            return item.with(frame: window.frame, isOnScreen: window.isOnScreen)
+        }
+        self.toggle = toggle ?? { item in
+            do {
+                // Same HID click path as the forwarded click (not AXPress).
+                try await ItemClicker.click(item, forceEvent: true)
+            } catch {
+                FrostLog.activation.error("toggle click failed: \(error, privacy: .public)")
+            }
+        }
     }
+
+    private let refresh: Refresh
+    private let toggle: Toggle
 
     var hooks: NonMenuPresentationHooks {
         NonMenuPresentationHooks(presented: { windows in await self.arm(presentation: windows) },
@@ -108,12 +130,7 @@ final class OutsideClickFallback {
                     inactive; clicking the item to toggle it closed
                     """)
             }
-            do {
-                // Same HID click path as the forwarded click (not AXPress).
-                try await ItemClicker.click(currentItem(), forceEvent: true)
-            } catch {
-                FrostLog.activation.error("toggle click failed: \(error, privacy: .public)")
-            }
+            await toggle(currentItem())
             return false
         case .giveUp:
             FrostLog.activation.notice("presentation of item \(self.item.windowID) did not close; restoring the icon anyway")
@@ -121,11 +138,6 @@ final class OutsideClickFallback {
         }
     }
 
-    /// The item's current frame (an app may change its icon width while the presentation is open); falls back to the
-    /// frame at click time when it can't be read.
-    private func currentItem() -> MenuBarItem {
-        guard let window = StatusWindowParser.windows(withIDs: [item.windowID]).first
-        else { return item }
-        return item.with(frame: window.frame, isOnScreen: window.isOnScreen)
-    }
+    /// The item as it is now (`refresh`; the frame at click time when it can't be re-read).
+    private func currentItem() -> MenuBarItem { refresh(item) }
 }

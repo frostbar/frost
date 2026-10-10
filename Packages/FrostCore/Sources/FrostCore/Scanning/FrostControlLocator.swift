@@ -15,11 +15,19 @@ public enum FrostControlLocator {
     public static let tolerance: CGFloat = 2
 
     /// Returns a result when all three are found; nil if any has neither a frame match nor a title match.
+    ///
+    /// `titles` are the autosave names the items were created with. macOS 27 uses its own names
+    /// (`SectionController.accessibilityHiddenAutosaveName` and its neighbours), and the frame fallback is weaker
+    /// there — a divider held as a thin line reports an Accessibility frame that differs from its window's — so the
+    /// names have to be the ones in use, or Frost's own items end up looking like ordinary menu bar icons.
     public static func locate(in items: [MenuBarItem], iconFrame: CGRect?, hiddenFrame: CGRect?,
-                              alwaysHiddenFrame: CGRect?) -> FrostControlWindows? {
-        guard let icon = find(in: items, frame: iconFrame, title: iconTitle),
-              let hidden = find(in: items, frame: hiddenFrame, title: hiddenSeparatorTitle),
-              let alwaysHidden = find(in: items, frame: alwaysHiddenFrame, title: alwaysHiddenSeparatorTitle)
+                              alwaysHiddenFrame: CGRect?,
+                              titles: (icon: String, hidden: String, alwaysHidden: String)
+                                  = (iconTitle, hiddenSeparatorTitle, alwaysHiddenSeparatorTitle))
+        -> FrostControlWindows? {
+        guard let icon = find(in: items, frame: iconFrame, title: titles.icon),
+              let hidden = find(in: items, frame: hiddenFrame, title: titles.hidden),
+              let alwaysHidden = find(in: items, frame: alwaysHiddenFrame, title: titles.alwaysHidden)
         else { return nil }
         return FrostControlWindows(icon: icon, hiddenSeparator: hidden, alwaysHiddenSeparator: alwaysHidden)
     }

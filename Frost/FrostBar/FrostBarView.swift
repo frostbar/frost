@@ -18,6 +18,9 @@ struct FrostBarState {
         case ready
     }
 
+    /// Whether the footer may say how many icons are shown. macOS 27 can't tell which icons the bar draws
+    /// (`AXSectionAssigner`), so the panel shows icons without ever counting them as "hidden".
+    var showsItemCount: Bool = true
     var phase: Phase
     /// The Always Hidden section (left to right, below the Hidden section) when opened with Option, empty otherwise.
     var alwaysHidden: [MenuBarItem]
@@ -387,6 +390,9 @@ struct FrostBarContent: View {
     }
 
     private var summary: String {
+        // macOS 27: without Screen Recording Frost can't tell which icons the bar draws, so the panel lists them
+        // without claiming how many of them are hidden.
+        guard state.showsItemCount else { return String(localized: "Menu bar icons") }
         let hidden = state.hidden.count, always = state.alwaysHidden.count
         if always == 0 { return String(localized: "\(hidden) hidden icons") }
         if hidden == 0 { return String(localized: "\(always) always-hidden icons") }

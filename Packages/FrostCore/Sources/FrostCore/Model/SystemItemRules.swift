@@ -15,16 +15,34 @@ public enum SystemItemRules {
     public static let controlCenterBundleID = "com.apple.controlcenter"
     public static let clockIdentifier = "com.apple.menuextra.clock"
     public static let controlCenterIdentifier = "com.apple.menuextra.controlcenter"
+    /// On macOS 27 `MenuBarAgent` draws the whole bar and reports the extras it owns itself: the clock, the Control
+    /// Center button and the overflow chevron, none of which can be moved or hidden by anyone else.
+    public static let menuBarAgentBundleID = "com.apple.MenuBarAgent"
     static let fixedIdentifiers: Set<String> = [clockIdentifier, controlCenterIdentifier]
 
     /// Whether an item with these attributes is fixed by the system. `bundleID == nil` means the owner is unresolved:
     /// it might be Control Center.
     public static func isFixed(bundleID: String?, axIdentifier: String?, windowTitle: String,
                                occupiesSystemSlot: Bool) -> Bool {
-        guard bundleID == controlCenterBundleID || bundleID == nil else { return false }
+        guard bundleID == controlCenterBundleID || bundleID == menuBarAgentBundleID || bundleID == nil
+        else { return false }
+        // Everything the bar's own process owns is fixed: on 27 that is the clock, the Control Center button and the
+        // overflow chevron. They never describe themselves the way Control Center's items do on 26, so the checks
+        // below can't tell them apart — the owner itself does.
+        if bundleID == menuBarAgentBundleID { return true }
         if let axIdentifier, !axIdentifier.isEmpty { return fixedIdentifiers.contains(axIdentifier) }
         if !windowTitle.isEmpty { return windowTitle == "Clock" || windowTitle.hasPrefix("BentoBox") }
         return occupiesSystemSlot
+    }
+
+    /// Whether the item is macOS 27's overflow chevron.
+    ///
+    /// The bar's own process owns it, and — unlike the clock and the Control Center button, which have neither an
+    /// identifier, a description nor a title — it describes itself ("Show Hidden Menu Bar Items"). That is what tells
+    /// the three apart: the chevron sits at the *left* end of the trailing area, so treating it as one of the
+    /// trailing system items would put Frost's snowflake at the far left instead of next to Control Center.
+    public static func isOverflowChevron(bundleID: String?, axDescription: String?) -> Bool {
+        bundleID == menuBarAgentBundleID && !(axDescription ?? "").isEmpty
     }
 
     /// The window IDs of the two trailing on-screen windows of the managed menu bar (largest right edge), excluding

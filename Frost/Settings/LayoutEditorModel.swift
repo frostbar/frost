@@ -152,7 +152,7 @@ final class LayoutEditorModel {
         let permissions = model.permissions
         // Show every item's disk-cached capture (the launch warm-up has usually loaded them already; anything else is
         // read off the main thread); items pushed off screen can't be captured until the menu bar has expanded.
-        if permissions.screenRecording {
+        if permissions.canCaptureImages {
             let capturer = model.capturer, items = model.scanner.items
             Task {
                 await capturer.preloadCached(items)
@@ -279,10 +279,15 @@ final class LayoutEditorModel {
         // shrink, the system briefly places items on the other side of a separator (on a notched Mac the first
         // hidden item was classified Always Hidden for ~0.4 s and visibly slid there and back). Show the snapshot
         // taken before editing until then.
-        var layout = hasSettled || previous.isEmpty
-            ? LayoutReconciler.reconcile(live: model.layout, previous: previous,
-                                         separatorsOnScreen: separatorsOnScreen)
-            : previous
+        // macOS 27: `model.layout` is already the arrangement the user set (read from the item memory, not from
+        // separator geometry), so it needs no reconciling — the sections are what Frost was told, and merging them
+        // with a snapshot taken from positions would put icons back into bands the user moved them out of.
+        var layout = model.backend == .accessibility
+            ? model.layout
+            : (hasSettled || previous.isEmpty
+                ? LayoutReconciler.reconcile(live: model.layout, previous: previous,
+                                             separatorsOnScreen: separatorsOnScreen)
+                : previous)
         guard !layout.isEmpty else { return layout }
         for move in optimisticMoves {
             layout = LayoutReconciler.moving(move.id, to: move.section, at: move.index, in: layout)
@@ -339,8 +344,10 @@ final class LayoutEditorModel {
             isRetrying: phase.isFailure && isActive && fullRefreshSession == session,
             permissions: .init(accessibility: model.permissions.accessibility,
                                screenRecording: model.permissions.screenRecording,
+                               canCaptureImages: model.permissions.canCaptureImages,
                                screenRecordingNeedsRelaunch: model.permissions.screenRecordingNeedsRelaunch),
-            showsScreenRecordingHint: model.preferences.showsScreenRecordingHint(model.permissions.capabilities))
+            showsScreenRecordingHint: model.preferences.showsScreenRecordingHint(model.permissions.capabilities),
+            sectionsComeFromArrangement: model.backend == .accessibility)
     }
 
     // MARK: - Refreshing
@@ -373,7 +380,7 @@ final class LayoutEditorModel {
         guard self.session == session, isActive, pending.isEmpty else { return }
         commitLayout()
         // Owners just resolved (e.g. items pushed off screen since launch): show their disk-cached images first.
-        if model.permissions.screenRecording { await model.capturer.preloadCached(model.scanner.items) }
+        if model.permissions.canCaptureImages { await model.capturer.preloadCached(model.scanner.items) }
         #if DEBUG
         FrameProbe.note("preloaded")
         #endif
@@ -386,7 +393,7 @@ final class LayoutEditorModel {
     /// Some displayed item has an unknown owner, or is on screen without an image (e.g. a just-launched app's icon):
     /// a cheap refresh can't fix that, a full refresh is needed.
     private var needsFullRefresh: Bool {
-        let canCapture = model.permissions.screenRecording
+        let canCapture = model.permissions.canCaptureImages
         return layout.values.joined().contains { item in
             item.bundleID == nil || (canCapture && item.isOnScreen && model.capturer.images[item.windowID] == nil)
         }
@@ -406,7 +413,7 @@ final class LayoutEditorModel {
         if hasSettled, !model.mover.isBusy, model.sections.isEditing {
             model.noteExpandedScan(expected: Set(model.scanner.items.map(\.windowID)))
         }
-        guard model.permissions.screenRecording else { return }
+        guard model.permissions.canCaptureImages else { return }
         let items = model.scanner.items.filter(\.isOnScreen)
         let targets = all ? items : model.capturer.missing(items)
         guard !targets.isEmpty else { return }
@@ -475,7 +482,27 @@ final class LayoutEditorModel {
         var succeeded = false
         do {
             try await mover.transaction {
-                if needsCollapse {
+                if sections.backend == .accessibility {
+                    // macOS 27: the ⌘-drag starts on the item itself, so it has to be drawn — a hidden item keeps
+                    // reporting the frame it had before it left the bar. Everything is revealed for the duration of
+                    // the move (and the destination is computed against what the user sees), then the section state
+                    // is restored.
+                    try await sections.revealingForMove {
+                        // The remembered arrangement is what the user dropped into, so the same drop is resolved
+                        // again against it — with the item frames just refreshed, so the neighbour it names is the
+                        // one the bar has now. Resolving against separator geometry instead would put the icon next
+                        // to a band the user never saw (`AppModel.layout` on 27 is the arrangement, not the bar).
+                        await model.scanner.refreshOwnership()
+                        guard let controls = sections.controlWindows else { return }
+                        let live = DropResolver.destination(dragging: item, to: section, index: index,
+                                                            layout: model.layout, controls: controls)
+                        guard let live else {
+                            FrostLog.layout.notice("drop of \(windowID) needs no move in the revealed bar")
+                            return
+                        }
+                        try await mover.move(windowID, to: live)
+                    }
+                } else if needsCollapse {
                     try await sections.whileCollapsedForMove { try await mover.move(windowID, to: destination) }
                 } else {
                     try await mover.move(windowID, to: destination)
@@ -510,7 +537,7 @@ final class LayoutEditorModel {
         await capture(all: false)
         // The moved item's image position changed (it may have just left the notch area): capture it separately.
         if let moved = model.scanner.items.first(where: { $0.windowID == windowID && $0.isOnScreen }),
-           model.permissions.screenRecording {
+           model.permissions.canCaptureImages {
             await model.capturer.capture([moved])
         }
     }
@@ -576,6 +603,9 @@ struct LayoutEditorState {
     struct Permissions: Equatable {
         var accessibility: Bool
         var screenRecording: Bool
+        /// Whether Screen Recording buys anything here (`PermissionCapabilities.canCaptureImages`): it does not on a
+        /// macOS where Frost has no captures.
+        var canCaptureImages: Bool
         /// Screen Recording was requested and takes effect after a relaunch.
         var screenRecordingNeedsRelaunch = false
     }
@@ -608,6 +638,9 @@ struct LayoutEditorState {
     var permissions: Permissions
     /// Accessibility is granted but Screen Recording isn't, and the user hasn't closed the hint.
     var showsScreenRecordingHint = false
+    /// Whether the three bands are the arrangement Frost was told (`MenuBarBackend.accessibility`), rather than
+    /// something read from the menu bar: the footer then says so instead of implying Frost knows what is hidden.
+    var sectionsComeFromArrangement = false
 }
 
 /// Actions sent by the editor view.

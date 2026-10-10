@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         FrostLog.app.notice("Frost \(version, privacy: .public) launched")
-        let model = AppModel(isMenuBarSupported: UnsupportedOS.isMenuBarSupported)
+        let model = AppModel(backend: RunningOS.backend)
         self.model = model
         model.showSettings = { [unowned model] tab in SettingsWindowController.show(model: model, tab: tab) }
         let menus = MainMenu.make(target: self)
@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `hasCompletedOnboarding` stays as it is for that release.
     private func startUnsupported(_ model: AppModel, menus: (menu: NSMenu, windowsMenu: NSMenu)) {
         FrostLog.app.notice("""
-            macOS \(UnsupportedOS.versionDescription, privacy: .public) isn't supported: leaving the menu bar alone \
+            macOS \(RunningOS.versionDescription, privacy: .public) isn't supported: leaving the menu bar alone \
             (snowflake only)
             """)
         model.openOnboarding = { [unowned model] in model.openSettings(tab: .about) }

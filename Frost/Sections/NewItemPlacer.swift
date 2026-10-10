@@ -27,6 +27,10 @@ import Observation
 /// user won't be disturbed: collapsed, user present, the Frost Bar closed and not forwarding a click (`isPaused`).
 /// Retries later when moving isn't convenient (checked again before each item of a batch); a failed move is only logged
 /// (no retries).
+///
+/// On macOS 27 it does none of this: moving a third-party item needs a ⌘-drag aimed at that item (`MenuBarBackend`),
+/// which is not available there, so the remembered sections can only describe where items are, never change it
+/// (`evaluate` returns at once).
 @MainActor
 final class NewItemPlacer {
     private let scanner: MenuBarItemScanner
@@ -35,6 +39,8 @@ final class NewItemPlacer {
     private let permissions: PermissionsService
     private let preferences: Preferences
     private let presence: UserPresenceMonitor
+    /// Whether Frost may move items that belong to other apps (`MenuBarBackend`): 26 only.
+    private let canMoveItems: Bool
 
     /// Called by SectionController when it first writes the AH seed.
     static func markFirstRun(defaults: UserDefaults) {
@@ -66,7 +72,9 @@ final class NewItemPlacer {
     var isPaused: () -> Bool = { false }
 
     init(scanner: MenuBarItemScanner, mover: ItemMover, sections: SectionController, permissions: PermissionsService,
-         preferences: Preferences, presence: UserPresenceMonitor, defaults: UserDefaults = .standard) {
+         preferences: Preferences, presence: UserPresenceMonitor, canMoveItems: Bool = true,
+         defaults: UserDefaults = .standard) {
+        self.canMoveItems = canMoveItems
         self.scanner = scanner
         self.mover = mover
         self.sections = sections
@@ -143,15 +151,20 @@ final class NewItemPlacer {
         // decision when any of these change.
         guard scanner.status == .ok, !sections.isEditing, !presence.isAway,
               let controls = sections.controlWindows else { return }
+        // Identity migration runs here on every backend: it moves remembered sections written under an earlier key
+        // format (`IdentityMigration`) to the items' current identities, and on macOS 27 that memory is the only
+        // thing the sections are read from — skipping it would show a user's arranged icons as Visible after an
+        // upgrade. Only the *moves* below are macOS 26 only.
+        let layout = SectionAssigner.layout(of: scanner.items, controls: controls)
+        guard !layout.isEmpty else { return }
+        store.migrateIdentities(scanner.items)
+        guard canMoveItems else { return }
         guard !mover.isBusy, !UserMouseButtons.isAnyHeld, !isPaused() else {
             // Not a good time to look or move (another move transaction running, mouse held down, the Frost Bar open):
             // check again later.
             schedule(after: Self.retryDelay)
             return
         }
-        let layout = SectionAssigner.layout(of: scanner.items, controls: controls)
-        guard !layout.isEmpty else { return }
-        store.migrateIdentities(scanner.items)
         let collapsed = sections.state == .collapsed
         var placements: [Placement] = []
 
@@ -227,6 +240,18 @@ final class NewItemPlacer {
     }
 
     /// The user dropped `item` into `section` in the layout editor and the move succeeded: remember it.
+    /// The section the user keeps `item` in, as remembered from an earlier drop (`ItemMemoryStore`); nil when
+    /// Frost has never been told. This is the only source of the sections on macOS 27, where the bar itself doesn't
+    /// report which icons it draws.
+    func rememberedSection(of item: MenuBarItem) -> MenuBarSection? {
+        guard let identity = item.identity else { return nil }
+        return store.keeper.memory[identity]
+    }
+
+    /// Whether anything has been arranged yet (`rememberedSection` returns nil for everything until the user drags
+    /// an icon, or a macOS 26 run recorded sections).
+    var hasRememberedSections: Bool { !store.keeper.memory.isEmpty }
+
     func recordDrop(_ item: MenuBarItem, in section: MenuBarSection) {
         guard store.record(item, in: section, among: scanner.items) else {
             FrostLog.newItems.notice("""

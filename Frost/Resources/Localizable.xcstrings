@@ -504,6 +504,17 @@
         }
       }
     },
+    "Frost needs Accessibility to read and move your menu bar icons." : {
+      "comment" : "Onboarding subtitle on macOS 27, where Screen Recording is not offered because Frost does not capture there",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frost 需要「辅助功能」权限来读取和移动你的菜单栏图标。"
+          }
+        }
+      }
+    },
     "Frost needs Accessibility; Screen Recording is optional." : {
       "localizations" : {
         "zh-Hans" : {
@@ -744,6 +755,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "菜单栏"
+          }
+        }
+      }
+    },
+    "Menu bar icons" : {
+      "comment" : "Frost Bar footer on macOS 27: the panel lists the menu bar icons without saying how many of them are hidden",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "菜单栏图标"
           }
         }
       }
@@ -1178,6 +1200,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系统没有返回任何菜单栏图标。\nFrost 会自动重试；若一直如此，请尝试重新启动 Frost。"
+          }
+        }
+      }
+    },
+    "This version of macOS decides how many icons the menu bar shows, so Frost keeps the arrangement you set here rather than reporting which icons are hidden." : {
+      "comment" : "Layout editor footer on macOS 27: the sections are the user\u2019s arrangement, and the menu bar itself decides how many icons fit",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本的 macOS 自行决定菜单栏显示多少个图标，因此 Frost 只保留你在这里设置的排列，不会报告哪些图标被隐藏。"
           }
         }
       }

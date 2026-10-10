@@ -144,6 +144,14 @@ struct LayoutEditorContent: View {
             } icon: {
                 Image(systemName: "lightbulb")
             }
+            if state.sectionsComeFromArrangement {
+                // macOS 27: the sections are what the user arranged, and the bar itself decides how many icons fit.
+                Label {
+                    Text("This version of macOS decides how many icons the menu bar shows, so Frost keeps the arrangement you set here rather than reporting which icons are hidden.")
+                } icon: {
+                    Image(systemName: "info.circle")
+                }
+            }
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
@@ -683,10 +691,10 @@ private struct UnsupportedOSPlaceholder: View {
                 .foregroundStyle(.orange)
                 .accessibilityHidden(true)
             VStack(spacing: 6) {
-                Text(UnsupportedOS.title)
+                Text(RunningOS.title)
                     .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
-                Text(UnsupportedOS.detail)
+                Text(RunningOS.detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -714,7 +722,7 @@ private struct PermissionPlaceholder: View {
             VStack(spacing: 16) {
                 HStack(spacing: 18) {
                     status("Accessibility", granted: permissions.accessibility)
-                    status("Screen Recording (optional)", granted: permissions.screenRecording)
+                    status("Screen Recording (optional)", granted: permissions.canCaptureImages)
                 }
                 Button("Grant Access", action: grant)
                     .buttonStyle(.borderedProminent)

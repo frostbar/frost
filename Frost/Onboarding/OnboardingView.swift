@@ -13,6 +13,9 @@ struct OnboardingState: Equatable {
     /// (`PermissionsService.isScreenRecordingPromptPending`): the user hasn't decided yet, so the card waits instead of
     /// asking for a relaunch underneath the prompt.
     var screenRecordingPromptPending = false
+    /// Whether Screen Recording is worth offering here (`RunningOS.usesScreenRecording`): not on a macOS where Frost
+    /// cannot capture, where the card would promise images that never appear.
+    var usesScreenRecording = true
     /// First run with existing icons in the Always Hidden section: once Accessibility is granted they are moved to the
     /// Hidden section automatically (see `NewItemPlacer`).
     var firstRunPlacementPending = false
@@ -67,6 +70,7 @@ struct OnboardingRootView: View {
         var state = OnboardingState(accessibility: permissions.accessibility,
                                     screenRecording: permissions.screenRecording,
                                     screenRecordingRequested: permissions.screenRecordingRequested,
+                                    usesScreenRecording: RunningOS.usesScreenRecording,
                                     firstRunPlacementPending: firstRunPlacementPending)
         state.screenRecordingPromptPending = permissions.isScreenRecordingPromptPending
         return state
@@ -100,7 +104,9 @@ struct OnboardingView: View {
                 .padding(.top, 34)
                 .padding(.bottom, 22)
 
-            Text("Frost needs Accessibility; Screen Recording is optional.")
+            Text(state.usesScreenRecording
+                 ? "Frost needs Accessibility; Screen Recording is optional."
+                 : "Frost needs Accessibility to read and move your menu bar icons.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -114,13 +120,15 @@ struct OnboardingView: View {
                                    detail: "Used to move icons between sections and to click icons in the Frost Bar.",
                                    status: state.accessibility ? .granted : .notGranted,
                                    grant: actions.grantAccessibility)
-                    PermissionCard(symbol: "rectangle.dashed.badge.record", tint: .pink, title: "Screen Recording",
-                                   tag: "Optional",
-                                   detail: "Shows real images of icons. Without it, they appear as app icons. macOS shows a purple dot in the menu bar while Frost captures them.",
-                                   status: state.screenRecording ? .granted
-                                       : state.isWaitingForScreenRecordingPrompt ? .waiting
-                                       : state.needsRelaunch ? .needsRelaunch : .notGranted,
-                                   grant: actions.grantScreenRecording)
+                    if state.usesScreenRecording {
+                        PermissionCard(symbol: "rectangle.dashed.badge.record", tint: .pink,
+                                       title: "Screen Recording", tag: "Optional",
+                                       detail: "Shows real images of icons. Without it, they appear as app icons. macOS shows a purple dot in the menu bar while Frost captures them.",
+                                       status: state.screenRecording ? .granted
+                                           : state.isWaitingForScreenRecordingPrompt ? .waiting
+                                           : state.needsRelaunch ? .needsRelaunch : .notGranted,
+                                       grant: actions.grantScreenRecording)
+                    }
                 }
             }
 

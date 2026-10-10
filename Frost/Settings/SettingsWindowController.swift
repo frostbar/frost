@@ -17,7 +17,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     static func show(model: AppModel, tab: SettingsTab? = nil) {
         // Start reading cached item images now, before the Layout tab is shown, so its tiles have them from the first
         // frame instead of showing app-icon placeholders that swap a moment later.
-        if model.isMenuBarSupported, model.permissions.screenRecording {
+        if model.isMenuBarSupported, model.permissions.canCaptureImages {
             let capturer = model.capturer, items = model.scanner.items
             Task { await capturer.preloadCached(items) }
         }

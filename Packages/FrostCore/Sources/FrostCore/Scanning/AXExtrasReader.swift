@@ -85,6 +85,70 @@ public enum AXExtrasReader {
         return AXItemMatcher.bestMatch(for: frame, among: frames).map { children[$0] }
     }
 
+    /// Finds the AX element of the extra whose identity key is `identityKey` (`ItemIdentityKey`).
+    ///
+    /// On macOS 27 a menu bar item that the bar isn't drawing keeps reporting its previous frame, so matching by
+    /// frame (`element(pid:matching:)`) can find a *different* item that now sits there. The identity, derived from
+    /// the app's whole list of extras, does not move. Callable from any thread.
+    public static func element(pid: pid_t, identityKey: String) -> AXUIElement? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, messagingTimeout)
+        guard let bar: AXUIElement = copy(app, kAXExtrasMenuBarAttribute),
+              let children: [AXUIElement] = copy(extrasBar(bar), kAXChildrenAttribute) else { return nil }
+        let attributes = children.map { child -> AXItemAttributes in
+            AXUIElementSetMessagingTimeout(child, messagingTimeout)
+            return AXItemAttributes(identifier: copy(child, kAXIdentifierAttribute),
+                                    description: copy(child, kAXDescriptionAttribute),
+                                    help: copy(child, kAXHelpAttribute))
+        }
+        let keys = ItemIdentityKey.keys(for: attributes)
+        guard let index = keys.firstIndex(of: identityKey) else { return nil }
+        return children[index]
+    }
+
+    /// Whether the menu bar item with `identityKey` of `pid` really is the thing drawn at `point` (CG global
+    /// coordinates) — the check that has to pass before Frost posts a synthesized ⌘ mouse-down there.
+    ///
+    /// A ⌘-drag on macOS 27 starts on the item itself, and an item the bar isn't drawing keeps reporting the frame it
+    /// had before it left: posting at that frame would press whatever *is* there, which may be another app's item.
+    /// So the item is resolved by identity first (`element(pid:identityKey:)`), and the element the system reports at
+    /// the point has to be that element — or one of its descendants, since the extras element usually contains the
+    /// button that is actually drawn. Anything that cannot be established returns false (the caller then posts
+    /// nothing); a check that fails open would be worse than no check.
+    public static func isItemAt(_ point: CGPoint, pid: pid_t, identityKey: String) -> Bool {
+        guard let expected = element(pid: pid, identityKey: identityKey) else { return false }
+        var hit: AXUIElement?
+        let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, messagingTimeout)
+        guard AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &hit) == .success,
+              var element = hit else { return false }
+        for _ in 0..<maximumHitTestDepth {
+            AXUIElementSetMessagingTimeout(element, messagingTimeout)
+            if CFEqual(element, expected) { return true }
+            guard let parent: AXUIElement = copy(element, kAXParentAttribute) else { return false }
+            element = parent
+        }
+        return false
+    }
+
+    /// The process that owns the element the system reports at `point`, or nil when it can't be read. Used for
+    /// Frost's own status items, whose Accessibility labels are localized ("Frost Separator") rather than identifying:
+    /// the point is over one of them exactly when the system reports a Frost element there.
+    public static func processAt(_ point: CGPoint) -> pid_t? {
+        var hit: AXUIElement?
+        let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, messagingTimeout)
+        guard AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &hit) == .success,
+              let element = hit else { return nil }
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success else { return nil }
+        return pid
+    }
+
+    /// How far up from the element the system reports at a point Frost looks for the extras element itself (the
+    /// extras element contains the button, which may contain a view, …).
+    static let maximumHitTestDepth = 8
+
     /// Messaging timeout for every element read here. A timeout set on an element applies to that element only (not to
     /// elements obtained from it), so it is set on the app, the extras bar and each child: without it, a hung app
     /// blocks each read for the system default (about 6 s) instead of 0.25 s.

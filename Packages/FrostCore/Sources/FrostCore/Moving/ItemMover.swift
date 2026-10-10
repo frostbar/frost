@@ -112,6 +112,26 @@ public final class ItemMover {
         return movedWindowIDs
     }
 
+    /// Which ⌘-drag this mover posts (`MenuBarBackend`).
+    public enum Mechanism: Sendable {
+        /// macOS 26: the mouse-down lands on Frost's own icon and CGEvent field `0x33` routes the drag to the
+        /// target item's window, whatever its position. Nothing is posted at a third-party item.
+        case windowIDRouting
+        /// macOS 27: there are no per-item windows and no routing, so the drag has to start **on the item itself**,
+        /// at its verified center. That is a synthesized ⌘ mouse-down on another app's status item; it only ever
+        /// happens for a move the user asked for (a layout drop, a Frost Bar click), inside
+        /// `ItemMover.transaction`, with the pointer concealed, and only after the item's identity and current
+        /// geometry were read from Accessibility and one positive hit confirmed it is drawn there.
+        case directOnTarget
+    }
+
+    public var mechanism: Mechanism = .windowIDRouting
+
+    /// The live item list on macOS 27 (`scanner.items`: read from Accessibility) and a way to force a fresh read.
+    /// Used instead of the window list, which has nothing to say there.
+    public var axItems: () -> [MenuBarItem] = { [] }
+    public var axRefresh: () async -> Void = {}
+
     public init(scanner: MenuBarItemScanner) { self.scanner = scanner }
 
     /// Runs a move transaction exclusively; throws `.busy` immediately if one is already in progress (the caller
@@ -174,6 +194,9 @@ public final class ItemMover {
                       checkingControls: Bool, completion: Completion = .settled,
                       cursor disposition: CursorDisposition = .restore, yieldingToMenus: Bool = false) async throws {
         assert(isBusy, "ItemMover.move must be called inside transaction")
+        if mechanism == .directOnTarget {
+            return try await moveDirect(itemID, to: destination, attempts: attempts, cursor: disposition)
+        }
         var tally = MoveAttempts(limit: attempts, interruptionLimit: maxInterruptions,
                                  shutdownLimit: shutdownMaxAttempts)
         // Quitting began during this move: stop retrying (checked per attempt, so a move that was already retrying
@@ -281,6 +304,216 @@ public final class ItemMover {
             tally.record(posted.interrupted ? .interrupted : .failed)
         }
         throw ItemMoveError.didNotMove
+    }
+
+    // MARK: - macOS 27: direct ⌘-drag on the item
+
+    /// Moves an item by ⌘-dragging it from its own center (`Mechanism.directOnTarget`).
+    ///
+    /// The caller reveals both sections first: a hidden item keeps reporting its old frame, so its center is not
+    /// where the drag would have to start, and the destination's neighbours have to be where they are drawn.
+    ///
+    /// Every attempt: read the current order and geometry from Accessibility, stop if the item is already where it
+    /// belongs, post the drag (mouse-down on the item's verified center, drag events to the point next to the target,
+    /// mouse-up), then read the order back until the item is next to the target — the *observed* order is the only
+    /// thing that counts as success, never a delay or a requested position. If it isn't next to the target after
+    /// `maxAttempts`, the move failed and the caller reports that.
+    private func moveDirect(_ itemID: CGWindowID, to destination: MoveDestination, attempts: Int,
+                            cursor disposition: CursorDisposition) async throws {
+        var tally = MoveAttempts(limit: attempts, interruptionLimit: maxInterruptions,
+                                 shutdownLimit: shutdownMaxAttempts)
+        while tally.mayAttempt(isShuttingDown: isShuttingDown) {
+            try Task.checkCancellation()
+            // A synthetic drag must never overlap the user's own: their drag events would carry the item along.
+            try await waitForMouseButtonsReleased(timeout: Self.mouseReleaseTimeout(isShuttingDown: isShuttingDown))
+            await axRefresh()
+            let items = axItems()
+            guard let item = items.first(where: { $0.windowID == itemID }) else { throw ItemMoveError.itemNotFound }
+            guard item.isMovable else { throw ItemMoveError.immovable }
+            guard let target = items.first(where: { $0.windowID == destination.targetWindowID })
+            else {
+                FrostLog.mover.error("""
+                    target of \(String(describing: destination), privacy: .public) is not among the \
+                    \(items.count, privacy: .public) items the bar reports
+                    """)
+                throw ItemMoveError.targetNotFound
+            }
+            let frames = Self.frames(of: items)
+            if Self.isSatisfiedOn27(itemID, destination, frames: frames, controls: controlWindows()) { return }
+
+            let down = CGPoint(x: item.frame.midX, y: item.frame.midY)
+            // The mouse-down has to land on *this* item. Its frame is what Accessibility reports, and an item the bar
+            // isn't drawing keeps reporting the frame it had — posting there would press whatever is actually at that
+            // point, possibly another app's status item. The system is asked which element is at the point; if that is
+            // not this item, nothing is posted.
+            guard let pid = item.pid, let identityKey = item.identityKey,
+                  await Self.verifyItemAt(down, pid: pid, identityKey: identityKey) else {
+                FrostLog.mover.notice("""
+                    not posting a ⌘-drag of \(itemID, privacy: .public): Accessibility does not report it at                     (\(Int(down.x), privacy: .public), \(Int(down.y), privacy: .public)), the point the mouse-down                     would land on
+                    """)
+                tally.record(.notPosted)
+                continue
+            }
+            // The item is lifted out of the layout while it is dragged, so the windows that were between its old and
+            // its new slot slide over by its width; the mouse-up is aimed with that in mind and corrected afterwards
+            // from the observed result rather than from a formula.
+            let planned = Self.dropPoint(for: destination, targetFrame: target.frame)
+            movedWindowIDs.insert(itemID)
+            syntheticDragActive(true)
+            defer { syntheticDragActive(false) }
+            let posted = await Task.detached {
+                Self.postDirectDrag(mouseDown: down, mouseUp: planned, cursor: disposition)
+            }.value
+            defer { posted.concealment?.end(warpingTo: posted.savedCursor) }
+            guard posted.downAt != nil else {
+                FrostLog.mover.notice("""
+                    ⌘-drag of \(itemID, privacy: .public) not posted: a mouse button went down right before it
+                    """)
+                tally.record(.notPosted)
+                continue
+            }
+            FrostLog.mover.info("""
+                direct ⌘-drag of \(itemID, privacy: .public) \(String(describing: destination), privacy: .public) \
+                (attempt \(tally.count + 1, privacy: .public)): \(posted.description, privacy: .public)
+                """)
+            var satisfied = false
+            var landed: CGRect?
+            for _ in 0..<Self.directVerifyPolls {
+                try? await Task.sleep(for: Self.directVerifyInterval)
+                await axRefresh()
+                let current = Self.frames(of: axItems())
+                landed = current[itemID]
+                if Self.isSatisfiedOn27(itemID, destination, frames: current, controls: controlWindows()) {
+                    satisfied = true
+                    break
+                }
+            }
+            if let concealment = posted.concealment {
+                concealment.end(warpingTo: CursorPlacement.finalPosition(disposition, saved: posted.savedCursor,
+                                                                        landedItemFrame: landed,
+                                                                        displayBounds: menuBarDisplayBounds))
+            }
+            if satisfied {
+                FrostLog.mover.info("""
+                    direct ⌘-drag of \(itemID, privacy: .public) verified against the order the menu bar reports
+                    """)
+                return
+            }
+            if posted.interrupted {
+                FrostLog.mover.notice("""
+                    direct ⌘-drag of \(itemID, privacy: .public) was cut short by the user's mouse button; trying \
+                    again once it is released
+                    """)
+            }
+            tally.record(posted.interrupted ? .interrupted : .failed)
+        }
+        throw ItemMoveError.didNotMove
+    }
+
+    /// Whether a direct drag has reached its destination.
+    ///
+    /// Same rule as `isSatisfied` when the destination is another icon: the item has to end up next to it. A drop
+    /// at the *end* of a section is resolved against one of Frost's own dividers instead, and on 27 that divider is
+    /// an *invisible 8 pt line* while the editor is open: "immediately beside it" is stricter than the bar can
+    /// express there, so the check is the one the user actually asked for — the item is the last one of that section,
+    /// i.e. it is left of the divider and no other icon of the user's sits between the two.
+    ///
+    /// "Anywhere left of the divider" would be wrong in both directions: an icon that is already in the Hidden
+    /// section would count as arrived wherever it is (a drop that should move it to the end would report success
+    /// without moving anything), and an icon that failed to leave a band wouldn't be noticed.
+    nonisolated static func isSatisfiedOn27(_ itemID: CGWindowID, _ destination: MoveDestination,
+                                            frames: [CGWindowID: CGRect],
+                                            controls: FrostControlWindows?) -> Bool {
+        guard let controls,
+              destination.targetWindowID == controls.hiddenSeparator
+                || destination.targetWindowID == controls.alwaysHiddenSeparator,
+              let item = frames[itemID], let divider = frames[destination.targetWindowID],
+              item.midX < divider.midX
+        else { return isSatisfied(itemID, destination, frames: frames) }
+        return !frames.contains { id, frame in
+            id != itemID && !controls.all.contains(id) && frame.width > 0
+                && frame.midX > item.midX && frame.midX < divider.midX
+        }
+    }
+
+    /// The hit test runs off the main thread (an Accessibility round trip).
+    nonisolated static func verifyItemAt(_ point: CGPoint, pid: pid_t, identityKey: String) async -> Bool {
+        await Task.detached { AXExtrasReader.isItemAt(point, pid: pid, identityKey: identityKey) }.value
+    }
+
+    /// How often and how long the order is read back after a direct drag (an Accessibility read takes about 100 ms
+    /// per app, so this is slow on purpose: the item has to be seen in its slot, not assumed to be).
+    nonisolated static let directVerifyInterval: Duration = .milliseconds(150)
+    nonisolated static let directVerifyPolls = 10
+
+    /// The direct drag's report: when the mouse-down was posted (nil: never), and the concealment to end.
+    struct PostedDirectDrag: Sendable {
+        var downAt: ContinuousClock.Instant?
+        var savedCursor: CGPoint?
+        var concealment: CursorConcealment?
+        var interrupted = false
+
+        var description: String { downAt == nil ? "not posted" : (interrupted ? "cut short by the user" : "posted") }
+    }
+
+    /// Posts the ⌘-drag from `mouseDown` (the item's own center) to `mouseUp`. On a background thread: it sleeps
+    /// between events, and the main thread has to stay free to handle them.
+    nonisolated static func postDirectDrag(mouseDown: CGPoint, mouseUp: CGPoint,
+                                           cursor disposition: CursorDisposition = .restore) -> PostedDirectDrag {
+        SyntheticEventGate.posting { postDirectDragNow(mouseDown: mouseDown, mouseUp: mouseUp, cursor: disposition) }
+    }
+
+    private nonisolated static func postDirectDragNow(mouseDown: CGPoint, mouseUp: CGPoint,
+                                                      cursor disposition: CursorDisposition) -> PostedDirectDrag {
+        var report = PostedDirectDrag()
+        guard !UserMouseButtons.isAnyHeld else { return report }
+        let presses = UserMouseButtons.pressCount
+        let source = CGEventSource(stateID: .hidSystemState)
+        report.savedCursor = CGEvent(source: nil)?.location
+        let concealment = CursorConcealment.begin()
+
+        func event(_ type: CGEventType, _ point: CGPoint) -> CGEvent? {
+            guard let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point,
+                                      mouseButton: .left) else { return nil }
+            event.flags = .maskCommand
+            return event
+        }
+        // No window-ID field: on 27 it routes nothing, the drag follows the pointer.
+        guard let move = event(.mouseMoved, mouseDown), let down = event(.leftMouseDown, mouseDown) else {
+            concealment.end(warpingTo: report.savedCursor)
+            return report
+        }
+        move.post(tap: .cgSessionEventTap)
+        down.post(tap: .cgSessionEventTap)
+        report.downAt = .now
+        usleep(80_000)
+        // The first dragged event is what lifts the item; without it this is just a click.
+        event(.leftMouseDragged, CGPoint(x: mouseDown.x + 2, y: mouseDown.y))?.post(tap: .cgSessionEventTap)
+        let steps = 20
+        for step in 1...steps {
+            guard !UserMouseButtons.isAnyHeld, UserMouseButtons.pressCount == presses else {
+                report.interrupted = true
+                break
+            }
+            let t = CGFloat(step) / CGFloat(steps)
+            let point = CGPoint(x: mouseDown.x + (mouseUp.x - mouseDown.x) * t,
+                                y: mouseDown.y + (mouseUp.y - mouseDown.y) * t)
+            event(.leftMouseDragged, point)?.post(tap: .cgSessionEventTap)
+            usleep(15_000)
+        }
+        // The pause before the mouse-up lets the item settle where it was dropped. Not when the user's own input cut
+        // the drag short: the synthetic button is still down, so waiting here would let their movement carry the
+        // status item along while they click.
+        if !report.interrupted { usleep(120_000) }
+        event(.leftMouseUp, mouseUp)?.post(tap: .cgSessionEventTap)
+        usleep(40_000)
+        if UserMouseButtons.pressCount != presses { report.interrupted = true }
+        if CursorPlacement.restoresRightAfterDrag(disposition) {
+            concealment.end(warpingTo: report.savedCursor)
+        } else {
+            report.concealment = concealment
+        }
+        return report
     }
 
     /// Waits (polling every `poll`) while the user holds a mouse button; throws `.mouseButtonHeld` if still held after

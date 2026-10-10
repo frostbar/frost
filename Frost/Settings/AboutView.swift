@@ -58,13 +58,15 @@ struct AboutView: View {
                           subtitle: "Required to move icons and to click them in the Frost Bar.",
                           status: permissions.accessibility ? .granted : .notGranted,
                           grant: { permissions.requestAccessibility() })
-            PermissionRow(title: "Screen Recording",
-                          subtitle: "Optional. Shows real icon images instead of app icons. macOS shows a purple dot in the menu bar while Frost captures them.",
-                          status: permissions.screenRecording ? .granted
-                              : permissions.isScreenRecordingPromptPending ? .waiting
-                              : permissions.screenRecordingNeedsRelaunch ? .needsRelaunch : .notGranted,
-                          grant: { permissions.requestScreenRecording() },
-                          openSettings: { permissions.openScreenRecordingSettings() })
+            if RunningOS.usesScreenRecording {
+                PermissionRow(title: "Screen Recording",
+                              subtitle: "Optional. Shows real icon images instead of app icons. macOS shows a purple dot in the menu bar while Frost captures them.",
+                              status: permissions.screenRecording ? .granted
+                                  : permissions.isScreenRecordingPromptPending ? .waiting
+                                  : permissions.screenRecordingNeedsRelaunch ? .needsRelaunch : .notGranted,
+                              grant: { permissions.requestScreenRecording() },
+                              openSettings: { permissions.openScreenRecordingSettings() })
+            }
         } header: {
             Text("Permissions")
         } footer: {

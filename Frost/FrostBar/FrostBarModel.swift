@@ -34,7 +34,26 @@ final class FrostBarModel {
     }
 
     /// Layout to display: the frozen snapshot if any, otherwise the live layout (positions are reliable while collapsed).
-    var layout: MenuBarLayout { frozenLayout ?? app.layout }
+    ///
+    /// macOS 27: which icons the bar draws cannot be read — Apple's `occlusionState` no longer reports it and a
+    /// pushed-out icon keeps its old frame — so the panel lists every icon in the bar's order instead of inventing a
+    /// Hidden section. Verifying the hidden set from a capture of the menu bar (which needs Screen Recording) is not
+    /// implemented yet; until it is, the panel never claims that an icon is hidden, with or without the permission.
+    var layout: MenuBarLayout {
+        if let frozenLayout { return frozenLayout }
+        guard app.backend == .accessibility else { return app.layout }
+        // Frost's own items are identified by the names they were created with rather than through the control
+        // locator: on 27 the locator's frame fallback is weaker (a divider held as a thin line reports an
+        // Accessibility frame that differs from its window's), and an own item that slips through would show up in
+        // the panel as if it were one of the user's icons.
+        let own = Set(app.sections.ownItems().map {
+            AXMenuBarInventory.ownWindowID(autosaveName: $0.autosaveName)
+        })
+        let items = app.scanner.items
+            .filter { !own.contains($0.windowID) && $0.frame.width > 0 }
+            .sorted { ($0.frame.minX, $0.windowID) < ($1.frame.minX, $1.windowID) }
+        return [.hidden: items, .alwaysHidden: [], .visible: []]
+    }
 
     var phase: FrostBarState.Phase {
         // Accessibility is enough; without Screen Recording tiles show app icons (`ItemFallbackAppearance`).
@@ -74,7 +93,8 @@ final class FrostBarModel {
                 ?? FallbackLabelMetrics.tileWidth(for: item, label: labels[item.windowID])
             widths[item.windowID] = tileWidths.hold(item.windowID, width: current)
         }
-        return FrostBarState(phase: phase, alwaysHidden: alwaysHidden, hidden: hidden, images: images,
+        return FrostBarState(showsItemCount: app.backend != .accessibility,
+                             phase: phase, alwaysHidden: alwaysHidden, hidden: hidden, images: images,
                              imageSizes: sizes, contentWidths: widths, accessibilityLabels: accessibilityLabels,
                              fallbackLabels: labels,
                              styles: app.capturer.styles, templates: app.capturer.templates, names: names,

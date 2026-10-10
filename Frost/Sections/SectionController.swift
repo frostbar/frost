@@ -28,6 +28,9 @@ final class SectionController {
     @ObservationIgnored private let preferences: Preferences
     @ObservationIgnored private let permissions: PermissionsService
     @ObservationIgnored private let scanner: MenuBarItemScanner
+    /// How the menu bar is managed here (`MenuBarBackend`): the wide separators of macOS 26 or the bounded dividers
+    /// of macOS 27 (`BoundedDivider`).
+    @ObservationIgnored let backend: MenuBarBackend
 
     @ObservationIgnored private var iconItem: NSStatusItem?
     @ObservationIgnored private var iconImageView: NSImageView?
@@ -66,17 +69,34 @@ final class SectionController {
     private static let dropRedeliveredReplicaClicks = false
     #endif
 
-    init(preferences: Preferences, permissions: PermissionsService, scanner: MenuBarItemScanner) {
+    init(preferences: Preferences, permissions: PermissionsService, scanner: MenuBarItemScanner,
+         backend: MenuBarBackend = .windowList) {
         self.preferences = preferences
         self.permissions = permissions
         self.scanner = scanner
+        self.backend = backend
     }
 
     // MARK: - Installation
 
+    /// The autosave names (and with them the identities) of Frost's control items.
+    ///
+    /// macOS 27 gets its own names: the 26 names are the keys of the saved *separator* positions, and reusing them
+    /// would inherit a saved 5016 pt slot as a 27 divider's position. Items created under a fresh name land in the
+    /// system's own slot and are placed by `OwnItemPlacer`.
     static let iconAutosaveName = FrostControlLocator.iconTitle
     static let hiddenAutosaveName = FrostControlLocator.hiddenSeparatorTitle
     static let alwaysHiddenAutosaveName = FrostControlLocator.alwaysHiddenSeparatorTitle
+    static let accessibilityHiddenAutosaveName = "Frost27.HiddenDivider"
+    static let accessibilityAlwaysHiddenAutosaveName = "Frost27.AlwaysHiddenDivider"
+
+    var iconName: String { Self.iconAutosaveName }
+    var hiddenName: String {
+        backend == .accessibility ? Self.accessibilityHiddenAutosaveName : Self.hiddenAutosaveName
+    }
+    var alwaysHiddenName: String {
+        backend == .accessibility ? Self.accessibilityAlwaysHiddenAutosaveName : Self.alwaysHiddenAutosaveName
+    }
 
     /// Preferred Position seeds (smaller values are further right). Written only when the key doesn't exist:
     /// the icon sits right next to Control Center; existing third-party icons with a Preferred Position land between
@@ -94,18 +114,31 @@ final class SectionController {
     func install() {
         guard iconItem == nil else { return }
         let defaults = UserDefaults.standard
-        for seed in Self.seeds {
-            let key = "NSStatusItem Preferred Position \(seed.name)"
-            guard defaults.object(forKey: key) == nil else { continue }
-            defaults.set(seed.position, forKey: key)
-            // First run: existing icons without a Preferred Position are placed left of AH (Always Hidden);
-            // NewItemPlacer moves them to Hidden once Accessibility is granted (possibly only after granting
-            // and relaunching, hence persisted).
-            if seed.name == Self.alwaysHiddenAutosaveName { NewItemPlacer.markFirstRun(defaults: defaults) }
+        // The 26 seeds are Preferred Positions, which decide where a separator appears. On 27 the system keeps the
+        // order itself (`MenuBarAgent`) and ignores them, so writing them would only leave stale keys behind: the
+        // dividers are placed by `OwnItemPlacer` instead.
+        if backend == .windowList {
+            for seed in Self.seeds {
+                let key = "NSStatusItem Preferred Position \(seed.name)"
+                guard defaults.object(forKey: key) == nil else { continue }
+                defaults.set(seed.position, forKey: key)
+                // First run: existing icons without a Preferred Position are placed left of AH (Always Hidden);
+                // NewItemPlacer moves them to Hidden once Accessibility is granted (possibly only after granting
+                // and relaunching, hence persisted).
+                if seed.name == Self.alwaysHiddenAutosaveName { NewItemPlacer.markFirstRun(defaults: defaults) }
+            }
         }
 
-        // Creation order icon -> H -> AH (created earlier = further right). Never call removeStatusItem on quit:
-        // it deletes the Preferred Position.
+        // Creation order decides the slot a fresh item lands in, and it is the opposite way round on the two
+        // backends (measured; see `docs/macos-behavior.md`, "macOS 27"):
+        // - 26: icon -> H -> AH, created earlier = further right, i.e. AH ends up left of H, left of the icon.
+        // - 27: a new item takes the first free slot of the trailing area, and a later item goes to its right, so
+        //   the same "AH, H, icon" order is created back to front: AH, then H, then the icon.
+        // Never call removeStatusItem on quit: it deletes the saved position.
+        if backend == .accessibility {
+            alwaysHidden = SeparatorItem(autosaveName: alwaysHiddenName, backend: backend)
+            hidden = SeparatorItem(autosaveName: hiddenName, backend: backend)
+        }
         let icon = makeIcon()
         iconItem = icon
         if let window = icon.button?.window {
@@ -123,6 +156,10 @@ final class SectionController {
                     guard let previous = self.iconDisplayID, previous != id else { return }
                     FrostLog.sections.notice(
                         "the Frost icon moved from display \(previous) to \(id) (active menu bar changed); rescanning")
+                    // The bounded dividers are sized from the display they are on: moving the active menu bar to a
+                    // smaller display would leave them above its half-display bound, where the system ignores the
+                    // width and collapsing hides nothing.
+                    self.updateDividerWidthsForDisplay()
                     self.scanner.scheduleRescan(after: .milliseconds(100))
                 }
             }
@@ -143,11 +180,272 @@ final class SectionController {
             }
         }
 
-        hidden = SeparatorItem(autosaveName: Self.hiddenAutosaveName)
-        alwaysHidden = SeparatorItem(autosaveName: Self.alwaysHiddenAutosaveName)
+        if backend != .accessibility {
+            hidden = SeparatorItem(autosaveName: hiddenName, backend: backend)
+            alwaysHidden = SeparatorItem(autosaveName: alwaysHiddenName, backend: backend)
+        } else {
+            resetDividerWidths()
+        }
         applyLengths()
         settleAndRescan()
         trackUpdateReminder()
+        // macOS 27: items created under a fresh name land in the system's first free slot (on a busy bar: behind the
+        // overflow chevron), so Frost puts them where they belong. Needs Accessibility, which is also what the
+        // section model and the layout editor need; without it the user can ⌘-drag the dividers themselves.
+        if backend == .accessibility { schedulePlacement() }
+    }
+
+    // MARK: - Placing Frost's own items (macOS 27)
+
+    @ObservationIgnored private var placementTask: Task<Void, Never>?
+
+    private func schedulePlacement() {
+        guard placementTask == nil, !hasPlacedOwnItems else { return }
+        // Placement needs Accessibility, which the user may grant later (onboarding asks for it): watch for the grant
+        // instead of giving up, or the snowflake and the dividers would stay in the slots a fresh item lands in —
+        // behind the overflow chevron on a busy bar — until the next launch.
+        observeAccessibilityForPlacement()
+        placementTask = Task { [weak self] in
+            for attempt in 1...Self.placementAttempts {
+                let placed = await self?.placeOwnItemsWhenPossible()
+                guard let self else { return }
+                // Placement only counts as done when the items really ended up where they belong (read back from
+                // Accessibility). A failed attempt is usually transient — the user's mouse was down, another move was
+                // running, the layout editor was open — so it is retried a couple of times instead of leaving the
+                // snowflake in the slot a fresh item lands in (behind the overflow chevron on a busy bar).
+                if placed == true {
+                    self.hasPlacedOwnItems = true
+                    break
+                }
+                if Task.isCancelled { break }
+                FrostLog.sections.notice("placement attempt \(attempt, privacy: .public) did not take; trying again")
+                try? await Task.sleep(for: Self.placementRetryDelay)
+            }
+            self?.placementTask = nil
+        }
+    }
+
+    /// Whether Frost's own items have been placed this launch (`placeOwnItems`).
+    @ObservationIgnored private var hasPlacedOwnItems = false
+
+    /// Re-runs placement when the Accessibility permission arrives (no-op once they are placed).
+    private func observeAccessibilityForPlacement() {
+        guard backend == .accessibility, !hasPlacedOwnItems else { return }
+        withObservationTracking {
+            _ = permissions.accessibility
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.permissions.accessibility { self.schedulePlacement() }
+                self.observeAccessibilityForPlacement()
+            }
+        }
+    }
+
+    /// macOS 27 puts a freshly created status item in the first free slot of the trailing area instead of honouring
+    /// a saved position. On a bar with a handful of icons that slot is the leftmost one, which is not where the
+    /// macOS 26 layout has the snowflake (next to Control Center); on a busy bar it is behind the overflow chevron,
+    /// where the user can't reach it at all. So Frost ⌘-drags its own items — never a third-party one — into place,
+    /// which needs Accessibility only to *read* the bar; without it the user can drag the dividers themselves.
+    @discardableResult
+    private func placeOwnItemsWhenPossible() async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(30)
+        while !permissions.canManageItems {
+            guard clock.now < deadline, !Task.isCancelled else {
+                FrostLog.sections.notice("""
+                    not placing Frost's own items yet: Accessibility is not granted (placement runs when it arrives), \
+                    so the snowflake and the dividers stay where the system put them
+                    """)
+                return false
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        return await placeOwnItems()
+    }
+
+    /// Places Frost's own items; returns whether they are where they belong (a false return is retried).
+    private func placeOwnItems() async -> Bool {
+        guard let model, iconItem != nil, !isEditing else { return false }
+        // A collapsed divider is a very wide window: its center is nowhere near the slot the user sees, and the
+        // items it pushed out are only readable with stale frames. Place with everything narrow, restore afterwards.
+        hidden?.mode = .zero
+        alwaysHidden?.mode = .zero
+        defer { applyLengths() }
+
+        // Only the snowflake is moved: immediately left of the system's own items (the clock, the Control Center
+        // button, Spotlight), where the macOS 26 layout has it.
+        //
+        // Both dividers stay at the left end of the trailing area, where a fresh item lands, in creation order
+        // (Always Hidden, then Hidden). They are invisible, so what the user sees is the space they take: a wide
+        // divider in the middle of the bar leaves a hole between the icons and the snowflake, while at the left end
+        // their space lands next to the app menus and the icons the bar still draws stay together on the right,
+        // where the macOS 26 layout has them (`AXSectionAssigner` reads the sections from that space).
+        // The snowflake has to be placed: it is drawn, its frame is where it is, and the user needs to find it.
+        let iconPlaced = await placeOwnItem(named: iconName, followedBy: .left(of: .trailingSystemItem), in: model)
+        // The two dividers belong at the left end of the trailing area (the Always Hidden one immediately left of
+        // the leftmost icon, the Hidden one to its right), which is also where a fresh item lands — so this is
+        // usually nothing to do. Best effort, deliberately not part of the result: measured on 27, Accessibility
+        // reports a divider at a frame where pressing it would press a *neighbour* (a hit test at the Hidden
+        // divider's own centre returned another app's icon), so the guard refuses to drag it, and retrying that
+        // would only repeat the refusal. `dragOwnItem` logs why.
+        _ = await placeOwnItem(named: alwaysHiddenName, followedBy: .left(of: .leftmostItem), in: model)
+        _ = await placeOwnItem(named: hiddenName, followedBy: .right(ofOwnItem: alwaysHiddenName), in: model)
+        await scanner.refreshOwnership()
+        return iconPlaced
+    }
+
+    /// What a placed item must end up next to.
+    private indirect enum PlacementAnchor {
+        /// Immediately left of the trailing system items (the clock, the Control Center button).
+        case trailingSystemItem
+        /// Immediately left of the leftmost item of another app: the left end of the trailing area.
+        case leftmostItem
+        /// Immediately right of one of Frost's own items.
+        case right(ofOwnItem: String)
+
+        /// Immediately left of the leftmost of `kind`.
+        static func left(of kind: PlacementAnchor) -> PlacementAnchor { kind }
+    }
+
+    /// ⌘-drags one of Frost's own status items until it sits immediately left of its anchor. Status items snap to
+    /// slots, and a ⌘-drag lands a little left of where the mouse-up was posted (the items on that side slide over
+    /// while the item is lifted), so the requested x is corrected by what the previous attempt missed by — up to
+    /// `placementAttempts` times. Runs inside `ItemMover.transaction`, like every other move.
+    @discardableResult
+    private func placeOwnItem(named name: String, followedBy anchor: PlacementAnchor, in model: AppModel) async -> Bool {
+        placementCorrection = 0
+        for attempt in 1...Self.placementAttempts {
+            await scanner.refreshOwnership()
+            guard ownItems().contains(where: { $0.autosaveName == name }) else { return false }
+            guard let target = placementTarget(of: anchor) else {
+                FrostLog.sections.notice("not placing \(name, privacy: .public): its anchor is unknown")
+                return false
+            }
+            if placementIsSatisfied(itemID: ownID(name), anchor: anchor) {
+                FrostLog.sections.notice("\(name, privacy: .public) is already in place")
+                return true
+            }
+            let request = target + placementCorrection
+            guard let landed = await dragOwnItem(named: name, toX: request, in: model) else { return false }
+            placementCorrection = target - landed
+            FrostLog.sections.notice("""
+                placing \(name, privacy: .public): asked for x \(Int(request), privacy: .public), landed at \
+                \(Int(landed), privacy: .public) (attempt \(attempt, privacy: .public))
+                """)
+        }
+        return placementIsSatisfied(itemID: ownID(name), anchor: anchor)
+    }
+
+    /// How far the last placement missed by; added to the next request (the drag's landing lags the request).
+    @ObservationIgnored private var placementCorrection: CGFloat = 0
+
+    static let placementAttempts = 3
+    static let placementRetryDelay: Duration = .seconds(5)
+
+    private func ownID(_ name: String) -> CGWindowID { AXMenuBarInventory.ownWindowID(autosaveName: name) }
+
+    private func placementTargetID(of anchor: PlacementAnchor) -> CGWindowID? {
+        switch anchor {
+        case .right(let name): return ownID(name)
+        case .trailingSystemItem: return trailingSystemAnchor()?.windowID
+        case .leftmostItem: return leftmostItem()?.windowID
+        }
+    }
+
+    /// The x the item's center is dragged to.
+    private func placementTarget(of anchor: PlacementAnchor) -> CGFloat? {
+        switch anchor {
+        case .right(let name): return ownItems().first { $0.autosaveName == name }?.frame.maxX
+        case .trailingSystemItem: return trailingSystemAnchor()?.frame.minX
+        case .leftmostItem: return leftmostItem()?.frame.minX
+        }
+    }
+
+    /// Whether the item ended up against its anchor, on the side it belongs (`OwnItemPlacement`).
+    private func placementIsSatisfied(itemID: CGWindowID, anchor: PlacementAnchor) -> Bool {
+        guard let nextID = placementTargetID(of: anchor),
+              let item = scanner.items.first(where: { $0.windowID == itemID }),
+              let anchorItem = scanner.items.first(where: { $0.windowID == nextID })
+        else { return false }
+        let side: OwnItemPlacement.Side = switch anchor {
+        case .right: .right
+        case .trailingSystemItem, .leftmostItem: .left
+        }
+        return OwnItemPlacement.isSatisfied(item: item.frame, anchor: anchorItem.frame, side: side)
+    }
+
+    /// The leftmost item of another app: the left end of the trailing area.
+    private func leftmostItem() -> MenuBarItem? {
+        let ownIDs = Set(ownItems().map { ownID($0.autosaveName) })
+        return scanner.items.filter { !ownIDs.contains($0.windowID) && $0.frame.width > 0 }
+            .min { $0.frame.minX < $1.frame.minX }
+    }
+
+    /// The item the snowflake belongs immediately left of (`SystemItemAnchor`).
+    private func trailingSystemAnchor() -> MenuBarItem? {
+        let ownIDs = Set(ownItems().map { ownID($0.autosaveName) })
+        let display = scanner.menuBarDisplay?.frame ?? CGDisplayBounds(CGMainDisplayID())
+        return SystemItemAnchor.trailingAnchor(among: scanner.items, own: ownIDs, displayBounds: display)
+    }
+
+    /// ⌘-drags one of Frost's own status items to `toX`; returns where it landed (nil when nothing was posted).
+    private func dragOwnItem(named name: String, toX: CGFloat, in model: AppModel) async -> CGFloat? {
+        guard !model.mover.isBusy,
+              let item = ownItems().first(where: { $0.autosaveName == name }) else { return nil }
+        let center = CGPoint(x: item.frame.midX, y: item.frame.midY)
+        // The mouse-down has to land on *this* item. Its window frame is what AppKit reports, and on a crowded bar the
+        // item can be in the system's overflow, or still moving after the dividers shrank — posting at a stale centre
+        // would press whatever is there, which may be another app's icon. So the system is asked which process owns
+        // the element at that point, exactly as `ItemMover.moveDirect` does for a third-party item.
+        switch await Task.detached(operation: { AXExtrasReader.processAt(center) }).value {
+        case getpid():
+            break
+        case let other?:
+            FrostLog.sections.notice("""
+                not placing \(name, privacy: .public): the point (\(Int(center.x), privacy: .public),                 \(Int(center.y), privacy: .public)) belongs to process \(other, privacy: .public), not to Frost
+                """)
+            return nil
+        case nil:
+            FrostLog.sections.notice("""
+                not placing \(name, privacy: .public): Accessibility does not report an element at                 (\(Int(center.x), privacy: .public), \(Int(center.y), privacy: .public))
+                """)
+            return nil
+        }
+        do {
+            return try await model.mover.transaction {
+                let result = await Task.detached {
+                    OwnItemDrag.post(itemCenter: center, toX: toX)
+                }.value
+                guard let result, result.posted else {
+                    FrostLog.sections.notice("placement of \(name, privacy: .public) not posted: the mouse is busy")
+                    return nil
+                }
+                // The order settles over a few frames; read it back before judging where it landed.
+                var landed: CGFloat?
+                for _ in 0..<6 {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    await scanner.refreshOwnership()
+                    landed = ownItems().first { $0.autosaveName == name }?.frame.midX
+                }
+                return landed
+            }
+        } catch {
+            FrostLog.sections.error("placing \(name, privacy: .public) failed: \(error, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// Frost's own status items with their current frames (`AXMenuBarInventory.OwnItem`), for the scanner's
+    /// Accessibility source: on 27 no window list can tell Frost where its own icon and dividers are.
+    func ownItems() -> [AXMenuBarInventory.OwnItem] {
+        var result: [AXMenuBarInventory.OwnItem] = []
+        if let frame = iconItem?.button?.window.map({ ScreenCoordinates.cgRect(fromAppKit: $0.frame) }) {
+            result.append(AXMenuBarInventory.OwnItem(autosaveName: iconName, frame: frame))
+        }
+        if let frame = hidden?.cgFrame { result.append(.init(autosaveName: hiddenName, frame: frame)) }
+        if let frame = alwaysHidden?.cgFrame { result.append(.init(autosaveName: alwaysHiddenName, frame: frame)) }
+        return result
     }
 
     /// Unsupported macOS (`AppModel.isMenuBarSupported`): only the snowflake, whose clicks show its menu with the
@@ -238,6 +536,15 @@ final class SectionController {
     /// Matched by button window frame (converted to CG coordinates), falling back to the window title; returns a
     /// value only if all three are found.
     var controlWindows: FrostControlWindows? {
+        // macOS 27: Frost's own items are identified by the names they were created with. The locator below matches
+        // by frame or by title, and on 27 neither is dependable for them — a divider held as a thin line reports an
+        // Accessibility frame that differs from its window's, and the 26 titles are not the ones in use — so the
+        // three IDs are derived from the names directly instead.
+        if backend == .accessibility {
+            guard let names = ownItemNames, names.count == 3 else { return nil }
+            return FrostControlWindows(icon: ownID(iconName), hiddenSeparator: ownID(hiddenName),
+                                       alwaysHiddenSeparator: ownID(alwaysHiddenName))
+        }
         let items = scanner.items
         if let locatedControls, locatedControls.all.isSubset(of: Set(items.map(\.windowID))) {
             return locatedControls
@@ -246,7 +553,8 @@ final class SectionController {
             in: items,
             iconFrame: iconItem?.button?.window.map { ScreenCoordinates.cgRect(fromAppKit: $0.frame) },
             hiddenFrame: hidden?.cgFrame,
-            alwaysHiddenFrame: alwaysHidden?.cgFrame)
+            alwaysHiddenFrame: alwaysHidden?.cgFrame,
+            titles: (iconName, hiddenName, alwaysHiddenName))
         locatedControls = located
         return located
     }
@@ -331,6 +639,40 @@ final class SectionController {
         scanner.rescan()
     }
 
+    /// Runs `body` with every item drawn (both dividers take no width) and restores the section state afterwards;
+    /// the macOS 27 counterpart of `whileCollapsedForMove`.
+    ///
+    /// A move on 27 starts on the item itself, and a hidden item keeps reporting the frame it had before it left the
+    /// bar, so the drag would start in the wrong place. Everything is drawn for the duration of the move, which also
+    /// makes the neighbours the destination is computed against the ones the user sees. No-op on 26, where the
+    /// window list is reliable with the sections collapsed.
+    func revealingForMove<T>(_ body: () async throws -> T) async rethrows -> T {
+        guard backend == .accessibility, !isRevealedForMove else { return try await body() }
+        isRevealedForMove = true
+        applyLengths()
+        await waitForSettle()
+        scanner.rescan()
+        do {
+            let result = try await body()
+            await endRevealForMove()
+            return result
+        } catch {
+            await endRevealForMove()
+            throw error
+        }
+    }
+
+    /// Puts the dividers back to the section state after a move that needed everything drawn.
+    private func endRevealForMove() async {
+        isRevealedForMove = false
+        applyLengths()
+        await waitForSettle()
+        scanner.rescan()
+    }
+
+    /// Whether the dividers are currently held narrow for a move (`revealingForMove`).
+    @ObservationIgnored private var isRevealedForMove = false
+
     /// Temporarily expands to at least `target` and waits for frames to settle (fast detection via `waitForFastSettle`,
     /// used by the Frost Bar's live refresh under the freeze frame, so faster is better). Returns the previous state for
     /// `restore(_:)` and whether the change was confirmed applied and settled (false on timeout: items aren't on screen
@@ -389,15 +731,37 @@ final class SectionController {
 
     private func applyLengths() {
         guard let hidden, let alwaysHidden else { return }
+        if isRevealedForMove {
+            hidden.mode = .zero
+            alwaysHidden.mode = .zero
+            return
+        }
+        if backend == .accessibility {
+            hidden.collapseWidth = hiddenCollapseWidth
+            alwaysHidden.collapseWidth = alwaysHiddenCollapseWidth
+        }
         if isEditing && isSuspendedForMove {
             hidden.mode = .pushOut
             alwaysHidden.mode = .pushOut
             return
         }
         if isEditing {
+            // Both backends draw every item while the layout editor is open and show the section boundaries as thin
+            // lines. On 27 that is not just cosmetic: an item the bar isn't drawing keeps reporting the frame it had
+            // before it left, so the editor's sections and the neighbours a drop is resolved against are only true
+            // while everything is drawn.
             hidden.mode = .line
             alwaysHidden.mode = .line
             return
+        }
+        applySectionLengths()
+    }
+
+    private func applySectionLengths() {
+        guard let hidden, let alwaysHidden else { return }
+        if backend == .windowList {
+            hidden.collapseWidth = SeparatorItem.pushOutLength
+            alwaysHidden.collapseWidth = SeparatorItem.pushOutLength
         }
         switch state {
         case .collapsed:
@@ -410,6 +774,40 @@ final class SectionController {
             hidden.mode = .zero
             alwaysHidden.mode = .zero
         }
+    }
+
+    // MARK: - How much of the bar the dividers take (macOS 27)
+
+    /// Width of the Hidden divider when its section is collapsed: how many icons leave the bar (see
+    /// `BoundedDivider`: wider means fewer icons drawn, never "this exact icon is hidden").
+    @ObservationIgnored private var hiddenCollapseWidth: CGFloat = 0
+    /// The same for the Always Hidden divider.
+    @ObservationIgnored private var alwaysHiddenCollapseWidth: CGFloat = 0
+
+    /// Sizes the bounded dividers from the display the menu bar is on (`BoundedDivider.collapseWidth`): a width
+    /// above half of it is ignored by the system, so a display change has to resize them or collapsing stops hiding
+    /// anything.
+    private func updateDividerWidthsForDisplay() {
+        guard backend == .accessibility, hidden != nil else { return }
+        resetDividerWidths()
+        applyLengths()
+    }
+
+    /// The names of Frost's own status items, when all three exist (`controlWindows` on 27).
+    private var ownItemNames: [String]? {
+        let names = ownItems().map(\.autosaveName)
+        return names.count == 3 ? names : nil
+    }
+
+    static func clampDividerWidth(_ width: CGFloat) -> CGFloat {
+        min(max(width, BoundedDivider.minimumUsefulWidth), BoundedDivider.absoluteCap)
+    }
+
+    /// The starting widths of the bounded dividers on 27, from the display they are on.
+    private func resetDividerWidths() {
+        let width = BoundedDivider.collapseWidth(displayWidth: menuBarWidth) ?? BoundedDivider.minimumUsefulWidth
+        hiddenCollapseWidth = width
+        alwaysHiddenCollapseWidth = width
     }
 
     // MARK: - Waiting to settle
@@ -454,9 +852,24 @@ final class SectionController {
 
     static let fastSettlePoll: Duration = .milliseconds(16)
 
+    /// Width of the menu bar Frost manages, for the bounded divider widths of macOS 27.
+    private var menuBarWidth: CGFloat {
+        if let width = iconItem?.button?.window?.screen?.frame.width, width > 0 { return width }
+        if let width = scanner.menuBarDisplay?.frame.width, width > 0 { return width }
+        return CGDisplayBounds(CGMainDisplayID()).width
+    }
+
     /// CG frames of Frost's control item windows; before the controls are located, all status windows on the scanned
     /// menu bar row (the display with the active menu bar).
+    ///
+    /// On 27 only Frost's own items exist as windows at all, and their frames are read from AppKit directly, so
+    /// waiting for the bar to settle needs no window list and no Accessibility.
     private func statusFrames() -> [CGWindowID: CGRect] {
+        if backend == .accessibility {
+            return Dictionary(uniqueKeysWithValues: ownItems().map {
+                (AXMenuBarInventory.ownWindowID(autosaveName: $0.autosaveName), $0.frame)
+            })
+        }
         let windows: [RawStatusWindow]
         if let ids = locatedControls?.all {
             windows = StatusWindowParser.windows(withIDs: ids)
@@ -628,8 +1041,8 @@ final class SectionController {
         if !isManagingMenuBar {
             // Unsupported macOS: say so first (one disabled item, the explanation as its subtitle). Permissions don't
             // help here, so no Grant Access.
-            let notice = NSMenuItem(title: UnsupportedOS.title, action: nil, keyEquivalent: "")
-            notice.subtitle = UnsupportedOS.detail
+            let notice = NSMenuItem(title: RunningOS.title, action: nil, keyEquivalent: "")
+            notice.subtitle = RunningOS.detail
             notice.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
             notice.isEnabled = false
             menu.addItem(notice)
@@ -734,6 +1147,7 @@ final class SectionController {
     /// the first click on a newly connected display's snowflake is missed. The new display's menu bar windows show up
     /// shortly after the notification, so rescan now and again a little later, then read ownership once more.
     private func rescanAfterDisplayChange() {
+        updateDividerWidthsForDisplay()
         scanner.rescan()
         displayRescanTask?.cancel()
         displayRescanTask = Task { [weak self] in
@@ -841,10 +1255,20 @@ private final class SeparatorItem {
 
     static let pushOutLength: CGFloat = 10_000
     static let lineLength: CGFloat = 8
+    /// What a divider takes when its section is revealed (macOS 27, `BoundedDivider.revealWidth`).
+    static let revealLength: CGFloat = 0
 
     let item: NSStatusItem
+    private let backend: MenuBarBackend
     var mode: Mode? {
         didSet { if mode != oldValue || mode == .zero { apply() } }
+    }
+
+    /// How wide this divider is when it pushes its section out: `pushOutLength` on macOS 26, the bounded width on
+    /// macOS 27. Set by the owner before the mode is applied; a width change on an already collapsed divider is
+    /// applied too (the display can change while the sections are collapsed).
+    var collapseWidth: CGFloat = SeparatorItem.pushOutLength {
+        didSet { if mode == .pushOut, collapseWidth != oldValue { apply() } }
     }
 
     /// Ice's trick: the window's content view has the constraint
@@ -856,8 +1280,11 @@ private final class SeparatorItem {
     private var reapplyTimes: [ContinuousClock.Instant] = []
     private var gaveUpNarrowing = false
 
-    init(autosaveName: String) {
-        item = NSStatusBar.system.statusItem(withLength: Self.pushOutLength)
+    init(autosaveName: String, backend: MenuBarBackend = .windowList) {
+        self.backend = backend
+        collapseWidth = backend == .accessibility ? Self.lineLength : Self.pushOutLength
+        item = NSStatusBar.system.statusItem(
+            withLength: backend == .accessibility ? Self.lineLength : Self.pushOutLength)
         item.autosaveName = autosaveName
         item.isVisible = true
         if let button = item.button {
@@ -886,7 +1313,7 @@ private final class SeparatorItem {
             restoreGap()
             button.image = nil
             button.isEnabled = false
-            item.length = Self.pushOutLength
+            item.length = collapseWidth
         case .line:
             restoreGap()
             button.image = Self.lineImage

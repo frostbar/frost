@@ -54,7 +54,7 @@ struct BehaviorView: View {
             } footer: {
                 // Unsupported macOS: the settings are kept for a version that supports it, but change nothing now.
                 if !model.isMenuBarSupported {
-                    Text(UnsupportedOS.detail)
+                    Text(RunningOS.detail)
                 }
             }
             .disabled(!model.isMenuBarSupported)

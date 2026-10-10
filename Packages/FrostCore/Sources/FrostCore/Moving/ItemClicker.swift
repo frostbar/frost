@@ -101,6 +101,33 @@ public enum ItemClicker {
         await Task.detached { postClick(at: point, windowID: windowID, kind: kind) }.value
     }
 
+    /// Clicks a menu bar item the bar isn't drawing, addressed by its Accessibility identity (macOS 27).
+    ///
+    /// A hidden item has no usable frame — the system keeps reporting where it was, which may be where a *different*
+    /// item now is — so `click(_:)` can't be used; the item's own element can still be pressed, and its menu opens
+    /// where the icon would be. Only a primary click: AXPress carries no button and no modifiers, so secondary and
+    /// Option clicks are not available this way.
+    @concurrent
+    public static func press(pid: pid_t, identityKey: String) async throws {
+        let error: AXError? = await Task.detached {
+            guard let element = AXExtrasReader.element(pid: pid, identityKey: identityKey) else { return nil }
+            AXUIElementSetMessagingTimeout(element, AXExtrasReader.messagingTimeout)
+            return AXUIElementPerformAction(element, kAXPressAction as CFString)
+        }.value
+        guard let error else { throw ItemClickError.pressFailed(.invalidUIElement) }
+        guard pressWasDelivered(error) else { throw ItemClickError.pressFailed(error) }
+    }
+
+    /// Whether an AXPress result means the item was actually pressed.
+    ///
+    /// Only `.delivered` (`.success`, or `.cannotComplete` while the menu it opened is in its tracking loop) counts.
+    /// `click` falls back to a CGEvent click when AXPress is unsupported, but there is nothing to click there: the
+    /// item isn't drawn in the bar at all, so an undelivered press means the click did not happen and the caller must
+    /// not report it as delivered and wait for a presentation that never opens.
+    public static func pressWasDelivered(_ error: AXError) -> Bool {
+        pressDisposition(error) == .delivered
+    }
+
     /// Call before clicking to record the IDs of all current on-screen windows as the baseline.
     public static func onscreenWindowIDs() -> Set<CGWindowID> {
         Set(currentOnscreenWindows().map(\.windowID))

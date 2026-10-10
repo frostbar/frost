@@ -20,8 +20,13 @@ public final class PermissionsService {
     }
     /// What the current permissions allow (`PermissionCapabilities`): gate features on these, not on "all granted".
     public var capabilities: PermissionCapabilities {
-        PermissionCapabilities(accessibility: accessibility, screenRecording: screenRecording)
+        PermissionCapabilities(accessibility: accessibility, screenRecording: screenRecording,
+                               capturesSupported: capturesSupported)
     }
+
+    /// Whether this macOS lets Frost capture icon images at all; set by the app layer from `MenuBarBackend`. When it
+    /// is false, a Screen Recording grant changes nothing and no capture runs.
+    public var capturesSupported = true
     /// The Frost Bar, the layout editor and moves (Accessibility).
     public var canManageItems: Bool { capabilities.canManageItems }
     /// Real images of icons (Screen Recording).

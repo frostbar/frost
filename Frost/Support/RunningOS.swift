@@ -2,20 +2,28 @@ import AppKit
 import FrostCore
 import SwiftUI
 
-/// Frost on a macOS version whose menu bar it can't manage (`PlatformSupport`): the decision for this process and the
-/// notice shown in the snowflake's menu and in Settings.
-enum UnsupportedOS {
-    /// Environment variable `FROST_TEST_UNSUPPORTED_OS=1` (Debug builds, VM testing only): behave as on an unsupported
-    /// macOS version, so the unsupported mode can be exercised in the macOS 26 VM.
+/// What this launch of Frost can do with the menu bar, decided once (`PlatformSupport`), and the notice shown when
+/// that is nothing at all.
+enum RunningOS {
+    /// Environment variable `FROST_TEST_UNSUPPORTED_OS=1` (Debug builds, VM testing only): behave as on an
+    /// unsupported macOS version, so the notice-only mode can be exercised in the macOS 26 VM.
     #if DEBUG
     private static let simulated = ProcessInfo.processInfo.environment["FROST_TEST_UNSUPPORTED_OS"] == "1"
     #else
     private static let simulated = false
     #endif
 
-    /// Whether Frost manages the menu bar in this process (decided once at launch).
-    static let isMenuBarSupported = PlatformSupport.isMenuBarSupported(
-        osVersion: ProcessInfo.processInfo.operatingSystemVersion, simulateUnsupported: simulated)
+    /// The backend for the running macOS (26: window list; 27: Accessibility; anything else: notice only).
+    static let backend = PlatformSupport.backend(osVersion: ProcessInfo.processInfo.operatingSystemVersion,
+                                                 simulateUnsupported: simulated)
+
+    /// Whether Frost manages the menu bar in this process.
+    static var isMenuBarSupported: Bool { backend.managesMenuBar }
+
+    /// Whether Frost can capture icon images on this macOS. Only the window-based backend can: the macOS 27 backend
+    /// has no per-item windows to capture, and its replacement (a capture of the menu bar strip) is not implemented
+    /// yet. Everything that offers Screen Recording reads this, so Frost never asks for a permission it cannot use.
+    static var usesScreenRecording: Bool { backend == .windowList }
 
     /// "26.6.2" (for the log).
     static var versionDescription: String {
@@ -42,9 +50,9 @@ struct UnsupportedOSNotice: View {
         HStack(alignment: .top, spacing: 12) {
             SymbolBadge(symbol: "exclamationmark.triangle.fill", tint: .orange)
             VStack(alignment: .leading, spacing: 2) {
-                Text(UnsupportedOS.title)
+                Text(RunningOS.title)
                     .font(.headline)
-                Text(UnsupportedOS.detail)
+                Text(RunningOS.detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

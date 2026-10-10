@@ -5,24 +5,31 @@
 public struct PermissionCapabilities: Equatable, Sendable {
     public var accessibility: Bool
     public var screenRecording: Bool
+    /// Whether this macOS lets Frost capture icon images at all (`MenuBarBackend`): the window-based backend does,
+    /// the macOS 27 one has no per-item windows to capture and its replacement is not implemented yet. The permission
+    /// can be granted and still buy nothing, so a grant alone must never start a capture.
+    public var capturesSupported: Bool
 
-    public init(accessibility: Bool, screenRecording: Bool) {
+    public init(accessibility: Bool, screenRecording: Bool, capturesSupported: Bool = true) {
         self.accessibility = accessibility
         self.screenRecording = screenRecording
+        self.capturesSupported = capturesSupported
     }
 
     /// The Frost Bar, the layout editor, moving icons (also new-item placement and section memory), click forwarding.
     public var canManageItems: Bool { accessibility }
 
     /// Capturing images of icons (and reading / writing their disk cache).
-    public var canCaptureImages: Bool { screenRecording }
+    public var canCaptureImages: Bool { screenRecording && capturesSupported }
 
     /// The Frost Bar's live refresh (temporary expansions under a freeze frame to capture hidden icons): it needs the
     /// Frost Bar and captures.
     public var canLiveRefresh: Bool { canManageItems && canCaptureImages }
 
     /// Everything works but icons are shown as app-icon tiles: suggest granting Screen Recording for real images.
-    public var suggestsScreenRecording: Bool { canManageItems && !canCaptureImages }
+    /// Never where captures aren't supported at all — there the grant would change nothing, and asking for it would
+    /// promise images Frost cannot produce.
+    public var suggestsScreenRecording: Bool { canManageItems && !canCaptureImages && capturesSupported }
 }
 
 /// How hidden icons are shown when the Frost icon is clicked (the user's setting).

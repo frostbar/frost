@@ -64,9 +64,10 @@ final class Preferences {
         displayMode.effective(hasNotch: Self.hasNotch(screen), capabilities: capabilities)
     }
 
-    /// Whether to show the "Grant Screen Recording to see real icons" hint.
+    /// Whether to show the "Grant Screen Recording to see real icons" hint. Never on a macOS where Frost doesn't
+    /// capture: asking for the permission there would promise images Frost cannot produce.
     func showsScreenRecordingHint(_ capabilities: PermissionCapabilities) -> Bool {
-        capabilities.suggestsScreenRecording && !screenRecordingHintDismissed
+        RunningOS.usesScreenRecording && capabilities.suggestsScreenRecording && !screenRecordingHintDismissed
     }
 
     private static func hasNotch(_ screen: NSScreen?) -> Bool {

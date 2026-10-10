@@ -25,6 +25,17 @@ public enum ScanStatus: Equatable, Sendable {
 @MainActor
 @Observable
 public final class MenuBarItemScanner {
+    /// Where the item list comes from (`MenuBarBackend`): the window list on macOS 26, Accessibility on macOS 27.
+    public enum Source: Sendable {
+        /// Every status item is a layer-25 window: read CGWindowList, resolve owners through AX.
+        case windowList
+        /// `MenuBarAgent` draws the whole bar and there are no per-item windows: read the AX extras
+        /// (`AXMenuBarInventory`).
+        case accessibility
+    }
+
+    public let source: Source
+
     public private(set) var items: [MenuBarItem] = []
     public private(set) var status: ScanStatus = .notScanned
     /// The display `items` are on (the one with the active menu bar, where the real windows are).
@@ -57,6 +68,10 @@ public final class MenuBarItemScanner {
     /// "unresolved" (which would keep triggering full reads).
     @ObservationIgnored public var ownWindowIDs: () -> Set<CGWindowID> = { [] }
 
+    /// Frost's own status items with their current frames, used by `Source.accessibility` (where no window list can
+    /// tell Frost where its own icon and dividers are). Injected by the app layer.
+    @ObservationIgnored public var ownItems: () -> [AXMenuBarInventory.OwnItem] = { [] }
+
     @ObservationIgnored private var runningAppsObservation: NSKeyValueObservation?
     /// How often `start`'s watch looks for status item windows that appeared or went away while no app launched or
     /// quit: an app re-adding its item (hiding and showing it, e.g. an icon that blinks for unread messages) creates a
@@ -73,7 +88,22 @@ public final class MenuBarItemScanner {
         await self?.performOwnershipRefresh()
     }
 
-    public init() {}
+    /// How often `Source.accessibility` re-reads the extras when nothing else triggers a scan. An AX read of every
+    /// app takes about 300 ms in the background, and items appear and disappear (an app launching, an item blinking
+    /// for unread messages) without a window-list change to notice, so a slow poll keeps the list honest without
+    /// loading the machine.
+    public static let accessibilityWatchInterval: Duration = .seconds(3)
+    @ObservationIgnored private var accessibilityWatch: Task<Void, Never>?
+    @ObservationIgnored private var axReadInFlight = false
+    @ObservationIgnored private var axReadPending = false
+    #if DEBUG
+    /// The item list the last log line described (Debug builds log it whenever it changes).
+    @ObservationIgnored private var lastAccessibilitySummary = ""
+    #endif
+
+    public init(source: Source = .windowList) {
+        self.source = source
+    }
 
     public func start() {
         // Rescan when apps launch / quit. Uses KVO on `runningApplications` rather than the didLaunch /
@@ -85,14 +115,26 @@ public final class MenuBarItemScanner {
                 self?.scheduleRescan(refreshOwnership: true)
             }
         }
-        rescan()
-        ownershipRefresher.refreshInBackground()
-        windowWatch = Task { [weak self] in
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: Self.windowWatchInterval) } catch { return }
-                guard let self else { return }
-                let windows = self.menuBarWindows()
-                if Set(windows.map(\.windowID)) != self.publishedWindowIDs { self.rescan(windows) }
+        switch source {
+        case .windowList:
+            rescan()
+            ownershipRefresher.refreshInBackground()
+            windowWatch = Task { [weak self] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: Self.windowWatchInterval) } catch { return }
+                    guard let self else { return }
+                    let windows = self.menuBarWindows()
+                    if Set(windows.map(\.windowID)) != self.publishedWindowIDs { self.rescan(windows) }
+                }
+            }
+        case .accessibility:
+            accessibilityRescan()
+            accessibilityWatch = Task { [weak self] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: Self.accessibilityWatchInterval) } catch { return }
+                    guard let self else { return }
+                    self.accessibilityRescan()
+                }
             }
         }
     }
@@ -113,11 +155,14 @@ public final class MenuBarItemScanner {
         }
     }
 
-    /// Rescans the active menu bar's items (synchronous, cheap): reads only CGWindowList and reuses cached
-    /// ownership. If any window needs a full AX read (a new window, or an unresolved one due for a retry),
-    /// starts one in the background that updates `items` when it finishes.
+    /// Rescans the active menu bar's items: on macOS 26 synchronous and cheap (reads only CGWindowList and reuses
+    /// cached ownership; a full AX read follows in the background when a window needs one), on macOS 27 an AX read
+    /// that publishes `items` when it returns.
     public func rescan() {
-        rescan(menuBarWindows())
+        switch source {
+        case .windowList: rescan(menuBarWindows())
+        case .accessibility: accessibilityRescan()
+        }
     }
 
     private func rescan(_ windows: [RawStatusWindow]) {
@@ -136,7 +181,105 @@ public final class MenuBarItemScanner {
     /// before the call (e.g. right after an app launched), so this always waits for a read that starts after
     /// the call; concurrent calls share the same read.
     public func refreshOwnership() async {
-        await ownershipRefresher.refresh()
+        switch source {
+        case .windowList: await ownershipRefresher.refresh()
+        case .accessibility: await accessibilityRead()
+        }
+    }
+
+    // MARK: - macOS 27: reading the AX extras
+
+    /// Starts an AX read unless one is running; a request that arrives meanwhile is remembered and served by a
+    /// follow-up read, so a caller that just changed something (a divider width, a move) sees the result.
+    private func accessibilityRescan() {
+        guard !axReadInFlight else {
+            axReadPending = true
+            return
+        }
+        axReadInFlight = true
+        Task { [weak self] in
+            await self?.performAccessibilityRead()
+            await self?.finishAccessibilityRead()
+        }
+    }
+
+    /// An AX read the caller waits for. A read already in flight started before whatever the caller changed, so it
+    /// is waited out and one more read — the caller's — is made afterwards; the caller is woken by that read rather
+    /// than by polling for a moment with no read running. Polling for a gap looks fine and isn't: the three-second
+    /// watch starts the next read in the same turn the previous one ends, so a caller waiting for an idle moment can
+    /// wait forever while reads keep completing. Everyone waiting is woken together, by the one extra read.
+    private func accessibilityRead() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            axReadWaiters.append(continuation)
+            if axReadInFlight { axReadPending = true } else { accessibilityRescan() }
+        }
+    }
+
+    /// Callers waiting for a fresh read (`accessibilityRead`); woken by the read that serves them.
+    @ObservationIgnored private var axReadWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Finishes a read (the read itself has already happened): if anyone is waiting, one more read is made and they
+    /// are woken — the caller's own read, which starts after whatever it changed; otherwise a read someone asked for
+    /// meanwhile is started.
+    private func finishAccessibilityRead() async {
+        guard !axReadWaiters.isEmpty else {
+            axReadInFlight = false
+            if axReadPending {
+                axReadPending = false
+                accessibilityRescan()
+            }
+            return
+        }
+        // A caller is waiting: read once more, while still marked in flight so no other read starts meanwhile, and
+        // wake exactly those who were waiting when it started. A caller that arrives *during* it wants geometry from
+        // after its own change, so it waits for a read of its own rather than being handed this one's older result.
+        axReadPending = false
+        let waiting = axReadWaiters
+        axReadWaiters = []
+        await performAccessibilityRead()
+        axReadInFlight = false
+        for waiter in waiting { waiter.resume() }
+        // A watch tick, or a caller that arrived during that read, still gets its own.
+        if axReadPending || !axReadWaiters.isEmpty {
+            axReadPending = false
+            accessibilityRescan()
+        }
+    }
+
+    private func performAccessibilityRead() async {
+        let axItems = await AXExtrasReader.readAllInBackground()
+        let displays = Self.currentDisplays()
+        let iconFrame = controlFrames()?.icon
+        let display = iconFrame.flatMap { frame in
+            displays.first { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) }
+        } ?? displays.first { $0.id == CGMainDisplayID() } ?? displays.first
+        if let display, menuBarDisplay != display {
+            menuBarDisplay = display
+            let frame = NSStringFromRect(display.frame)
+            FrostLog.scanner.notice("""
+                managing the menu bar of display \(display.id) \(frame, privacy: .public) \
+                (main display \(CGMainDisplayID()))
+                """)
+        }
+        let bounds = display?.frame ?? CGDisplayBounds(CGMainDisplayID())
+        let scan = AXMenuBarInventory.scan(axItems: axItems, own: ownItems(), displayBounds: bounds)
+        ownershipCache = scan.ownership
+        // Every display shows the same items on 27 (one composited bar), so there are no separate replicas to
+        // recognize clicks on.
+        replicaIconFrames = [:]
+        publish(scan.windows)
+        #if DEBUG
+        // The item list is what every later decision is based on, and on 27 it exists only here (no window list to
+        // cross-check against); log it when it changes.
+        // IDs and geometry only: a title is the item's AX description, which may be user content
+        // (`AGENTS.md`, logging: item titles are private).
+        let summary = scan.windows.map { "\($0.windowID)@\(Int($0.frame.minX))/w\(Int($0.frame.width))" }
+            .joined(separator: " ")
+        if summary != lastAccessibilitySummary {
+            lastAccessibilitySummary = summary
+            FrostLog.scanner.notice("bar: \(summary, privacy: .public)")
+        }
+        #endif
     }
 
     private func performOwnershipRefresh() async {
