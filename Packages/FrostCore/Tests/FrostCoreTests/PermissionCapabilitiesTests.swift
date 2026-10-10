@@ -48,4 +48,29 @@ import Testing
     @Test func inlineStaysInline() {
         #expect(DisplayMode.inline.effective(hasNotch: true, capabilities: all) == .inline)
     }
+
+    /// A macOS version where Frost has no captures (`MenuBarBackend`): a Screen Recording grant must not turn the
+    /// capture and live-refresh paths on, and the UI must not suggest granting it either. This is the rule that was
+    /// documented but not enforced until the capability itself carried it.
+    @Test func aGrantDoesNotEnableCapturesWhereTheyAreNotSupported() {
+        let granted = PermissionCapabilities(accessibility: true, screenRecording: true, capturesSupported: false)
+        #expect(granted.canManageItems)
+        #expect(!granted.canCaptureImages)
+        #expect(!granted.canLiveRefresh)
+        #expect(!granted.suggestsScreenRecording)
+        // Everything else still works: hiding, showing and moving never needed Screen Recording.
+        #expect(granted.canManageItems)
+    }
+
+    /// The same permissions where captures *are* supported behave as before.
+    @Test func aGrantEnablesCapturesWhereTheyAreSupported() {
+        let granted = PermissionCapabilities(accessibility: true, screenRecording: true, capturesSupported: true)
+        #expect(granted.canCaptureImages)
+        #expect(granted.canLiveRefresh)
+        #expect(!granted.suggestsScreenRecording)
+
+        let missing = PermissionCapabilities(accessibility: true, screenRecording: false, capturesSupported: true)
+        #expect(!missing.canCaptureImages)
+        #expect(missing.suggestsScreenRecording)
+    }
 }

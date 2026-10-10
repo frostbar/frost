@@ -336,4 +336,21 @@ import AppKit
                                  windowTitle: "Item-0", bundleID: "com.example", pid: 500, axDescription: nil)
         await #expect(throws: ItemClickError.notOnScreen) { try await ItemClicker.click(hidden) }
     }
+
+    /// The press used on macOS 27 (a hidden item is clicked through its Accessibility element, there is nothing to
+    /// click at a position): only a delivered press counts.
+    ///
+    /// `.cannotComplete` means the menu it opened is in its tracking loop and is a success; anything else means the
+    /// item was *not* pressed, and reporting that as a delivered click made the Frost Bar wait for a presentation that
+    /// could never open.
+    @Test func onlyADeliveredPressCountsAsPressed() {
+        #expect(ItemClicker.pressWasDelivered(.success))
+        #expect(ItemClicker.pressWasDelivered(.cannotComplete))
+        #expect(!ItemClicker.pressWasDelivered(.actionUnsupported))
+        #expect(!ItemClicker.pressWasDelivered(.attributeUnsupported))
+        #expect(!ItemClicker.pressWasDelivered(.invalidUIElement))
+        #expect(!ItemClicker.pressWasDelivered(.noValue))
+        #expect(!ItemClicker.pressWasDelivered(.failure))
+        #expect(!ItemClicker.pressWasDelivered(.apiDisabled))
+    }
 }

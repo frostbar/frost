@@ -8,34 +8,40 @@ import Testing
     }
 
     @Test func macOS26IsSupported() {
+        #expect(PlatformSupport.backend(osVersion: version(26)) == .windowList)
+        #expect(PlatformSupport.backend(osVersion: version(26, 6, 2)) == .windowList)
+        #expect(PlatformSupport.backend(osVersion: version(26, 99, 9)) == .windowList)
         #expect(PlatformSupport.isMenuBarSupported(osVersion: version(26)))
-        #expect(PlatformSupport.isMenuBarSupported(osVersion: version(26, 6, 2)))
-        #expect(PlatformSupport.isMenuBarSupported(osVersion: version(26, 99, 9)))
     }
 
-    /// macOS 27 draws the whole menu bar in one system process: no per-item windows to see, push out or ⌘-drag.
-    @Test func macOS27IsNotSupported() {
-        #expect(!PlatformSupport.isMenuBarSupported(osVersion: version(27)))
-        #expect(!PlatformSupport.isMenuBarSupported(osVersion: version(27, 1)))
+    /// macOS 27 draws the whole menu bar in one system process: item identities and geometry come from
+    /// Accessibility, and hiding uses the bounded dividers instead of the wide separators of macOS 26.
+    @Test func macOS27UsesTheAccessibilityBackend() {
+        #expect(PlatformSupport.backend(osVersion: version(27)) == .accessibility)
+        #expect(PlatformSupport.backend(osVersion: version(27, 1)) == .accessibility)
+        #expect(PlatformSupport.isMenuBarSupported(osVersion: version(27)))
     }
 
     /// A later major version may change the menu bar again: unsupported until measured.
     @Test func laterVersionsAreNotSupported() {
+        #expect(PlatformSupport.backend(osVersion: version(28)) == .noticeOnly)
+        #expect(PlatformSupport.backend(osVersion: version(40)) == .noticeOnly)
         #expect(!PlatformSupport.isMenuBarSupported(osVersion: version(28)))
-        #expect(!PlatformSupport.isMenuBarSupported(osVersion: version(40)))
     }
 
     /// Frost's deployment target is 26; 16 is what macOS 26 reports to apps linked against an older SDK.
     @Test func earlierVersionsAreNotSupported() {
-        #expect(!PlatformSupport.isMenuBarSupported(osVersion: version(15, 7)))
-        #expect(!PlatformSupport.isMenuBarSupported(osVersion: version(16)))
+        #expect(PlatformSupport.backend(osVersion: version(15, 7)) == .noticeOnly)
+        #expect(PlatformSupport.backend(osVersion: version(16)) == .noticeOnly)
     }
 
-    /// The Debug-only test hook (`FROST_TEST_UNSUPPORTED_OS=1`) makes the supported version behave like 27.
+    /// The Debug-only test hook (`FROST_TEST_UNSUPPORTED_OS=1`) makes a supported version behave like 28.
     @Test func simulatingAnUnsupportedVersion() {
-        #expect(!PlatformSupport.isMenuBarSupported(osVersion: version(26, 6, 2), simulateUnsupported: true))
-        #expect(PlatformSupport.isMenuBarSupported(osVersion: version(26, 6, 2), simulateUnsupported: false))
-        #expect(!PlatformSupport.isMenuBarSupported(osVersion: version(27), simulateUnsupported: false))
+        #expect(PlatformSupport.backend(osVersion: version(26, 6, 2), simulateUnsupported: true) == .noticeOnly)
+        #expect(PlatformSupport.backend(osVersion: version(27), simulateUnsupported: true) == .noticeOnly)
+        #expect(!PlatformSupport.isMenuBarSupported(osVersion: version(27), simulateUnsupported: true))
+        #expect(PlatformSupport.backend(osVersion: version(26, 6, 2), simulateUnsupported: false) == .windowList)
+        #expect(PlatformSupport.backend(osVersion: version(27), simulateUnsupported: false) == .accessibility)
     }
 
     @Test func versionDescription() {
