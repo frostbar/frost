@@ -554,10 +554,14 @@ lists from `dump-status-windows.swift --all`. Method: see `docs/testing-vm.md`.
 
 ## macOS 27
 
-Measured in the VM `frost-test-27` (macOS 27.0, build 26A428; `testing-vm.md`, "macOS 27 VM") on 2026-10-07 with
-FakeItems A + B, spike programs and Frost 0.3.3 / 0.3.4. macOS 27 rebuilt the menu bar, and nothing Frost relies on
-works there, so Frost doesn't support it yet (`PlatformSupport`): it creates only the snowflake, whose menu and
-Settings say so, and leaves the menu bar alone.
+macOS 27 rebuilt the menu bar into one system process, so the macOS 26 backend (per-item windows, wide separators,
+`0x33`-routed ⌘-drags) does not work there. Frost supports it through a second backend (`MenuBarBackend.accessibility`)
+that reads the bar through Accessibility. Everything below was measured in the VM `frost-test-27` (macOS 27.0, build
+26A428).
+
+The first block is from 2026-10-07 with FakeItems A + B, spike programs and Frost 0.3.3 / 0.3.4, while Frost was still
+notice-only: it records what the *macOS 26* mechanism did there. The block after it is from 2026-10-10, measured with
+the implemented backend (Frost from `c3e339c` plus the accessibility backend), and supersedes it wherever they differ.
 
 | | macOS 26 | macOS 27 |
 | --- | --- | --- |
@@ -573,3 +577,26 @@ What Frost 0.3.5 does there, checked in the same VM: a fresh install shows only 
 upgrade over 0.3.4 (whose separators had been dropped from the bar) leaves every icon in the order it has with Frost
 quit, plus the snowflake; the snowflake's menu, Settings → About / Layout / Behavior show the notice; Check for
 Updates… works; no crash.
+
+### The accessibility backend (2026-10-10)
+
+Measured in the same guest with FakeItems and FakeItems Demo (about 15 third-party icons) and a 1728 pt display, one
+notched-less screen. `docs/testing-vm.md`, "macOS 27 VM" has the tooling; the raw logs of this round are private.
+Where a number is a single observation it says so — none of this is a universal rule.
+
+| | What was measured | Consequence in the code |
+| --- | --- | --- |
+| Item discovery | `kAXExtrasMenuBarAttribute` gives every item's identity (identifier / description / help) and its frame, for other apps and for Frost's own items. There is no window list to cross-check against | `AXMenuBarInventory` builds `MenuBarItem`s from AX alone; each gets a window ID synthesized from its identity (FNV-1a over bundle ID + identity key + pid), so the sections, editor, Frost Bar and captures above it work unchanged |
+| Frost's own items | They keep real `NSStatusItem` windows, so their frames come from AppKit. A new item takes the **first free slot of the trailing area**, and a later one goes to its right — the opposite of macOS 26, where creation order decides the slot from the right | `SectionController` creates Always Hidden, then Hidden, then the icon on 27, and `OwnItemDrag` ⌘-drags the snowflake to the left of the system's items on first run |
+| Divider width | A divider's requested width is honoured up to just under half the display. With 15 fixture icons: 300 pt made 5 leave the bar, 600 pt 7, 800 pt 10; at 860, 1200 and 1600 pt the width was **ignored** and nothing changed | `BoundedDivider.collapseWidth` = `min(832, displayWidth / 2 − 32)`, and the UI never claims a specific icon is hidden |
+| Collapse / expand | The three states hold: both dividers wide hides the most, only the Hidden divider narrow hides fewer, both narrow hides nothing (1, 5 and 15 of 15 fixture icons drawn, checked on screenshots) | `SectionController.applySectionLengths` uses the same collapsed / expanded / expandedAll states as 26 |
+| A wide divider is visible | It must be **on screen** to take space, and it is invisible, so the space it takes shows as a hole in the bar. Measured: with the pair at the left end of the trailing area the icons the bar still draws sit together on the **right**, next to the snowflake; with them in the middle the hole lands between the icons and the snowflake | `SectionController.placeOwnItems` puts both dividers at the left end of the trailing area |
+| Frost's own dividers are not hittable | A hit test (`AXUIElementCopyElementAtPosition`) at a divider's own reported frame — measured while the sections are collapsed — returned **another app's** icon (its window is 834 pt wide and icons are drawn over that space), while the same test at the snowflake returns Frost. So a synthesized ⌘ mouse-down at a divider's frame would press a neighbour | `SectionController.dragOwnItem` requires the system to report a Frost element at the point; the snowflake is placed, the dividers are left where the system put them |
+| Moving an item | A ⌘-drag that starts **on the item itself** (mouse-moved, ⌘ mouse-down, one lift drag, interpolated drags, mouse-up) moves it; the order read back from AX confirms it. The 26 route (mouse-down on Frost's icon, routed by `0x33`) moves nothing | `ItemMover.Mechanism.directOnTarget`, used only for a move the user asked for, inside `ItemMover.transaction`, with the pointer concealed (rule 3 in `AGENTS.md`) |
+| Where a dropped icon lands | The drag lands slightly left of where the mouse-up was posted (the icons on that side slide over while the item is lifted), and an icon dropped into an *empty* band is resolved against one of Frost's own dividers, which is an invisible 8 pt line while editing | The drop is verified by the order the bar reports (never by a delay); for a divider destination the check is "the icon is on the divider's hidden side" rather than "immediately beside it" |
+| Which icons the bar draws | **Not observable.** A pushed-out icon keeps reporting the frame it had before it left, and at the same time the frames of the icons that *are* drawn are not where they are drawn. Apple's `NSStatusItem` `occlusionState` no longer reports whether an item is visible either (FB23349447, open), and its release notes describe items whose "position, visibility may change in a way that is transparent/undetectable to the app" | Nothing derives the sections from geometry. They are what the user arranged (`ItemMemoryStore`), an unknown icon counts as Visible, the layout editor's footer says so, and the Frost Bar lists the icons without claiming any of them is hidden |
+| `NSStatusItem Preferred Position` | Does not place an item (measured before support; unchanged) | 27 does not write the 26 seeds and uses its own autosave names (`Frost27.HiddenDivider`, `Frost27.AlwaysHiddenDivider`) so no 26 position is inherited |
+
+Still unmeasured on 27: notched hardware, more than one display, captures of the menu bar strip for real icon images,
+the freeze-frame path, per-icon verification of the hidden set with Screen Recording, and a durable return journal for
+a move interrupted by a crash.

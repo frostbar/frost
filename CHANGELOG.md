@@ -6,6 +6,21 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+### Added
+- **macOS 27 support.** macOS 27 rebuilt the menu bar into one system process, so Frost drives it through a second
+  backend that reads the icons through Accessibility (`AXMenuBarInventory`), hides them with two of its own bounded
+  dividers (`BoundedDivider`) and moves one with a ⌘-drag that starts on the icon itself (`ItemMover` with
+  `.directOnTarget`). The snowflake and the dividers are placed on the first launch (`OwnItemDrag`), clicking a hidden
+  icon in the Frost Bar presses its Accessibility element, and the layout editor performs real moves.
+- On macOS 27 the layout editor's sections are the arrangement you set there, kept per icon (`ItemMemoryStore`), with
+  a footer that says what Frost knows: how many icons the menu bar draws for a given divider width depends on what is
+  in your bar, and a pushed-out icon keeps reporting the frame it had, so Frost cannot tell which icons are hidden
+  (`docs/macos-behavior.md`, "macOS 27"). The Frost Bar therefore lists the menu bar's icons without a count.
+
+### Changed
+- `PlatformSupport.backend` replaces the "macOS 26 only" gate: 26 keeps the existing window-based backend, 27 uses the
+  Accessibility one, and later versions stay notice-only until they are measured.
+
 ## [0.3.5] - 2026-10-09
 
 ### Changed

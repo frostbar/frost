@@ -229,10 +229,33 @@ look of the Frost Bar, prompts.
 - Icons moving sections after the upgrade, including icons with live numbers in their tooltip or description
   (their identity keys changed format).
 
-### J11. Unsupported macOS (macOS 27)
+### J11. macOS 27 (the accessibility backend)
 
-**Start:** macOS 27 (the `frost-test-27` VM), or macOS 26 with `FROST_TEST_UNSUPPORTED_OS=1`; once fresh, once
-upgrading over the previous release with a layout arranged.
+**Start:** macOS 27 (the `frost-test-27` VM), once fresh, once upgrading over a release that arranged a layout.
+
+1. Launch Frost with several third-party icons running: the snowflake appears next to Control Center and the dividers
+   are placed at the end of the trailing area, so the icons the bar still draws sit together on the right. Nothing
+   else moves.
+2. Click the snowflake: the Frost Bar lists the menu bar's icons (no captured images without Screen Recording, and no
+   claim about how many are hidden). Click one: its real menu opens. A click outside closes the panel.
+3. Open Settings → Layout (from the snowflake's menu): every icon is in one band — Frost has not been told where any
+   of them belongs — and the footer says what it does and does not know. Drag a tile into Hidden: the icon really
+   moves in the menu bar, and the band keeps it after closing and reopening the editor, and after relaunching Frost.
+4. Hide/reveal: click the snowflake with the display mode set to "In Menu Bar" — the hidden icons leave and come back
+   with the menu bar's own animation.
+5. Behavior and About are the macOS 26 ones.
+
+**Watch for:**
+- A Layout drop that does nothing and says nothing, or one that reports a failure although the icon moved.
+- The Frost Bar claiming a number of hidden icons, or listing Frost's own dividers as if they were icons.
+- A gap between the icons and the snowflake in the collapsed bar (the dividers belong at the end of the trailing
+  area), or the snowflake itself landing at the left end of the bar.
+- Anything that looks like a macOS 26 section read from the bar: on 27 the sections are the arrangement only.
+
+### J12. A macOS version without a backend (notice only)
+
+**Start:** macOS 26 with `FROST_TEST_UNSUPPORTED_OS=1`. The case is any macOS version Frost has no backend for; the
+flag is how it is reached today, since the versions that exist (26 and 27) both have one.
 
 1. Launch Frost: nothing in the menu bar moves; only the snowflake appears. No onboarding.
 2. Click the snowflake (left, then right): the menu says this version of macOS isn't supported yet and that an update
@@ -242,11 +265,11 @@ upgrading over the previous release with a layout arranged.
 4. Check for Updates… from the menu and from About.
 
 **Watch for:**
-- Any icon changing place compared with the bar with Frost quit (the separators coming back would scramble it).
+- Any icon changing place compared with the bar with Frost quit.
 - A dead end: a click on the snowflake that does nothing, or a window asking for permissions that change nothing.
 - The notice truncated in Simplified Chinese, or hard to read in Dark Mode.
 
-### J12. Real Mac only
+### J13. Real Mac only
 
 These can't be reproduced in the VM; run them on a test Mac before releases that touch the related code: a notched
 display (icons behind the notch, Automatic mode), an external display (switching the active menu bar), and real

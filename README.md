@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/frostbar/frost/releases/latest"><img src="https://img.shields.io/github/v/release/frostbar/frost?label=download&color=2f7bf5" alt="Download the latest release"></a>
-  <img src="https://img.shields.io/badge/macOS-26-black" alt="macOS 26 (macOS 27 not supported yet)">
+  <img src="https://img.shields.io/badge/macOS-26%20%7C%2027-black" alt="macOS 26 and macOS 27">
   <img src="https://img.shields.io/badge/notarized-Developer%20ID-success" alt="Signed with a Developer ID and notarized by Apple">
   <a href="https://github.com/frostbar/frost/actions/workflows/ci.yml"><img src="https://github.com/frostbar/frost/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/frostbar/frost" alt="MIT license"></a>
@@ -31,18 +31,21 @@
 ## Features
 
 - **Three sections:** Visible, Hidden and Always Hidden. Click the snowflake to show Hidden; ⌥-click to show Always
-  Hidden too. Optionally hide them again after a delay.
+  Hidden too. Optionally hide them again after a delay. On macOS 27 the menu bar itself decides how many icons fit,
+  so the sections are the arrangement you set rather than a boundary Frost reads back (see
+  [Known limitations](#known-limitations)).
 - **Frost Bar:** hidden icons in a grid with live images (clocks and network speeds stay current). Click an icon to
   open its menu; right-click or Control-click for its secondary menu; ⌥-click to send an Option click.
 - **Layout editor:** drag icons between sections using live images of your real menu bar.
 - **Keep icons in their sections:** new apps' icons go to Hidden, and when an app relaunches and macOS puts its icon
-  somewhere else, Frost moves it back.
+  somewhere else, Frost moves it back. (macOS 26: on macOS 27 the menu bar decides how many icons fit, so Frost keeps
+  the sections you set instead of moving icons back.)
 - **Display modes:** Automatic (the Frost Bar on displays with a notch, in the menu bar elsewhere), In Menu Bar, or
   Frost Bar.
 - **Multiple displays, launch at login, automatic updates** with a quiet reminder dot instead of pop-ups.
 
 Hiding and showing icons needs **no permissions**. The Frost Bar and the layout editor need only **Accessibility**;
-Screen Recording is optional and shows real images of the icons.
+Screen Recording is optional and shows real images of the icons (on macOS 26 — Frost does not capture on macOS 27 yet).
 
 | Settings → Layout | Settings → About |
 | --- | --- |
@@ -50,8 +53,8 @@ Screen Recording is optional and shows real images of the icons.
 
 ## Install
 
-Requires **macOS 26 Tahoe** (Apple silicon or Intel). **macOS 27 is not supported yet**: it changed how the menu bar
-works, and Frost can't hide or move icons there (see [Known limitations](#known-limitations)).
+Requires **macOS 26 Tahoe** or **macOS 27** (Apple silicon or Intel). macOS 27 rebuilt the menu bar, so Frost drives it
+through a different backend there (see [Known limitations](#known-limitations) for what differs).
 
 1. Download **`Frost-<version>.dmg`** from the [latest release](https://github.com/frostbar/frost/releases/latest).
 2. Open it and drag **Frost** to **Applications** in Finder.
@@ -74,8 +77,8 @@ Frost entry and grant it again. Later updates keep the permissions.
 
 | Permission | | Used for | Without it |
 | --- | --- | --- | --- |
-| Accessibility | Required | Identifying each icon and the app that owns it; moving icons between sections; opening them from the Frost Bar; keeping icons in their sections | The Frost Bar and layout editor ask for it; hiding and showing still work (hidden icons expand in the menu bar) |
-| Screen Recording | Optional | Real images of the icons in the Frost Bar and the layout editor, kept current while the Frost Bar is open | Everything still works; icons are shown as their app's icon (or a system symbol), with a short label where it helps tell them apart |
+| Accessibility | Required | Identifying each icon and the app that owns it; moving icons between sections; opening them from the Frost Bar; keeping icons in their sections. On macOS 27 it is also what Frost reads the menu bar with, since there is no window list there (and without it the Frost Bar and layout editor have no icons to show, while hiding and showing still work) | The Frost Bar and layout editor ask for it; hiding and showing still work (hidden icons expand in the menu bar) |
+| Screen Recording | Optional | Real images of the icons in the Frost Bar and the layout editor, kept current while the Frost Bar is open (macOS 26; not used on macOS 27 yet) | Everything still works; icons are shown as their app's icon (or a system symbol), with a short label where it helps tell them apart |
 
 Onboarding opens on first launch. **Settings → About** shows each permission's status, and **Grant Access** asks for
 it right away (the system prompt, or System Settings if there is no prompt). Without Screen Recording, the Frost Bar
@@ -96,9 +99,14 @@ reopens the window you were in.
 
 ## Known limitations
 
-- **macOS 27 is not supported yet.** macOS 27 draws the whole menu bar in one system process, so Frost can no
-  longer see, hide or move icons. On macOS 27 Frost leaves the menu bar alone and says so in its menu and in
-  Settings → About (from 0.3.5). Support is being investigated.
+- **macOS 27 works differently.** It draws the whole menu bar in one system process, so Frost reads the icons through
+  Accessibility, hides them by the *space* two of its own invisible dividers take up (not by pushing them off screen
+  like macOS 26), and moves an icon with a ⌘-drag that starts on the icon itself. Two consequences you will notice:
+  how many icons the menu bar draws for a given divider width depends on what is in your bar, so Frost never claims
+  which icons are hidden; and the layout editor's sections are the arrangement you set there rather than something
+  read from the bar. Without Screen Recording the Frost Bar lists your icons instead of showing captured images, and
+  it doesn't say how many of them are hidden. On a macOS version Frost hasn't been measured on it leaves the menu bar
+  alone and says so in its menu and in Settings → About.
 - With several displays, Frost manages the menu bar you last clicked; the other displays show macOS's copies of it.
 - macOS doesn't draw icons behind the notch, so Frost gets their images with a short background capture: while you
   aren't using the menu bar, it moves one such icon next to the snowflake under a still image of the menu bar and puts

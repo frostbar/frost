@@ -7,8 +7,9 @@ Instructions for AI coding agents working in this repository. User documentation
 Frost: a macOS menu bar manager (similar to [Ice](https://github.com/jordanbaird/Ice)) that hides menu bar items and
 shows the hidden ones in a glass panel below the menu bar (the Frost Bar).
 
-- Supports **macOS 26** only (Liquid Glass); no compatibility with older systems. On macOS 27 and later Frost runs in
-  a notice-only mode (see "Key facts", supported OS gate).
+- Supports **macOS 26** (Liquid Glass) and **macOS 27**, on two backends behind the same UI
+  (`MenuBarBackend`: `.windowList` on 26, `.accessibility` on 27). No compatibility with older systems, and later
+  versions run in a notice-only mode until they are measured (see "Key facts", supported OS gate).
 - Stack: Swift 6.4 (Swift 6 language mode, `SWIFT_STRICT_CONCURRENCY: complete`), Xcode 27, SwiftUI + AppKit,
   XcodeGen, Sparkle 2 (SPM, automatic updates).
 - Not sandboxed, distributed directly. Basic hiding and showing needs no permissions; the Frost Bar, the layout editor
@@ -74,11 +75,18 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
    notch. tart gives a macOS guest only one display; the second one is an in-guest virtual display
    (`scripts/vm/guest-virtual-display.m`, which exists as long as its process runs). It is not visible in the VNC
    framebuffer; capture it with `screencapture -D 2` inside the guest.
-3. **Safety constraints for synthesized events**: when moving items, the mouse-down must physically land on the center
-   of Frost's own item and is routed to the target item by window ID through event field `0x33`. Never post a ⌘
-   mouse-down at the position of a third-party item. Hide the pointer while synthesized events move it
+3. **Safety constraints for synthesized events**: on macOS 26, when moving items, the mouse-down must physically land
+   on the center of Frost's own item and is routed to the target item by window ID through event field `0x33`. Never
+   post a ⌘ mouse-down at the position of a third-party item. Hide the pointer while synthesized events move it
    (`CursorConcealment`) and restore its position afterwards; the one exception is the Frost Bar's move out for a
    forwarded click, which leaves the pointer on the moved item (`CursorDisposition.onMovedItem`).
+   **macOS 27 has neither per-item windows nor `0x33` routing**, so a move is a ⌘-drag that starts on the item itself
+   (`ItemMover.Mechanism.directOnTarget`) — the one case where Frost posts a ⌘ mouse-down on another app's status
+   item. It is allowed only under all of: a move the user asked for (a layout-editor drop, a Frost Bar click, or
+   placing Frost's own items), inside `ItemMover.transaction`, after waiting for the user's physical buttons to be
+   released (`UserMouseButtons`), at a position from an Accessibility read whose item identity and current geometry
+   were verified, with the pointer concealed and restored, and with success claimed only from the order the bar
+   reports afterwards — never from a delay. Nothing about the macOS 26 path is relaxed by this.
 4. Do not call `NSStatusBar.removeStatusItem` on quit: it deletes the item's saved Preferred Position.
 5. **Never commit private keys or certificates** (the Sparkle EdDSA private key, the .p12 of "Frost Local
    Signing"). Do not casually change the release signing identity or `SUPublicEDKey`; see `docs/releasing.md` for
@@ -87,20 +95,22 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
    accounts, absolute paths, etc.); use neutral descriptions ("a third-party menu app"). Commits to the public
    repository use the GitHub noreply address as author (`COMMIT_AUTHOR_*` in `scripts/release/config.sh`).
 
-## Key facts on macOS 26 (pitfalls we hit)
+## Key facts (pitfalls we hit)
 
-- **Supported OS gate**: everything below holds on macOS 26 only. macOS 27 draws the whole menu bar in one system
-  process (no per-item windows, a too-wide separator is dropped from the bar instead of pushing icons out and scrambles
-  the order when it comes back, no ⌘-drags routed by `0x33`; `macos-behavior.md`, "macOS 27").
-  `PlatformSupport.isMenuBarSupported` (major version 26 only; later versions are unsupported until measured) decides
-  once at launch (`UnsupportedOS`, `AppModel.isMenuBarSupported`). Unsupported, Frost creates only the snowflake
-  (`SectionController.installNoticeOnly`): no separators (never removed either, so their saved positions stay), no
-  scanner, Frost Bar, new-item placement, captures, freeze frames or layout editing, and no onboarding; the snowflake's
-  menu and Settings show the notice, and Sparkle keeps working so a supporting release can arrive. Anything new that
-  touches the menu bar must stay behind this gate. Test it on macOS 26 with `FROST_TEST_UNSUPPORTED_OS=1`, and on
-  macOS 27 in the `frost-test-27` VM (`testing-vm.md`, "macOS 27 VM").
+The bullets below are macOS 26 unless they say otherwise; macOS 27 is a separate block at the end of this section.
+
+- **Supported OS gate**: the bullets in this list hold on macOS 26 unless a bullet says otherwise; macOS 27 needs the
+  second backend (`MenuBarBackend.accessibility`) described under "macOS 27" below. `PlatformSupport.backend` decides
+  once at launch from the major version (26 → `.windowList`, 27 → `.accessibility`, anything else → `.noticeOnly`;
+  later versions stay unsupported until measured), and `RunningOS` is what the app layer reads. `.noticeOnly` creates
+  only the snowflake (`SectionController.installNoticeOnly`): no separators (never removed either, so their saved
+  positions stay), no scanner, Frost Bar, new-item placement, captures, freeze frames or layout editing, and no
+  onboarding; the snowflake's menu and Settings show the notice, and Sparkle keeps working so a supporting release can
+  arrive. Anything new that touches the menu bar must stay behind this gate. Test it on macOS 26 with
+  `FROST_TEST_UNSUPPORTED_OS=1`, and on macOS 27 in the `frost-test-27` VM (`testing-vm.md`, "macOS 27 VM").
 - The owner of every status item window is Control Center; the real owner must be matched through AX
   (`kAXExtrasMenuBarAttribute`) by midX (4 pt tolerance).
+
 - `button.window.windowNumber` is **not** the CG window ID, and converting it crashes; Frost locates its own control
   items by frame (converted to CG coordinates), with the window title (the autosave name) only as a fallback.
 - Without Screen Recording, `kCGWindowName` (window titles) is empty for other apps' windows (also through private
@@ -227,6 +237,42 @@ Before finishing any change, `make test-core` and `make build` must both pass wi
   (`docs/releasing.md`, "Hardened Runtime and entitlements").
 - Don't put continuously running animations (e.g. `.symbolEffect(.breathe)`) in Frost's windows; one once froze the
   main thread. Use one-shot effects only.
+
+### On macOS 27 (the accessibility backend)
+
+- **There are no per-item windows.** `MenuBarAgent` draws the whole bar, so `CGWindowList` and per-window
+  ScreenCaptureKit find nothing: item identities and geometry come from `kAXExtrasMenuBarAttribute`
+  (`AXMenuBarInventory`). Each item is addressed by a window ID synthesized from its AX identity, which is what keeps
+  the sections, the layout editor, the Frost Bar and the captures working on the same `MenuBarItem` values as on 26.
+- **Hiding is not a boundary.** A divider hides by the space it takes (`BoundedDivider`), which the system honours up
+  to just under half the display; above that it is ignored. How many icons leave the bar is a capacity effect, so no
+  code may claim that a particular icon is hidden.
+- **Which icons the bar draws cannot be read.** A pushed-out icon keeps its old frame, and Apple's `NSStatusItem`
+  `occlusionState` no longer reports visibility (FB23349447). The sections are therefore what the *user arranged*
+  (`ItemMemoryStore`, filled by layout editor drops and by a 26 run); an icon Frost was never told about counts as
+  Visible, and the layout editor's footer says so.
+- **Both dividers sit at the end of the trailing area** (`SectionController.placeOwnItems`, `OwnItemDrag`): their
+  space then lands next to the app menus and the icons the bar still draws stay together on the right, as on 26. A
+  fresh item takes the first free slot of the trailing area — the opposite end from macOS 26 — so 27 creates Always
+  Hidden, then Hidden, then the icon.
+- **Frost's own dividers cannot be dragged on 27, and nothing may try.** Measured: `AXUIElementCopyElementAtPosition`
+  at a divider's own reported frame returns *another app's* icon (the divider is invisible and its window spans icons),
+  so a synthesized ⌘ mouse-down there would press the neighbour. `SectionController.dragOwnItem` therefore requires the
+  system to report a Frost element at the point before posting, which the snowflake passes (it is drawn) and a divider
+  does not; the snowflake is placed and the dividers are left where the system put them (the left end, which is where
+  they belong). The same guard runs in `ItemMover.moveDirect` for third-party items, where it checks the item's
+  identity at the point.
+- **Frost's own items are identified by the names they were created with** (`Frost27.HiddenDivider`,
+  `Frost27.AlwaysHiddenDivider`), not through `FrostControlLocator`: on 27 a divider held as a thin line reports an
+  Accessibility frame that differs from its window's. When this broke, a layout drop silently did nothing, because
+  `drop` returns early without `controlWindows`.
+- **A drop into an empty band is resolved against one of Frost's own dividers**, an invisible 8 pt line while editing;
+  the move is verified by the order the bar reports, with "the icon is on the divider's hidden side" as the check
+  (`ItemMover.isSatisfiedOn27`) — requiring it to be immediately beside the line is stricter than the bar can express.
+- **27 uses its own autosave names** so no saved macOS 26 separator position is inherited, and it never writes the 26
+  `NSStatusItem Preferred Position` seeds (they place nothing there).
+- **Screen Recording, captures and the freeze frame are not implemented on 27**: the Frost Bar shows the owning app's
+  icon and never claims to know which icons are hidden. `docs/macos-behavior.md`, "macOS 27" has the measurements.
 
 ## Code conventions
 

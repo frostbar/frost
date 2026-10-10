@@ -566,18 +566,41 @@ local update feed, see "Testing an update in the VM" in `docs/releasing.md`.
 - [ ] The updated app has no quarantine attribute (`xattr -p com.apple.quarantine /Applications/Frost.app` reports an
   error), and no Gatekeeper prompt appears at launch.
 
-## 11. Unsupported macOS (macOS 27)
+## 11. macOS 27 (the accessibility backend)
 
-On macOS 27, or in the macOS 26 VM with `make vm-run FROST_ENV="FROST_TEST_UNSUPPORTED_OS=1"` (Debug builds). Compare
-the menu bar with Frost quit and with Frost running: in the VM, `dump-status-windows.swift` on macOS 26; on macOS 27,
-which has no per-item windows, the menu bar extras' AX frames (`testing-vm.md`, "macOS 27 VM").
+In the macOS 27 VM (`testing-vm.md`, "macOS 27 VM"), with several third-party icons running (FakeItems +
+FakeItems Demo). Compare the menu bar with Frost quit and with Frost running: on 27 there are no per-item windows, so
+compare the menu bar extras' AX frames and the pixels of the bar (`testing-vm.md`, "Verification techniques").
+
+- [ ] Launch: the log says `managing the menu bar of display …`; the snowflake appears left of the system's items and
+  **both dividers end up at the left end of the trailing area** (`placing Frost27.HiddenDivider …`), so the icons the
+  bar still draws stay together on the right, next to the snowflake. No `isn't supported` line.
+- [ ] The three states hold: collapsed hides the most, expanded (click) shows more, ⌥-click shows everything. Check it
+  on screenshots of the bar, not on AX frames — a pushed-out icon keeps reporting its old frame.
+- [ ] Frost Bar (left click with the display mode set to Frost Bar): it lists the icons in the bar's order, **without
+  a count** and without Frost's own dividers, and its footer says "Menu bar icons". Clicking one opens its real menu;
+  a click outside closes the panel. Without Screen Recording the tiles show the owning app's icons.
+- [ ] Settings → Layout: the three bands hold **the arrangement**, not something read from the bar; with nothing
+  arranged yet every icon is in Visible and the footer explains that macOS decides how many icons the menu bar shows.
+  Drag a tile into Hidden: the icon really moves in the menu bar (log: `direct ⌘-drag … verified against the order the
+  menu bar reports`), and the band keeps it after closing and reopening the editor and after relaunching Frost.
+- [ ] A drop into an empty band is not reported as a failure when the icon did move (the destination is one of Frost's
+  own dividers, an invisible 8 pt line: "on the divider's hidden side" counts as reached).
+- [ ] Behavior and About are the macOS 26 windows; Check for Updates… works.
+- [ ] English and Simplified Chinese, Light and Dark Mode.
+
+## 12. A macOS version without a backend (notice only)
+
+For any macOS version Frost has no backend for (`PlatformSupport.backend` returns `.noticeOnly`: everything that is
+not 26 or 27 until it has been measured). Exercise it in the macOS 26 VM with
+`make vm-run FROST_ENV="FROST_TEST_UNSUPPORTED_OS=1"` (Debug builds).
 
 - [ ] Launch: the log says `macOS <version> isn't supported: leaving the menu bar alone (snowflake only)` once; there
   are no `managing the menu bar` / Frost Bar warm-up lines.
 - [ ] Only the snowflake is added to the menu bar: no Frost separators, and every other icon keeps its order (the same
   as with Frost quit, plus the snowflake). Nothing expands, collapses or moves at any time, also with Settings open.
 - [ ] A left click and a right click on the snowflake both show its menu: a disabled first item "This version of macOS
-  isn't supported yet" with "Frost can't hide icons on macOS 27. An update is on the way." below it, then Settings…,
+  isn't supported yet" with "Frost can't hide icons on macOS <version>. An update is on the way." below it, then Settings…,
   Check for Updates… and Quit Frost. No Frost Bar, no Grant Access.
 - [ ] Settings → About shows the same notice above Updates and no Permissions section; Layout shows the notice instead
   of the editor; Behavior's Menu Bar controls are disabled with the explanation as their footer, while Launch at login
@@ -592,8 +615,11 @@ which has no per-item windows, the menu bar extras' AX frames (`testing-vm.md`, 
 
 ## Known limitations
 
-- macOS 27 isn't supported yet: Frost only shows the snowflake with a notice there (section 11, and
-  [`macos-behavior.md`](macos-behavior.md), "macOS 27").
+- A macOS version Frost has no backend for isn't supported yet: Frost only shows the snowflake with a notice there
+  (section 12, and [`macos-behavior.md`](macos-behavior.md), "macOS 27").
+- On macOS 27 Frost cannot tell which icons the menu bar drops: how many leave it depends on what is in your bar, so
+  the Frost Bar lists your icons without claiming which are hidden, and the layout editor's sections are the
+  arrangement you set there.
 
 - Without Screen Recording, an icon's identity comes from its AX attributes. An app whose icons have neither an AX
   identifier nor a description (or help) is identified by the order in which it created them; one whose icon's
