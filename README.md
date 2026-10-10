@@ -24,7 +24,7 @@
 <details>
 <summary><strong>macOS 27 demo</strong></summary>
 
-<img src="docs/images/macos27-demo.gif" width="720" alt="macOS 27: clicking the snowflake opens and closes the Frost Bar; clicking a hidden weather icon moves it beside the snowflake, moves the pointer onto it and opens its native menu; moving away returns it">
+<img src="docs/images/macos27-demo.gif" width="720" alt="macOS 27: clicking the snowflake opens the Frost Bar; clicking a hidden weather icon moves it beside the snowflake, moves the pointer onto it and opens its native menu; moving away returns it">
 
 The same Frost Bar and Settings interface, with the macOS 27 differences listed below.
 
