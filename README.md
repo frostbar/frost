@@ -45,7 +45,7 @@
 - **Multiple displays, launch at login, automatic updates** with a quiet reminder dot instead of pop-ups.
 
 Hiding and showing icons needs **no permissions**. The Frost Bar and the layout editor need only **Accessibility**;
-Screen Recording is optional and shows real images of the icons (on macOS 26 — Frost does not capture on macOS 27 yet).
+Screen Recording is optional and shows real images of the icons.
 
 | Settings → Layout | Settings → About |
 | --- | --- |
@@ -78,7 +78,7 @@ Frost entry and grant it again. Later updates keep the permissions.
 | Permission | | Used for | Without it |
 | --- | --- | --- | --- |
 | Accessibility | Required | Identifying each icon and the app that owns it; moving icons between sections; opening them from the Frost Bar; keeping icons in their sections. On macOS 27 it is also what Frost reads the menu bar with, since there is no window list there (and without it the Frost Bar and layout editor have no icons to show, while hiding and showing still work) | The Frost Bar and layout editor ask for it; hiding and showing still work (hidden icons expand in the menu bar) |
-| Screen Recording | Optional | Real images of the icons in the Frost Bar and the layout editor, kept current while the Frost Bar is open (macOS 26; not used on macOS 27 yet) | Everything still works; icons are shown as their app's icon (or a system symbol), with a short label where it helps tell them apart |
+| Screen Recording | Optional | Real images of the icons in the Frost Bar and the layout editor, kept current while the Frost Bar is open. On macOS 27 the images are lifted out of a capture of the menu bar itself, so an icon the bar isn't drawing at that moment keeps its app icon | Everything still works; icons are shown as their app's icon (or a system symbol), with a short label where it helps tell them apart |
 
 Onboarding opens on first launch. **Settings → About** shows each permission's status, and **Grant Access** asks for
 it right away (the system prompt, or System Settings if there is no prompt). Without Screen Recording, the Frost Bar
@@ -104,8 +104,8 @@ reopens the window you were in.
   like macOS 26), and moves an icon with a ⌘-drag that starts on the icon itself. Two consequences you will notice:
   how many icons the menu bar draws for a given divider width depends on what is in your bar, so Frost never claims
   which icons are hidden; and the layout editor's sections are the arrangement you set there rather than something
-  read from the bar. Without Screen Recording the Frost Bar lists your icons instead of showing captured images, and
-  it doesn't say how many of them are hidden. On a macOS version Frost hasn't been measured on it leaves the menu bar
+  read from the bar. Without Screen Recording the Frost Bar lists your icons with their app icons instead of captured
+  images, and it doesn't say how many of them are hidden. On a macOS version Frost hasn't been measured on it leaves the menu bar
   alone and says so in its menu and in Settings → About.
 - With several displays, Frost manages the menu bar you last clicked; the other displays show macOS's copies of it.
 - macOS doesn't draw icons behind the notch, so Frost gets their images with a short background capture: while you

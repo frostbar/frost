@@ -75,10 +75,10 @@ final class AppModel {
         self.backend = backend
         preferences = Preferences()
         permissions = PermissionsService()
-        // Screen Recording buys nothing on a macOS where Frost has no captures (`RunningOS.usesScreenRecording`), and
-        // a user may arrive with the grant already given: without this the macOS 26 capture and freeze-frame paths
-        // would run against the macOS 27 backend's synthesized window IDs.
-        permissions.capturesSupported = backend == .windowList
+        // Both backends capture: macOS 26 per status item window, macOS 27 one capture of the menu bar strip whose
+        // glyphs are lifted out of it (`StripGlyphExtraction`). The capability stays as the seam for a backend that
+        // cannot, so a grant alone never starts a capture path that has no way to work.
+        permissions.capturesSupported = true
         scanner = MenuBarItemScanner(source: backend == .accessibility ? .accessibility : .windowList)
         capturer = ItemImageCapturer()
         mover = ItemMover(scanner: scanner)
@@ -104,6 +104,12 @@ final class AppModel {
         mover.axItems = { [weak scanner] in scanner?.items ?? [] }
         mover.axRefresh = { [weak scanner] in await scanner?.refreshOwnership() }
         capturer.menuBarDisplayID = { [weak scanner] in scanner?.menuBarDisplay?.id ?? CGMainDisplayID() }
+        // macOS 27: the strip capture is taken from the display (no per-item windows), and the frames come from the
+        // Accessibility scan.
+        capturer.backend = backend
+        capturer.itemFrames = { [weak scanner] in
+            Dictionary((scanner?.items ?? []).map { ($0.windowID, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        }
         capturer.capturesInvalidated = { [weak self] in self?.capturesInvalidated() }
     }
 

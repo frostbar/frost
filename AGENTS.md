@@ -271,8 +271,15 @@ The bullets below are macOS 26 unless they say otherwise; macOS 27 is a separate
   (`ItemMover.isSatisfiedOn27`) — requiring it to be immediately beside the line is stricter than the bar can express.
 - **27 uses its own autosave names** so no saved macOS 26 separator position is inherited, and it never writes the 26
   `NSStatusItem Preferred Position` seeds (they place nothing there).
-- **Screen Recording, captures and the freeze frame are not implemented on 27**: the Frost Bar shows the owning app's
-  icon and never claims to know which icons are hidden. `docs/macos-behavior.md`, "macOS 27" has the measurements.
+- **Captures on 27 come from the menu bar strip, not from windows.** Nothing can be addressed per item: there are no
+  status item windows, and `MenuBarAgent`'s own window is not shareable (`SCShareableContent` lists none of its
+  windows — measured). So the strip is captured once from the display (`SCContentFilter(display:excludingWindows: [])`
+  with `sourceRect` on the bar row) and each item's glyph is lifted out of it (`StripGlyphExtraction`: the bar is a
+  blurred material, so the background under a crop is nearly flat — measured at most one level per channel — and is
+  subtracted per column). A crop that is background only means the bar doesn't draw that item at the frame
+  Accessibility reports, so it gets **no** image and keeps its app icon rather than showing a neighbour's; that also
+  covers items pushed out of the bar. The purple recording indicator shows while capturing, as on 26.
+  `docs/macos-behavior.md`, "macOS 27" has the measurements.
 
 ## Code conventions
 

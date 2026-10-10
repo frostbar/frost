@@ -32,6 +32,8 @@ public final class ItemImageCapturer {
     /// Each capture's pixels (`PixelCopy.bytes`), used to detect "the new capture is identical to the existing one".
     @ObservationIgnored private var pixels: [CGWindowID: Data] = [:]
     @ObservationIgnored private var lastFallbackCount = 0
+    /// macOS 27: items whose crop was background only in the most recent capture (log only on change).
+    @ObservationIgnored private var lastUndrawnCount = 0
     /// Number of items captured per window in the most recent `capture` (strip capture failed or the frame changed
     /// around the capture); for statistics.
     @ObservationIgnored public private(set) var lastPerWindowCount = 0
@@ -40,6 +42,15 @@ public final class ItemImageCapturer {
     /// Display hosting the scanned menu bar (the active menu bar, `MenuBarItemScanner.menuBarDisplay`); strip capture
     /// and scale follow it. Injected by the app layer; defaults to the main display.
     @ObservationIgnored public var menuBarDisplayID: () -> CGDirectDisplayID = { CGMainDisplayID() }
+
+    /// Which menu bar this is (`MenuBarBackend`). On macOS 27 there are no per-item windows to include in a strip
+    /// filter and no window list to read frames from, so the strip is captured from the display and the glyphs are
+    /// lifted out of it (`StripGlyphExtraction`). Injected by the app layer.
+    @ObservationIgnored public var backend: MenuBarBackend = .windowList
+
+    /// The items' frames right now, for the "did it move during the capture" check: the window list on macOS 26, the
+    /// Accessibility scan on macOS 27 (where the window list has nothing to say). Injected by the app layer.
+    @ObservationIgnored public var itemFrames: () -> [CGWindowID: CGRect] = { [:] }
 
     /// Incremented on appearance changes; if it changes during a capture, that round's (old-appearance) results
     /// are discarded.
@@ -270,6 +281,7 @@ public final class ItemImageCapturer {
     /// `capture`, reporting per item whether the round succeeded and whether the image changed.
     public func captureReporting(_ items: [MenuBarItem]) async -> CaptureReport {
         guard CGPreflightScreenCaptureAccess() else { return CaptureReport() }
+        if backend == .accessibility { return await captureMenuBarStripReporting(items) }
         let startGeneration = generation
         let appearance = Self.currentAppearance
         let targets = items.filter(\.isOnScreen)
@@ -327,12 +339,19 @@ public final class ItemImageCapturer {
             }, uniquingKeysWith: { a, _ in a })
         }.value
         guard generation == startGeneration else { return CaptureReport(discarded: true) }
-        var report = CaptureReport(obtained: Set(fresh.keys))
+        return finish(prepared, items: items, obtained: Set(fresh.keys), appearance: appearance, scale: scale)
+    }
+
+    /// Records what a capture round obtained: stores the changed images, holds back disk writes, prunes caches of
+    /// windows that no longer exist. Shared by both backends.
+    private func finish(_ prepared: [CGWindowID: FreshCapture], items: [MenuBarItem],
+                        obtained: Set<CGWindowID>, appearance: MenuBarAppearance, scale: CGFloat) -> CaptureReport {
+        var report = CaptureReport(obtained: obtained)
         var toSave: [(key: ItemImageCacheKey, value: DiskWrite)] = []
         let counts = Dictionary(items.compactMap(\.identity).map { ($0, 1) }, uniquingKeysWith: +)
         for item in items {
             guard let result = prepared[item.windowID] else {
-                if fresh[item.windowID] != nil {
+                if obtained.contains(item.windowID) {
                     FrostLog.capture.notice("discarding a blank capture of item \(item.windowID)")
                 }
                 continue
@@ -409,6 +428,89 @@ public final class ItemImageCapturer {
     /// Captures one menu bar strip covering `targets` (on the scanned display; only these windows, transparent
     /// background) and crops each item by its frame. Items whose frame differs before and after the capture get no
     /// image; instead they are returned in `moved` with their post-capture frame (the caller can retry with it).
+    /// macOS 27: one capture of the menu bar strip, then each item's glyph lifted out of it.
+    ///
+    /// Nothing here can be addressed per item: there are no status item windows to include in a filter, and the
+    /// system reports a pushed-out item at the frame it had before it left. So the strip is captured from the display
+    /// and cropped by the frames the caller passes (read from Accessibility), and a crop that turns out to be
+    /// background only is *not* used — that item simply has no image and keeps its app icon, rather than showing a
+    /// neighbour's icon or a piece of wallpaper.
+    private func captureMenuBarStripReporting(_ items: [MenuBarItem]) async -> CaptureReport {
+        let startGeneration = generation
+        let targets = items.filter(\.isOnScreen)
+        guard !targets.isEmpty,
+              let content = await contentCache.content(),
+              let display = content.displays.first(where: { $0.displayID == menuBarDisplayID() })
+                ?? content.displays.first
+        else { return CaptureReport() }
+        let scale = menuBarScale
+        let captured = await captureMenuBarStrip(targets, display: display, scale: scale)
+        guard generation == startGeneration else { return CaptureReport(discarded: true) }
+        let inputs = items.compactMap { item in
+            captured[item.windowID].map { image in
+                (id: item.windowID, image: image, previous: images[item.windowID] == nil ? nil : pixels[item.windowID])
+            }
+        }
+        let prepared = await Task.detached(priority: .userInitiated) {
+            Dictionary(inputs.compactMap { input in
+                Self.prepareFresh(input.image, previous: input.previous).map { (input.id, $0) }
+            }, uniquingKeysWith: { a, _ in a })
+        }.value
+        guard generation == startGeneration else { return CaptureReport(discarded: true) }
+        return finish(prepared, items: items, obtained: Set(captured.keys), appearance: Self.currentAppearance,
+                      scale: menuBarScale)
+    }
+
+    private func captureMenuBarStrip(_ targets: [MenuBarItem], display: SCDisplay, scale: CGFloat)
+        async -> [CGWindowID: CGImage] {
+        let bounds = CGDisplayBounds(menuBarDisplayID())
+        guard let rect = StripCrop.stripRect(covering: targets.map(\.frame), display: bounds) else { return [:] }
+        let before = itemFrames()
+        let config = SCStreamConfiguration()
+        config.sourceRect = rect
+        config.width = Int((rect.width * scale).rounded())
+        config.height = Int((rect.height * scale).rounded())
+        config.showsCursor = false
+        config.captureResolution = .best
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let strip: CGImage
+        do {
+            strip = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        } catch {
+            FrostLog.capture.error("menu bar strip capture failed: \(error, privacy: .public)")
+            return [:]
+        }
+        let after = itemFrames()
+        let origin = CGPoint(x: bounds.minX + rect.minX, y: bounds.minY + rect.minY)
+        let size = CGSize(width: strip.width, height: strip.height)
+        var result: [CGWindowID: CGImage] = [:]
+        var undrawn = 0
+        let total = targets.count
+        for item in targets where (before[item.windowID] ?? item.frame) == item.frame
+            && (after[item.windowID] ?? item.frame) == item.frame {
+            guard let pixels = StripCrop.pixelRect(of: item.frame, stripOrigin: origin, scale: scale, imageSize: size),
+                  let crop = strip.cropping(to: pixels), let copy = PixelCopy(crop) else { continue }
+            let buffer = StripGlyphExtraction.Buffer(bytes: [UInt8](copy.bytes), width: crop.width, height: crop.height)
+            guard let extracted = StripGlyphExtraction.extract(buffer),
+                  StripGlyphExtraction.isItemDrawn(extracted),
+                  let image = extracted.buffer.cgImage() else {
+                undrawn += 1
+                continue
+            }
+            result[item.windowID] = image
+        }
+        if undrawn > 0, undrawn != lastUndrawnCount {
+            lastUndrawnCount = undrawn
+            FrostLog.capture.notice("""
+                \(undrawn, privacy: .public) of \(total, privacy: .public) item(s) the menu bar does not draw at \
+                their reported frame; they keep their app icon
+                """)
+        } else if undrawn == 0 {
+            lastUndrawnCount = 0
+        }
+        return result
+    }
+
     private func captureStrip(_ targets: [MenuBarItem], windows: [CGWindowID: SCWindow], displays: [SCDisplay],
                               scale: CGFloat) async -> (images: [CGWindowID: CGImage], moved: [MenuBarItem]) {
         let displayID = menuBarDisplayID()

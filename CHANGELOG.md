@@ -12,6 +12,9 @@ release notes on GitHub and in the in-app update window.
   dividers (`BoundedDivider`) and moves one with a ⌘-drag that starts on the icon itself (`ItemMover` with
   `.directOnTarget`). The snowflake and the dividers are placed on the first launch (`OwnItemDrag`), clicking a hidden
   icon in the Frost Bar presses its Accessibility element, and the layout editor performs real moves.
+- Icons in the Frost Bar and the layout editor have real images on macOS 27 too: Frost captures the menu bar once and
+  lifts each icon's glyph out of it (`StripGlyphExtraction`), since macOS 27 has no per-item window to capture. An icon
+  the bar isn't drawing at that moment keeps its app icon.
 - On macOS 27 the layout editor's sections are the arrangement you set there, kept per icon (`ItemMemoryStore`), with
   a footer that says what Frost knows: how many icons the menu bar draws for a given divider width depends on what is
   in your bar, and a pushed-out icon keeps reporting the frame it had, so Frost cannot tell which icons are hidden

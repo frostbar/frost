@@ -20,10 +20,11 @@ enum RunningOS {
     /// Whether Frost manages the menu bar in this process.
     static var isMenuBarSupported: Bool { backend.managesMenuBar }
 
-    /// Whether Frost can capture icon images on this macOS. Only the window-based backend can: the macOS 27 backend
-    /// has no per-item windows to capture, and its replacement (a capture of the menu bar strip) is not implemented
-    /// yet. Everything that offers Screen Recording reads this, so Frost never asks for a permission it cannot use.
-    static var usesScreenRecording: Bool { backend == .windowList }
+    /// Whether Frost can capture icon images on this macOS: both backends can — macOS 26 captures each status item
+    /// window, macOS 27 captures the menu bar strip once and lifts each item's glyph out of it
+    /// (`StripGlyphExtraction`). Everything that offers Screen Recording reads this, so Frost never asks for a
+    /// permission it cannot use.
+    static var usesScreenRecording: Bool { backend.managesMenuBar }
 
     /// "26.6.2" (for the log).
     static var versionDescription: String {
