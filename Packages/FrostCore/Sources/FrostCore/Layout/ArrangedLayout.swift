@@ -18,7 +18,11 @@ public enum ArrangedLayout {
                               remembered: (MenuBarItem) -> MenuBarSection?) -> MenuBarLayout {
         var layout: MenuBarLayout = [.visible: [], .hidden: [], .alwaysHidden: []]
         for item in items.sorted(by: { ($0.frame.minX, $0.windowID) < ($1.frame.minX, $1.windowID) })
-        where !own.contains(item.windowID) {
+        where !own.contains(item.windowID)
+            // The bar's overflow chevron is the system's control, not one of the user's icons: it appears and goes
+            // with how full the bar is, and without this it would sit at the start of Visible and be picked as the
+            // immovable anchor a drop at the end of that section resolves against.
+            && !SystemItemRules.isOverflowChevron(bundleID: item.bundleID, axDescription: item.axDescription) {
             layout[remembered(item) ?? .visible, default: []].append(item)
         }
         return layout

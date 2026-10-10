@@ -494,6 +494,18 @@ public final class ItemImageCapturer {
         let total = targets.count
         for item in targets where (before[item.windowID] ?? item.frame) == item.frame
             && (after[item.windowID] ?? item.frame) == item.frame {
+            // The frame is what Accessibility reports, and an item the bar isn't drawing keeps reporting the frame it
+            // had — which can overlap a neighbour that *is* drawn. A crop of that neighbour would be "drawn" and get
+            // cached under this item's identity (also on disk), so the system is asked which element is at the point
+            // first: it is the same hit test the mover makes before pressing (`AXExtrasReader.isItemAt`).
+            guard let pid = item.pid, let identityKey = item.identityKey,
+                  await Task.detached(operation: {
+                      AXExtrasReader.isItemAt(CGPoint(x: item.frame.midX, y: item.frame.midY), pid: pid,
+                                              identityKey: identityKey)
+                  }).value else {
+                undrawn += 1
+                continue
+            }
             guard let pixels = StripCrop.pixelRect(of: item.frame, stripOrigin: origin, scale: scale, imageSize: size),
                   let crop = strip.cropping(to: pixels), let copy = PixelCopy(crop) else { continue }
             let buffer = StripGlyphExtraction.Buffer(bytes: [UInt8](copy.bytes), width: crop.width, height: crop.height)

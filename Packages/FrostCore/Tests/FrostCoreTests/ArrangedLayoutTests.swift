@@ -43,3 +43,33 @@ import Testing
         #expect(layout[.hidden]?.map(\.windowID) == [1, 2, 3])
     }
 }
+
+/// The overflow chevron is the bar's own control, not one of the user's icons (`SystemItemRules.isOverflowChevron`):
+/// it appears and goes with how full the bar is, and inside a section it would be picked as the immovable anchor a
+/// drop at the end of that section resolves against.
+@Suite struct ArrangedLayoutChevronTests {
+    private func menuBarAgent(_ id: CGWindowID, _ x: CGFloat, description: String? = nil) -> MenuBarItem {
+        MenuBarItem(windowID: id, frame: CGRect(x: x, y: 0, width: 30, height: 24), isOnScreen: true, windowTitle: "",
+                    bundleID: SystemItemRules.menuBarAgentBundleID, pid: 100, axDescription: description,
+                    identityKey: "desc:Icon")
+    }
+
+    private func appItem(_ id: CGWindowID, _ x: CGFloat) -> MenuBarItem {
+        MenuBarItem(windowID: id, frame: CGRect(x: x, y: 0, width: 30, height: 24), isOnScreen: true, windowTitle: "",
+                    bundleID: "com.example.app", pid: 100, axDescription: "Icon", identityKey: "desc:Icon")
+    }
+
+    @Test func theChevronIsNotPartOfAnySection() {
+        let chevron = menuBarAgent(9, 400, description: "Show Hidden Menu Bar Items")
+        let layout = ArrangedLayout.layout(of: [chevron, appItem(1, 900)], own: [], remembered: { _ in nil })
+        #expect(layout.values.flatMap { $0 }.map(\.windowID) == [1])
+    }
+
+    /// The clock and the Control Center button come from the same process and *are* part of the bar; only the item
+    /// that describes itself is the chevron.
+    @Test func theClockAndControlCenterStay() {
+        let layout = ArrangedLayout.layout(of: [menuBarAgent(2, 1500), menuBarAgent(3, 1600)], own: [],
+                                           remembered: { _ in nil })
+        #expect(layout[.visible]?.map(\.windowID) == [2, 3])
+    }
+}

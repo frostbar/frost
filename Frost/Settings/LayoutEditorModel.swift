@@ -494,8 +494,18 @@ final class LayoutEditorModel {
                         // to a band the user never saw (`AppModel.layout` on 27 is the arrangement, not the bar).
                         await model.scanner.refreshOwnership()
                         guard let controls = sections.controlWindows else { return }
-                        let live = DropResolver.destination(dragging: item, to: section, index: index,
+                        var live = DropResolver.destination(dragging: item, to: section, index: index,
                                                             layout: model.layout, controls: controls)
+                        // Appending to a *populated* band: `DropResolver` falls back to the section's separator,
+                        // which macOS 27 re-places wherever it fits, so the icon would land before the divider and
+                        // appear at the front of the band instead of its end. There the end of the band is its last
+                        // icon (`ArrangedLayout` is the arrangement, not the separator geometry).
+                        if case .leftOf(let target)? = live,
+                           target == controls.hiddenSeparator || target == controls.alwaysHiddenSeparator,
+                           let last = model.layout[section, default: []].filter(\.isMovable).last,
+                           last.windowID != item.windowID {
+                            live = .rightOf(last.windowID)
+                        }
                         guard let live else {
                             FrostLog.layout.notice("drop of \(windowID) needs no move in the revealed bar")
                             return
