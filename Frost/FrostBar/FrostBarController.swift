@@ -646,6 +646,14 @@ final class FrostBarController {
                     FrostLog.frostBar.debug("ignoring Frost's own synthetic mouse event")
                     return
                 }
+                // On macOS 27 the system owns the menu bar, so even the snowflake's mouse-down reaches the
+                // global monitor. Leave a plain left click to its action, as the local monitor does on 26;
+                // closing here would make the subsequent mouse-up open the panel again.
+                if let self, self.app.backend == .accessibility, event.type == .leftMouseDown,
+                   !event.modifierFlags.contains(.control),
+                   self.frostIconFrames.contains(where: { $0.contains(event.screenLocation) }) {
+                    return
+                }
                 self?.close(reason: "click outside (other app)")
             },
             // Clicks in Frost's own windows (settings, onboarding, status items).
