@@ -104,8 +104,8 @@ extension FrostBarController {
         }
     }
 
-    /// macOS 27: an item that belongs to another app can't be moved (`MenuBarBackend.accessibility`), so there is
-    /// nothing to move out and back. The item's Accessibility element still exists while the bar doesn't draw it, so
+    /// macOS 27 forwards primary clicks in place instead of moving the item out and back. Layout uses a separate
+    /// direct-drag path. The item's Accessibility element still exists while the bar doesn't draw it, so
     /// the click is sent to the element itself — the menu opens where the icon would be, as if the user had clicked
     /// it in the system's overflow. Only a primary click: AXPress carries no button or modifiers.
     private func clickInPlace(_ id: CGWindowID, click: ForwardedClick, handOff: ActivationHandOff?) async throws {

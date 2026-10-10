@@ -1,9 +1,8 @@
 # Releasing Frost
 
-Releases are DMGs on GitHub Releases, signed with the self-signed identity **"Frost Local Signing"** (no Apple
-Developer account, no notarization) and delivered to existing users by **Sparkle 2**. Every build runs with the
-**Hardened Runtime**, so switching to Developer ID signing and notarization is a configuration change (see
-[Switching to Developer ID and notarization](#switching-to-developer-id-and-notarization)).
+Releases are DMGs on GitHub Releases, signed with a **Developer ID**, notarized by Apple and delivered to existing
+users by **Sparkle 2**. Every executable uses the **Hardened Runtime**. Local self-signed builds remain available;
+see [Developer ID and notarization configuration](#switching-to-developer-id-and-notarization).
 
 ```
 CHANGELOG.md ──▶ scripts/release/release.sh <version> ──▶ build/release/<version>/
@@ -39,8 +38,9 @@ environment variable of the same name.
 
   This is the same as `git -c credential.helper= -c credential.helper='!gh auth git-credential' push <url> …`;
   the fetch and tag checks of `--publish` use the same URL.
-- **Signing**: `SIGNING_MODE=selfsigned` (default) or `developer-id` (with `DEVELOPER_ID_NAME`, `TEAM_ID` and
-  `NOTARY_PROFILE`; see [Switching to Developer ID and notarization](#switching-to-developer-id-and-notarization)).
+- **Signing**: `SIGNING_MODE=developer-id` (default), with `DEVELOPER_ID_NAME`, `TEAM_ID` and `NOTARY_PROFILE`;
+  `selfsigned` is available for local builds. See
+  [Switching to Developer ID and notarization](#switching-to-developer-id-and-notarization).
 
 ## Keys and certificates
 
@@ -224,10 +224,9 @@ Never test on the host desktop (see `AGENTS.md`).
 
 ## Switching to Developer ID and notarization
 
-Everything is in place; once the Apple Developer Program membership is active, the switch is configuration only.
-Until a real certificate exists the path can't run end to end; it was exercised with stand-ins for the certificate,
-`notarytool`, `stapler` and `spctl` (signing order and flags, verification, notary rejection with its log, stapling
-before the EdDSA signature).
+Developer ID signing and notarization are the default release configuration. The steps below describe setting up
+another release environment. Keep the existing signing identity and Sparkle key unchanged so updates preserve
+permissions and remain verifiable.
 
 ### One-time setup
 

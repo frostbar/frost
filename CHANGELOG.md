@@ -6,23 +6,19 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-10
+
 ### Added
-- **macOS 27 support.** macOS 27 rebuilt the menu bar into one system process, so Frost drives it through a second
-  backend that reads the icons through Accessibility (`AXMenuBarInventory`), hides them with two of its own bounded
-  dividers (`BoundedDivider`) and moves one with a ⌘-drag that starts on the icon itself (`ItemMover` with
-  `.directOnTarget`). The snowflake and the dividers are placed on the first launch (`OwnItemDrag`), clicking a hidden
-  icon in the Frost Bar presses its Accessibility element, and the layout editor performs real moves.
-- Icons in the Frost Bar and the layout editor have real images on macOS 27 too: Frost captures the menu bar once and
-  lifts each icon's glyph out of it (`StripGlyphExtraction`), since macOS 27 has no per-item window to capture. An icon
-  the bar isn't drawing at that moment keeps its app icon.
-- On macOS 27 the layout editor's sections are the arrangement you set there, kept per icon (`ItemMemoryStore`), with
-  a footer that says what Frost knows: how many icons the menu bar draws for a given divider width depends on what is
-  in your bar, and a pushed-out icon keeps reporting the frame it had, so Frost cannot tell which icons are hidden
-  (`docs/macos-behavior.md`, "macOS 27"). The Frost Bar therefore lists the menu bar's icons without a count.
+- macOS 27 support using the same Frost Bar and Settings interface as macOS 26. Open icons through Accessibility
+  and drag them in Layout to change their real menu bar order and remembered sections.
+- Optional Screen Recording adds real icon images on macOS 27. Images refresh when the Frost Bar opens and while
+  editing; icons that cannot be captured keep their app icon.
 
 ### Changed
-- `PlatformSupport.backend` replaces the "macOS 26 only" gate: 26 keeps the existing window-based backend, 27 uses the
-  Accessibility one, and later versions stay notice-only until they are measured.
+- On macOS 27, the Frost Bar lists menu bar icons without claiming a hidden-item count. Layout remembers the
+  sections you arrange; macOS decides which icons fit in the menu bar. Secondary and Option-click forwarding,
+  continuous Frost Bar image refresh and automatic placement of relaunched icons remain macOS 26 features.
+- macOS 26 keeps its existing behavior. macOS 28 and later remain notice-only.
 
 ## [0.3.5] - 2026-10-09
 
