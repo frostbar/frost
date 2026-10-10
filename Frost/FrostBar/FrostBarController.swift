@@ -11,8 +11,7 @@ enum FrostBarError: Error {
     /// The item is still off screen after moving it out (e.g. the Visible section is full, or it's under the notch):
     /// a click would open in the wrong place.
     case notOnScreen
-    /// The click can't be forwarded on this macOS (`MenuBarBackend.accessibility`): a hidden item is clicked through
-    /// its Accessibility element, which carries neither a mouse button nor modifiers, so only a primary click works.
+    /// The requested click or its required input capability is unavailable.
     case notAvailable
 }
 

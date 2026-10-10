@@ -61,6 +61,17 @@ public struct OwnerWindowFrames: Equatable, Sendable {
 /// Clicks menu bar items and detects when their menu / popover closes (implemented per macos-behavior.md,
 /// "Task 11").
 public enum ItemClicker {
+    /// A plain HID click on macOS 27, only after reacquiring and positively hit-testing the exact AX identity.
+    /// Synthetic inventory handles must never be used as event-routing window IDs.
+    @concurrent
+    public static func clickVerified(_ item: MenuBarItem, kind: ForwardedClick = .primary) async throws {
+        guard let pid = item.pid, let identity = item.identityKey, CGPreflightPostEventAccess() else {
+            throw ItemClickError.notOnScreen
+        }
+        let point = CGPoint(x: item.frame.midX, y: item.frame.midY)
+        guard AXExtrasReader.isItemAt(point, pid: pid, identityKey: identity) else { throw ItemClickError.notOnScreen }
+        postClick(at: point, windowID: 0, kind: kind)
+    }
     /// Clicks an **on-screen** item. Prefers AXPress (background thread, 0.25 s messaging timeout); both
     /// `.success` and `.cannotComplete` count as delivered (once NSMenu enters its tracking loop the AX reply
     /// gets stuck, but the menu is already open; posting an extra CGEvent click then would close the menu).
@@ -470,7 +481,7 @@ public enum ItemClicker {
         guard events.count == 3 else { return }
         for e in events {
             e.setIntegerValueField(.mouseEventClickState, value: 1)
-            e.setIntegerValueField(ItemMover.windowIDField, value: Int64(windowID))
+            if windowID != 0 { e.setIntegerValueField(ItemMover.windowIDField, value: Int64(windowID)) }
             e.post(tap: .cghidEventTap)
             usleep(30_000)
         }

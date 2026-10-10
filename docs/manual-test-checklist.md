@@ -573,13 +573,16 @@ FakeItems Demo). Compare the menu bar with Frost quit and with Frost running: on
 compare the menu bar extras' AX frames and the pixels of the bar (`testing-vm.md`, "Verification techniques").
 
 - [ ] Launch: the log says `managing the menu bar of display …`; the snowflake appears left of the system's items and
-  **both dividers end up at the left end of the trailing area** (`placing Frost27.HiddenDivider …`), so the icons the
-  bar still draws stay together on the right, next to the snowflake. No `isn't supported` line.
+  **both divider pairs align with the arranged section boundaries**, after narrow placement and positive own-item
+  hits. No `isn't supported` line. Configured Hidden icons are absent in the collapsed framebuffer.
 - [ ] The three states hold: collapsed hides the most, expanded (click) shows more, ⌥-click shows everything. Check it
   on screenshots of the bar, not on AX frames — a pushed-out icon keeps reporting its old frame.
-- [ ] Frost Bar (left click with the display mode set to Frost Bar): it lists the icons in the bar's order, **without
-  a count** and without Frost's own dividers, and its footer says "Menu bar icons". Clicking one opens its real menu;
-  a click outside closes the panel. Without Screen Recording the tiles show the owning app's icons.
+- [ ] Frost Bar (left click with the display mode set to Frost Bar): it lists configured Hidden icons in their last revealed
+  order, **without a count**, Visible icons or Frost's own dividers. Option-click includes Always Hidden. Its footer
+  says "Menu bar icons". Without Screen Recording the tiles show the owning app's icons.
+- [ ] Clicking a hidden tile reveals, moves it right of the snowflake, collapses the others and opens its native menu.
+  The pointer lands on the moved icon. Esc closes the menu; the icon stays out while the pointer lingers, then
+  returns to its original neighbours when the pointer leaves. Check the collapsed framebuffer afterwards.
 - [ ] Settings → Layout: the three bands hold **the arrangement**, not something read from the bar; with nothing
   arranged yet every icon is in Visible and the footer explains that macOS decides how many icons the menu bar shows.
   Drag a tile into Hidden: the icon really moves in the menu bar (log: `direct ⌘-drag … verified against the order the
@@ -618,8 +621,9 @@ not 26 or 27 until it has been measured). Exercise it in the macOS 26 VM with
 - A macOS version Frost has no backend for isn't supported yet: Frost only shows the snowflake with a notice there
   (section 12, and [`macos-behavior.md`](macos-behavior.md), "macOS 27").
 - On macOS 27 Frost cannot tell which icons the menu bar drops: how many leave it depends on what is in your bar, so
-  the Frost Bar lists your icons without claiming which are hidden, and the layout editor's sections are the
-  arrangement you set there.
+  the Frost Bar lists the Hidden section you configured, without claiming physical visibility from AX. The
+  layout editor's sections are the arrangement you set there. Forwarding visibly reveals the bar twice to move an
+  item out and return it; no freeze-frame quietness is claimed.
 
 - Without Screen Recording, an icon's identity comes from its AX attributes. An app whose icons have neither an AX
   identifier nor a description (or help) is identified by the order in which it created them; one whose icon's

@@ -539,6 +539,7 @@ final class LayoutEditorModel {
             previous = LayoutReconciler.moving(windowID, to: section, at: index, in: layout)
             // Keep it in this section when its app relaunches (`SectionKeeper`).
             model.newItems.recordDrop(item, in: section)
+            if model.backend == .accessibility { await sections.alignAccessibilityBoundaries() }
         }
         if let i = optimisticMoves.firstIndex(where: { $0.id == windowID }) { optimisticMoves.remove(at: i) }
         pending.remove(windowID)

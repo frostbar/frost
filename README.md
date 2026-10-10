@@ -24,7 +24,7 @@
 <details>
 <summary><strong>macOS 27 demo</strong></summary>
 
-<img src="docs/images/macos27-demo.gif" width="720" alt="macOS 27: clicking the snowflake opens the Frost Bar; clicking the weather icon opens its native menu, and Esc closes it">
+<img src="docs/images/macos27-demo.gif" width="720" alt="macOS 27: clicking the snowflake opens the Frost Bar; clicking a hidden weather icon moves it beside the snowflake, moves the pointer onto it and opens its native menu; moving away returns it">
 
 The same Frost Bar and Settings interface, with the macOS 27 differences listed below.
 
@@ -40,12 +40,12 @@ The same Frost Bar and Settings interface, with the macOS 27 differences listed 
 ## Features
 
 - **Three sections:** Visible, Hidden and Always Hidden. Click the snowflake to show Hidden; ⌥-click to show Always
-  Hidden too. Optionally hide them again after a delay. On macOS 27 the menu bar itself decides how many icons fit,
-  so the sections are the arrangement you set rather than a boundary Frost reads back (see
-  [Known limitations](#known-limitations)).
+  Hidden too. Optionally hide them again after a delay. On macOS 27, sections follow the arrangement you set in
+  Layout (see [Known limitations](#known-limitations)).
 - **Frost Bar:** menu bar icons in a glass grid. Click an icon to open its menu. On macOS 26, images refresh while
-  the panel is open, and right-click, Control-click and ⌥-click are supported. On macOS 27, primary clicks use
-  Accessibility; images refresh when the panel opens and while editing the layout.
+  the panel is open, and right-click, Control-click and ⌥-click are supported. On macOS 27, a primary click
+  temporarily moves the hidden icon beside the snowflake, leaves the pointer on it and returns it after its menu
+  closes and the pointer moves away. Images refresh when the panel opens and while editing the layout.
 - **Layout editor:** drag icons between sections or change their order; each drop moves the actual menu bar icon.
   Optional Screen Recording adds captured images on both macOS versions.
 - **Keep icons in their sections (macOS 26):** new apps' icons go to Hidden, and when an app relaunches and macOS
@@ -110,10 +110,13 @@ reopens the window you were in.
 ## Known limitations
 
 - **macOS 27:** sections remember the arrangement you set in Layout; they do not certify which icons macOS
-  currently draws. The Frost Bar lists menu bar icons without a hidden-item count. Primary clicks are supported;
-  right-click, Control-click and Option-click forwarding are unavailable. Captured images refresh when the panel
+  currently draws. The Frost Bar lists your configured Hidden items (plus Always Hidden on Option-click),
+  without a hidden-item count. Forwarding briefly reveals the menu bar to move an item out and back. Primary clicks
+  are supported; right-click, Control-click and Option-click forwarding are unavailable. Captured images refresh when the panel
   opens and while editing, rather than continuously while the panel stays open; items that cannot be captured keep
   their app icon. Frost remembers your sections but does not automatically move relaunched icons back into them.
+  Hiding and forwarding have been verified on one unnotched display; notched hardware and multiple displays still
+  need verification on this backend.
 - On macOS 28 and later, Frost leaves the menu bar alone and shows an unsupported-version notice.
 - With several displays, Frost manages the menu bar you last clicked; the other displays show macOS's copies of it.
 - On macOS 26, macOS doesn't draw icons behind the notch, so Frost gets their images with a short background

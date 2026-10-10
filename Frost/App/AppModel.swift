@@ -88,8 +88,8 @@ final class AppModel {
         sections = SectionController(preferences: preferences, permissions: permissions, scanner: scanner,
                                      backend: backend)
         presence = UserPresenceMonitor()
-        // Moving an item that belongs to another app needs the ⌘-drag routing of macOS 26 (`ItemMover`); on 27 the
-        // section memory still describes the layout, but nothing moves items between sections.
+        // Automatic new-item placement and section keeping remain 26-only. On 27 the same memory backs
+        // user-requested layout moves and recovery of Frost's interrupted forwards.
         newItems = NewItemPlacer(scanner: scanner, mover: mover, sections: sections, permissions: permissions,
                                  preferences: preferences, presence: presence,
                                  canMoveItems: backend == .windowList)
@@ -113,6 +113,16 @@ final class AppModel {
         capturer.capturesInvalidated = { [weak self] in self?.capturesInvalidated() }
     }
 
+    /// Last revealed order on macOS 27, before overflow leaves stale AX frames.
+    @ObservationIgnored private var accessibilityOrder: [CGWindowID] = []
+
+    /// Save only while revealed: overflowed items keep old frames, which must not reorder the panel after collapse.
+    func rememberAccessibilityOrder() {
+        guard backend == .accessibility else { return }
+        accessibilityOrder = scanner.items.sorted { ($0.frame.minX, $0.windowID) < ($1.frame.minX, $1.windowID) }
+            .map(\.windowID)
+    }
+
     /// Menu bar items in each of the three sections (left to right). Empty when the Frost control items are missing.
     var layout: MenuBarLayout {
         guard let controls = sections.controlWindows else { return [:] }
@@ -121,7 +131,9 @@ final class AppModel {
         }
         // macOS 27: the sections are what the user arranged (`ArrangedLayout`, from `ItemMemoryStore`), not
         // something read from the bar — see that type for why geometry cannot answer this.
-        return ArrangedLayout.layout(of: scanner.items, own: controls.all,
+        let own = Set(sections.ownItems().map { AXMenuBarInventory.ownWindowID(autosaveName: $0.autosaveName) })
+        return ArrangedLayout.layout(of: scanner.items, own: own,
+                                     order: sections.usesLiveAccessibilityOrder ? [] : accessibilityOrder,
                                      remembered: { [newItems] in newItems.rememberedSection(of: $0) })
     }
 

@@ -7,8 +7,8 @@ import Testing
     /// Measured: a divider is honoured up to just under half the display; at half (864 pt on a 1728 pt display) and
     /// above, the width was ignored and nothing left the bar.
     @Test func collapseWidthStaysUnderHalfTheDisplay() {
-        #expect(BoundedDivider.collapseWidth(displayWidth: 1728) == 832)
-        #expect(BoundedDivider.collapseWidth(displayWidth: 1440) == 688)
+        #expect(BoundedDivider.collapseWidth(displayWidth: 1728) == 600)
+        #expect(BoundedDivider.collapseWidth(displayWidth: 1440) == 600)
         #expect(BoundedDivider.collapseWidth(displayWidth: 1200) == 568)
     }
 

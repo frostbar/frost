@@ -578,7 +578,7 @@ upgrade over 0.3.4 (whose separators had been dropped from the bar) leaves every
 quit, plus the snowflake; the snowflake's menu, Settings → About / Layout / Behavior show the notice; Check for
 Updates… works; no crash.
 
-### The accessibility backend (2026-10-10)
+### The initial accessibility backend (0.4.0, 2026-10-10)
 
 Measured in the same guest with FakeItems and FakeItems Demo (about 15 third-party icons) and a 1728 pt display, one
 notched-less screen. `docs/testing-vm.md`, "macOS 27 VM" has the tooling; the raw logs of this round are private.
@@ -601,3 +601,35 @@ Where a number is a single observation it says so — none of this is a universa
 Still unmeasured on 27: notched hardware, more than one display, captures of the menu bar strip for real icon images,
 the freeze-frame path, per-icon verification of the hidden set with Screen Recording, and a durable return journal for
 a move interrupted by a crash.
+
+### Paired boundaries and click forwarding correction (2026-10-10)
+
+The initial implementation above placed single dividers at the far left and pressed items in place through AX.
+That did not maintain the requested Hidden boundary, listed Visible icons in the Frost Bar, and left the pointer on
+its old panel tile. The following supersedes those implementation consequences, preserving the earlier measurements.
+
+In an ordinary Developer ID-signed Frost on the SIP-on guest, on one unnotched 1728 pt display, seven neutral demo
+items were individually moved into Hidden through the real Layout editor. Two bounded dividers per boundary, each
+capped at 600 pt, collapsed those seven items; their absence was checked in the VNC framebuffer as well as retaining
+negative AX samples. The snowflake and system controls remained drawn. The Frost Bar showed only the configured
+seven items. This is a measured layout, not a guarantee for every display width or overflowing bar.
+
+Own dividers are kept 8 pt wide while revealed. Applying the macOS 26 1 pt constraint trick, including from a window
+resize callback, made AppKit and AX disagree and caused own-divider hit validation to reject placement. With consistent
+narrow geometry, positive Frost hit tests and observed own-item placement aligned the pairs with the arranged sections.
+
+A complete hidden-item forward then passed: reveal and reacquire the exact target and neighbours, persist its return,
+move right of the snowflake, collapse the other six, and open the native menu with a plain HID click. The measured
+pointer was at the moved icon's centre. After Esc, it remained out while the pointer lingered; moving away triggered
+a second reveal, exact original-neighbour return and pending-record clear. The final framebuffer restored the hidden
+baseline. AX frames of overflowed items changed apparent order, so the panel retains the last revealed order.
+
+A second arrangement kept one item Visible, five Hidden and one Always Hidden. The collapsed framebuffer retained
+only the Visible control. A plain snowflake click listed five configured Hidden tiles; Option-click also listed the
+Always Hidden tile after including currently held modifiers in the redelivered 27 status-item action. Its primary
+forward, pointer linger and return passed too. An early post-return AX hit was retained separately; later negative
+hits and the framebuffer corroborated collapse. Neither that early sample nor a timer certifies hidden completion.
+
+The relayout is visible; no freeze-frame quietness is claimed. Only primary clicks were qualified in this correction.
+The return record keeps the existing UserDefaults format, with launch recovery and clear after observed placement;
+this is not a durable power-loss journal. Notched hardware and multiple displays remain unqualified on this backend.

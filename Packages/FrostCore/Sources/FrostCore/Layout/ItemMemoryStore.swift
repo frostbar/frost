@@ -191,6 +191,13 @@ public final class ItemMemoryStore {
         savePendingReturns()
     }
 
+    /// Called only after an observed exact return on the AX backend. Keeps the legacy 26 completion path intact.
+    public func completeVerifiedReturn(_ identity: ItemIdentity) {
+        let current = runPendingReturns.removeValue(forKey: identity) != nil
+        let loaded = keeper.restoreAttempted(0, identity: identity)
+        if current || loaded { savePendingReturns() }
+    }
+
     // MARK: - Saving
 
     private func savePendingReturns() {

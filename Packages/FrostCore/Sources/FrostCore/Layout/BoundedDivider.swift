@@ -5,15 +5,12 @@ import CoreGraphics
 /// On 26 a separator set to `length = 10_000` is clamped by the system to a 5016 pt window, which pushes every item
 /// on its left off screen — a hard boundary. On 27 that separator is dropped from the bar and comes back reordered,
 /// so Frost uses `NSStatusItem`s of a **bounded** width instead: the trailing area is right-aligned, a wide own item
-/// consumes its width there, and the items that no longer fit leave the bar (they end up behind the system's
+/// consumes its width there, and the items that no longer fit leave the bar (the system may offer an
 /// overflow chevron).
 ///
-/// Measured on macOS 27.0 (26A428), 1728 pt display, 15 third-party items (see `docs/macos-behavior.md`, "macOS 27"):
-/// a divider's width is honoured up to just under half the display; with 300 pt five items left the bar, with 600 pt
-/// seven, with 800 pt ten, and at 860 pt and above the width was *ignored* and nothing left. How many items leave is
-/// therefore a function of the bar's contents, not of the divider's position: moving a divider does not move the
-/// boundary, and Frost must never claim that a particular item is hidden. What it can promise is the direction —
-/// wider means fewer icons drawn, narrower means more.
+/// Each boundary uses a pair, placed together immediately after its configured section. A single wide item at
+/// the far left merely consumes capacity and can leave configured Hidden icons visible. Pair requests stay below
+/// the per-item width limit; requested widths and negative AX hits never certify physical absence.
 public enum BoundedDivider {
     /// The width a divider takes when its section is collapsed.
     ///
@@ -26,15 +23,14 @@ public enum BoundedDivider {
         return width >= minimumUsefulWidth ? width : nil
     }
 
-    /// An invisible divider, so narrow that it consumes no visible space. `length = 0` still leaves a system gap of
-    /// 16 pt on 26; on 27 the same is possible but harmless, and the app layer narrows the window the same way it
-    /// does there.
-    public static let revealWidth: CGFloat = 0
+    /// The measured narrow slot on 27. Do not apply the 26 window-constraint trick: it makes AppKit's frame
+    /// disagree with the item actually hit in the menu bar.
+    public static let revealWidth: CGFloat = 8
 
     /// The thin vertical line the layout editor shows for a divider (`length = 8`), as on macOS 26.
     public static let editingWidth: CGFloat = 8
 
-    public static let absoluteCap: CGFloat = 832
+    public static let absoluteCap: CGFloat = 600
     static let margin: CGFloat = 32
     public static let minimumUsefulWidth: CGFloat = 200
 

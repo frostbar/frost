@@ -53,6 +53,17 @@ public struct PendingReturn: Hashable, Sendable {
         return SectionKeeper.destination(for: section, controls: controls)
     }
 
+    /// Resolve persisted identities to this process's handles, retaining both exact-neighbour alternatives.
+    public func restorePlan(for itemID: CGWindowID, in layout: MenuBarLayout,
+                            controls: FrostControlWindows) -> RestorePlan {
+        let unique = Self.uniqueIdentities(in: [section: layout[section, default: []].filter { $0.windowID != itemID }])
+        var candidates: [MoveDestination] = []
+        if let right = rightNeighbour.flatMap({ unique[$0] }) { candidates.append(.leftOf(right)) }
+        if let left = leftNeighbour.flatMap({ unique[$0] }) { candidates.append(.rightOf(left)) }
+        candidates.append(SectionKeeper.destination(for: section, controls: controls))
+        return RestorePlan(itemID: itemID, section: section, candidates: candidates)
+    }
+
     /// identity → window, for the identities exactly one item of `layout` has.
     private static func uniqueIdentities(in layout: MenuBarLayout) -> [ItemIdentity: CGWindowID] {
         var windows: [ItemIdentity: [CGWindowID]] = [:]

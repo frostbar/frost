@@ -104,47 +104,73 @@ extension FrostBarController {
         }
     }
 
-    /// macOS 27 forwards primary clicks in place instead of moving the item out and back. Layout uses a separate
-    /// direct-drag path. The item's Accessibility element still exists while the bar doesn't draw it, so
-    /// the click is sent to the element itself — the menu opens where the icon would be, as if the user had clicked
-    /// it in the system's overflow. Only a primary click: AXPress carries no button or modifiers.
-    private func clickInPlace(_ id: CGWindowID, click: ForwardedClick, handOff: ActivationHandOff?) async throws {
-        guard click == .primary else {
-            FrostLog.frostBar.notice("secondary / Option clicks are not available on this macOS")
-            throw FrostBarError.notAvailable
+    /// macOS 27 has no per-item windows: reveal to acquire the exact target and its original neighbours,
+    /// move it past the snowflake, then collapse again before the real click. Keep it there until the same
+    /// presentation/linger rules as macOS 26 permit an exact return.
+    private func forwardAccessibilityItem(_ id: CGWindowID, click: ForwardedClick,
+                                          handOff: ActivationHandOff?) async throws {
+        let sections = app.sections
+        guard !sections.isEditing else { throw FrostBarError.editing }
+        guard click == .primary else { throw FrostBarError.notAvailable }
+        guard CGPreflightPostEventAccess(), app.permissions.canManageItems else { throw FrostBarError.notAvailable }
+        var plan: RestorePlan?
+        var pending: ItemIdentity?
+        var failure: Error?
+        let baseline = ItemClicker.onscreenWindowIDs()
+        do {
+            try await sections.revealingForMove {
+                let item = try await settledAccessibilityItem(id)
+                guard let controls = sections.controlWindows,
+                      let original = RestorePlan.make(for: id, in: app.layout, controls: controls)
+                else { throw FrostBarError.itemNotFound }
+                // Persist before moving, using the existing return format. An ambiguous identity never starts input.
+                guard let identity = app.newItems.notePendingReturn(of: item, in: app.layout)
+                else { throw FrostBarError.itemNotFound }
+                pending = identity
+                plan = original
+                try await app.mover.move(id, to: .rightOf(controls.icon), cursor: .onMovedItem)
+            }
+            let outcome = try await clickAndWait(id, click: click, strayBaseline: baseline, handOff: handOff,
+                                                resolve: { try await self.settledAccessibilityItem(id) },
+                                                perform: { item, kind in try await ItemClicker.clickVerified(item, kind: kind) })
+            if outcome == .closed || outcome == .notPresented { try await linger(id) }
+            else { return } // An unresolved presentation must not be dragged away from the user.
+        } catch {
+            failure = error
         }
-        // Everything else is the macOS 26 flow: the same wait for the presentation, the same activation hand-off for
-        // a popover that ignores outside clicks (`OutsideClickFallback`), the same trace. Only two things differ — the
-        // item is taken from the scanner instead of waiting for a window to settle, and it is *pressed* rather than
-        // clicked, since it isn't drawn in the bar.
-        _ = try await clickAndWait(id, click: click, strayBaseline: nil, handOff: handOff,
-                                   resolve: { try await self.itemForAccessibilityPress(id) },
-                                   perform: { item, _ in try await Self.pressInPlace(item) })
-        forwardTrace?.mark("closed")
+        if let plan, let controls = sections.controlWindows {
+            let restored = await Task { @MainActor in
+                if failure is CancellationError { await self.closePresentation(of: id, openedAfter: baseline) }
+                return await self.restore(plan, controls: controls, yieldingToMenus: true)
+            }.value
+            if restored == nil { app.newItems.clearPendingReturn(pending) }
+            else { scheduleRestoreRetry(plan, controls: controls) }
+        }
+        if let failure { throw failure }
     }
 
-    /// The item to press on 27: Accessibility only, but the owner (and with it the pid) may not be resolved yet.
-    private func itemForAccessibilityPress(_ id: CGWindowID) async throws -> MenuBarItem {
-        // The frame comes along, though the press is addressed by identity: the logs and the outside-click
-        // decision read it.
-        await app.scanner.refreshOwnership()
-        guard let item = app.scanner.items.first(where: { $0.windowID == id }), item.pid != nil,
-              item.identityKey != nil else { throw FrostBarError.itemNotFound }
-        return item
-    }
-
-    /// Presses an item through its Accessibility element (macOS 27: it isn't drawn in the bar, so there is nothing to
-    /// click at a position). Throws: a press that was not delivered means the click did not happen, and the caller
-    /// must not go on to wait for a presentation that will never open.
-    private static func pressInPlace(_ item: MenuBarItem) async throws {
-        guard let pid = item.pid, let identityKey = item.identityKey else { throw FrostBarError.itemNotFound }
-        try await ItemClicker.press(pid: pid, identityKey: identityKey)
+    /// A stable frame alone is insufficient on 27: the same identity must positively hit at its current centre.
+    private func settledAccessibilityItem(_ id: CGWindowID) async throws -> MenuBarItem {
+        let deadline = ContinuousClock.now + .seconds(2)
+        var previous: CGRect?
+        while ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            await app.scanner.refreshOwnership()
+            guard let item = app.scanner.items.first(where: { $0.windowID == id }),
+                  let pid = item.pid, let key = item.identityKey else { throw FrostBarError.itemNotFound }
+            let point = CGPoint(x: item.frame.midX, y: item.frame.midY)
+            let positive = await Task.detached { AXExtrasReader.isItemAt(point, pid: pid, identityKey: key) }.value
+            if positive, previous == item.frame { return item }
+            previous = positive ? item.frame : nil
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw FrostBarError.notOnScreen
     }
 
     private func moveOutClickAndRestore(_ id: CGWindowID, click: ForwardedClick,
                                         handOff: ActivationHandOff?) async throws {
         if app.backend == .accessibility {
-            try await clickInPlace(id, click: click, handOff: handOff)
+            try await forwardAccessibilityItem(id, click: click, handOff: handOff)
             return
         }
         let sections = app.sections, scanner = app.scanner, mover = app.mover
@@ -238,6 +264,23 @@ extension FrostBarController {
     /// A vanished item (its app quit) counts as success.
     func restore(_ plan: RestorePlan, controls: FrostControlWindows,
                  until completion: ItemMover.Completion = .settled, yieldingToMenus: Bool = false) async -> Error? {
+        if app.backend == .accessibility {
+            do {
+                var restoredIdentity: ItemIdentity?
+                try await app.sections.revealingForMove {
+                    await app.scanner.refreshOwnership()
+                    guard let item = app.scanner.items.first(where: { $0.windowID == plan.itemID }) else { return }
+                    let destination = plan.destination(in: app.layout)
+                    try await app.mover.move(plan.itemID, to: destination, yieldingToMenus: yieldingToMenus)
+                    await app.scanner.refreshOwnership()
+                    guard plan.isInPlace(in: app.layout) else { throw ItemMoveError.didNotMove }
+                    restoredIdentity = item.identity
+                }
+                // A delayed retry must complete the persisted return too, but only after the slot was observed.
+                app.newItems.clearPendingReturn(restoredIdentity)
+                return nil
+            } catch { return error }
+        }
         let scanner = app.scanner, mover = app.mover
         scanner.rescan()
         let destination = plan.destination(in: SectionAssigner.layout(of: scanner.items, controls: controls))
@@ -333,6 +376,10 @@ extension FrostBarController {
     /// its edge after a fallback); does nothing if it's back or gone.
     /// `yieldingToMenus`: see `ItemMover.move` (not under a freeze frame, which hides menus).
     func restoreIfNeeded(_ plan: RestorePlan, controls: FrostControlWindows, yieldingToMenus: Bool = false) async throws {
+        if app.backend == .accessibility {
+            if let error = await restore(plan, controls: controls, yieldingToMenus: yieldingToMenus) { throw error }
+            return
+        }
         let scanner = app.scanner
         scanner.rescan()
         let controls = app.sections.controlWindows ?? controls
@@ -358,10 +405,8 @@ extension FrostBarController {
     /// move; `ItemClicker.newWindows` excludes all status bar windows (the moved item's own window was off screen
     /// before the move; Control Center's own items are owned by Control Center) and drag remnants at layer >= 500.
     @discardableResult
-    /// `resolve` and `perform` are how the item is found and how it is clicked. The defaults are the macOS 26 ones
-    /// (wait for the moved-out item to settle on screen, then a HID click); macOS 27 passes the item from the scanner
-    /// and an Accessibility press, because there is no window to settle and a click at the item's frame would land
-    /// somewhere else entirely.
+    /// `resolve` and `perform` select the backend: window geometry and the existing click policy on 26,
+    /// positively hit-tested AX geometry and a plain HID click on 27.
     private func clickAndWait(_ id: CGWindowID, click: ForwardedClick, strayBaseline: Set<CGWindowID>?,
                               handOff: ActivationHandOff?,
                               resolve: (() async throws -> MenuBarItem)? = nil,
@@ -370,14 +415,13 @@ extension FrostBarController {
         defer { handOff?.finish() }
         let item = try await (resolve ?? { try await self.settledOnScreenItem(id) })()
         let perform = perform ?? { item, kind in try await ItemClicker.click(item, kind: kind) }
-        // On 26 this is where the moved-out item has settled on screen; on 27 the item is resolved and never drawn.
+        // Both backends have now reacquired the moved-out item in its visible slot.
         forwardTrace?.mark(resolve == nil ? "onScreen" : "resolved")
         if let strayBaseline, let pid = item.pid,
            !ItemClicker.newWindows(ownedBy: pid, excluding: strayBaseline).isEmpty {
             FrostLog.frostBar.notice("a presentation opened during the move; dismissing it before clicking")
             if app.backend == .accessibility {
-                // The item wasn't moved on 27, so its Accessibility frame is not where a click would land; Esc to the
-                // app is what closes a menu Frost opened by accident.
+                // End any menu accidentally opened by the drag before delivering the requested click.
                 ItemClicker.postEscape(toPID: pid)
             } else {
                 try await ItemClicker.click(item, forceEvent: true)
@@ -390,7 +434,7 @@ extension FrostBarController {
                                    toggle: { item in
                                        // Best effort: this one closes a presentation that is already open, and the
                                        // wait it is called from gives up on its own.
-                                       do { try await Self.pressInPlace(item) } catch {
+                                       do { try await ItemClicker.clickVerified(item) } catch {
                                            FrostLog.frostBar.error("""
                                                pressing item \(item.windowID, privacy: .public) to toggle its \
                                                presentation closed failed: \(error, privacy: .public)
@@ -401,10 +445,8 @@ extension FrostBarController {
         // Every exit path (closed, abandoned, timed out, cancelled, error) removes the mouse monitors.
         defer { fallback?.stop() }
         // The pointer rests on the item from now on (the move out usually put it there already): it doesn't jump back
-        // to the tile, and it keeps the linger going until the user moves away. Not on 27: the icon isn't in the bar,
-        // so the pointer belongs where the user left it (on the tile).
-        if app.backend != .accessibility,
-           let point = CursorPlacement.restingPoint(forClickOn: item.frame, cursor: CGEvent(source: nil)?.location) {
+        // to the tile, and it keeps the linger going until the user moves away.
+        if let point = CursorPlacement.restingPoint(forClickOn: item.frame, cursor: CGEvent(source: nil)?.location) {
             CGWarpMouseCursorPosition(point)
         }
         forwardTrace?.mark("click")
@@ -465,18 +507,25 @@ extension FrostBarController {
             }
             try await Task.sleep(for: Self.lingerPoll)
             // The app quit (item gone): nothing to keep out.
-            guard let window = StatusWindowParser.windows(withIDs: [id]).first, window.isOnScreen else { return }
-            watcher.frame = window.frame
+            let frame: CGRect
+            if app.backend == .accessibility {
+                guard let item = try? await settledAccessibilityItem(id) else { return }
+                frame = item.frame
+            } else {
+                guard let window = StatusWindowParser.windows(withIDs: [id]).first, window.isOnScreen else { return }
+                frame = window.frame
+            }
+            watcher.frame = frame
             if app.presence.isAway { continue }
             let presentation = ItemClicker.presentation(excluding: baseline, ownerPID: pid)
             let sample = ForwardLinger.Sample(
-                time: .now, isPointerOverItem: ForwardLinger.pointerRegion(of: window.frame).contains(Self.cgPointer()),
+                time: .now, isPointerOverItem: ForwardLinger.pointerRegion(of: frame).contains(Self.cgPointer()),
                 isMouseButtonHeld: UserMouseButtons.isAnyHeld, clickedItem: watcher.consumeClick(),
                 isPresentationOpen: !presentation.windows.isEmpty, isMenuOpen: presentation.containsMenu)
             if case .restore(let reason) = state.update(sample) {
                 FrostLog.frostBar.debug("""
                     linger end: pointer \(String(describing: Self.cgPointer()), privacy: .public), \
-                    item \(String(describing: window.frame), privacy: .public)
+                    item \(String(describing: frame), privacy: .public)
                     """)
                 FrostLog.frostBar.notice("""
                     linger of item \(id, privacy: .public) over (\(reason.rawValue, privacy: .public)); moving it back

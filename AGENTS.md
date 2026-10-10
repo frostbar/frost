@@ -244,27 +244,28 @@ The bullets below are macOS 26 unless they say otherwise; macOS 27 is a separate
   ScreenCaptureKit find nothing: item identities and geometry come from `kAXExtrasMenuBarAttribute`
   (`AXMenuBarInventory`). Each item is addressed by a window ID synthesized from its AX identity, which is what keeps
   the sections, the layout editor, the Frost Bar and the captures working on the same `MenuBarItem` values as on 26.
-- **Hiding is not a boundary.** A divider hides by the space it takes (`BoundedDivider`), which the system honours up
-  to just under half the display; above that it is ignored. How many icons leave the bar is a capacity effect, so no
-  code may claim that a particular icon is hidden.
-- **Which icons the bar draws cannot be read.** A pushed-out icon keeps its old frame, and Apple's `NSStatusItem`
-  `occlusionState` no longer reports visibility (FB23349447). The sections are therefore what the *user arranged*
-  (`ItemMemoryStore`, filled by layout editor drops and by a 26 run); an icon Frost was never told about counts as
-  Visible, and the layout editor's footer says so.
-- **Both dividers sit at the end of the trailing area** (`SectionController.placeOwnItems`, `OwnItemDrag`): their
-  space then lands next to the app menus and the icons the bar still draws stay together on the right, as on 26. A
-  fresh item takes the first free slot of the trailing area — the opposite end from macOS 26 — so 27 creates Always
-  Hidden, then Hidden, then the icon.
-- **Frost's own dividers cannot be dragged on 27, and nothing may try.** Measured: `AXUIElementCopyElementAtPosition`
-  at a divider's own reported frame returns *another app's* icon (the divider is invisible and its window spans icons),
-  so a synthesized ⌘ mouse-down there would press the neighbour. `SectionController.dragOwnItem` therefore requires the
-  system to report a Frost element at the point before posting, which the snowflake passes (it is drawn) and a divider
-  does not; the snowflake is placed and the dividers are left where the system put them (the left end, which is where
-  they belong). The same guard runs in `ItemMover.moveDirect` for third-party items, where it checks the item's
-  identity at the point.
+- **Use paired dividers at the arranged boundaries.** Each boundary has two bounded status items, created narrow
+  (8 pt) and aligned while revealed. `BoundedDivider` caps each at 600 pt; a single oversized separator is ignored.
+  After a layout drop, realign the pairs before collapsing. Empty sections do not consume collapse space.
+- **Which icons the bar draws cannot be read reliably.** An overflowed icon can keep an old frame, and Apple's
+  `NSStatusItem` `occlusionState` no longer reports visibility (FB23349447). Sections therefore come from the user's
+  arrangement (`ItemMemoryStore`); unknown icons count as Visible. Retain the last revealed order for the collapsed
+  Frost Bar instead of sorting stale frames. A positive exact AX hit establishes presence; a negative hit does not
+  establish absence. Verify hiding against the VM framebuffer, never widths, counts or a fixed delay alone.
+- **Own-divider placement needs narrow, consistent geometry and a positive Frost hit.** The macOS 26 constraint
+  trick makes an own divider's AppKit and AX frames disagree on 27. Keep it 8 pt wide, including resize callbacks,
+  and require `dragOwnItem` to hit Frost at its current centre before any down. An older collapsed-divider test hit
+  a neighbour: that remains a rejection, not permission to drag at stale coordinates.
+- **A Frost Bar click uses move-out / click / linger / exact return.** Reveal to reacquire the target and original
+  neighbours, persist its pending return, move it right of the snowflake, then collapse the other items before a
+  positively hit-tested plain HID click. Leave the pointer on the moved icon; return only after its presentation
+  closes and the pointer leaves. Reveal again for the return and clear the record only after observing the slot.
+  On 27 the snowflake action also reads currently held modifiers: the redelivered event can lose Option.
+  Failed returns retain the record; launch recovery resolves its unique identities before retrying. This uses the
+  existing UserDefaults format and does not promise power-loss durability. Primary clicks only are qualified.
 - **Frost's own items are identified by the names they were created with** (`Frost27.HiddenDivider`,
-  `Frost27.AlwaysHiddenDivider`), not through `FrostControlLocator`: on 27 a divider held as a thin line reports an
-  Accessibility frame that differs from its window's. When this broke, a layout drop silently did nothing, because
+  `Frost27.AlwaysHiddenDivider` and their `.Pair` companions), not through `FrostControlLocator`: on 27
+  a divider held as a thin line reports an Accessibility frame that differs from its window's. When this broke, a layout drop silently did nothing, because
   `drop` returns early without `controlWindows`.
 - **A drop into an empty band is resolved against one of Frost's own dividers**, an invisible 8 pt line while editing;
   the move is verified by the order the bar reports, with "the icon is on the divider's hidden side" as the check

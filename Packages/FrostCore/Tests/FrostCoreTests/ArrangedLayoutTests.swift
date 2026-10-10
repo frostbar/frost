@@ -42,6 +42,20 @@ import Testing
                                            remembered: { _ in .hidden })
         #expect(layout[.hidden]?.map(\.windowID) == [1, 2, 3])
     }
+
+    @Test func collapsedStaleFramesDoNotReorderTheRevealedSnapshot() {
+        let layout = ArrangedLayout.layout(of: [item(3, x: 10), item(1, x: 200), item(2, x: 300)],
+                                           own: [], order: [1, 2, 3], remembered: { _ in .hidden })
+        #expect(layout[.hidden]?.map(\.windowID) == [1, 2, 3])
+    }
+
+    @Test func snapshotDropsVanishedItemsAndAddsNewIconsWithoutChangingKnownOrder() {
+        let layout = ArrangedLayout.layout(of: [item(3, x: 10), item(1, x: 200), item(4, x: 50)],
+                                           own: [], order: [1, 2, 3],
+                                           remembered: { $0.windowID == 4 ? nil : .hidden })
+        #expect(layout[.hidden]?.map(\.windowID) == [1, 3])
+        #expect(layout[.visible]?.map(\.windowID) == [4])
+    }
 }
 
 /// The overflow chevron is the bar's own control, not one of the user's icons (`SystemItemRules.isOverflowChevron`):

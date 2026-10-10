@@ -29,6 +29,31 @@ import Foundation
         defaults.set(Data(json.utf8), forKey: key)
     }
 
+    /// v0.4.0 uses the same pendingItemReturns.v1 format as 0.3.x. The AX backend must retain a loaded
+    /// record when the item is in the right section but the wrong slot, then clear only the verified return.
+    @Test func accessibilityRecoveryKeepsTheRecordUntilTheExactSlotIsObserved() throws {
+        defer { cleanUp() }
+        seed("""
+            [{"bundleID":"com.example.B","key":"desc:B","section":"hidden",\
+            "right":{"bundleID":"com.example.C","key":"desc:C"},\
+            "left":{"bundleID":"com.example.A","key":"desc:A"}}]
+            """, forKey: "pendingItemReturns.v1")
+        let first = ItemMemoryStore(defaults: defaults)
+        let record = try #require(first.keeper.pendingReturns[id("B")])
+        let a = item(1, "A"), b = item(2, "B"), c = item(3, "C")
+        let wrong: MenuBarLayout = [.hidden: [a, c, b]]
+        let plan = record.restorePlan(for: 2, in: wrong, controls: controls)
+        #expect(plan.destination(in: wrong) == .leftOf(3))
+        #expect(!plan.isInPlace(in: wrong))
+        // No completion call on rejection/failure: a second launch still has the same return.
+        let second = ItemMemoryStore(defaults: defaults)
+        #expect(second.keeper.pendingReturns[id("B")] == record)
+        #expect(plan.isInPlace(in: [.hidden: [a, b, c]]))
+        second.completeVerifiedReturn(id("B"))
+        #expect(ItemMemoryStore(defaults: defaults).keeper.pendingReturns.isEmpty)
+        #expect(defaults.data(forKey: "pendingItemReturns.v1") == nil)
+    }
+
     func item(_ windowID: CGWindowID, _ name: String) -> MenuBarItem {
         MenuBarItem(windowID: windowID, frame: CGRect(x: CGFloat(windowID) * 30, y: 0, width: 29, height: 24),
                     isOnScreen: true, windowTitle: "", bundleID: "com.example.\(name)", pid: 1, axDescription: nil,

@@ -233,24 +233,28 @@ look of the Frost Bar, prompts.
 
 **Start:** macOS 27 (the `frost-test-27` VM), once fresh, once upgrading over a release that arranged a layout.
 
-1. Launch Frost with several third-party icons running: the snowflake appears next to Control Center and the dividers
-   are placed at the end of the trailing area, so the icons the bar still draws sit together on the right. Nothing
-   else moves.
-2. Click the snowflake: the Frost Bar lists the menu bar's icons (no captured images without Screen Recording, and no
-   claim about how many are hidden). Click one: its real menu opens. A click outside closes the panel.
-3. Open Settings → Layout (from the snowflake's menu): every icon is in one band — Frost has not been told where any
-   of them belongs — and the footer says what it does and does not know. Drag a tile into Hidden: the icon really
-   moves in the menu bar, and the band keeps it after closing and reopening the editor, and after relaunching Frost.
-4. Hide/reveal: click the snowflake with the display mode set to "In Menu Bar" — the hidden icons leave and come back
-   with the menu bar's own animation.
-5. Behavior and About are the macOS 26 ones.
+1. Launch Frost with several third-party icons running. The snowflake appears next to the system controls. Own
+   divider pairs are created narrow and aligned with the arranged sections, with positive own-item hit tests.
+2. Open Settings → Layout. Drag icons into Hidden, waiting for each drop to finish. Each drop moves the actual icon;
+   closing the editor collapses the configured section. Check the framebuffer, not only AX coordinates. Keep an
+   icon in Visible as a control, and put another in Always Hidden to check both boundaries independently.
+3. Click the snowflake in Frost Bar mode: the panel contains only the configured Hidden icons. Option-click includes
+   Always Hidden. No own divider or Visible system control appears as a tile. The order stays stable after collapse.
+4. Click a hidden tile. The menu bar briefly reveals; the target moves right of the snowflake, the other hidden icons
+   collapse again, and the pointer lands on the target before its native menu opens. Esc closes the menu. While the
+   pointer remains on the icon it stays out; moving away lets it return to its original neighbours and disappear.
+5. Reopen Layout and verify the original order, then relaunch Frost and repeat. A pending return from an interrupted
+   forward must survive a failed recovery attempt and clear only after the recorded slot is observed.
+6. In Menu Bar mode, click the snowflake to reveal Hidden and Option-click to reveal Always Hidden too. Behavior and
+   About retain the macOS 26 UI. Check Light and Dark Mode.
 
 **Watch for:**
 - A Layout drop that does nothing and says nothing, or one that reports a failure although the icon moved.
-- The Frost Bar claiming a number of hidden icons, or listing Frost's own dividers as if they were icons.
-- A gap between the icons and the snowflake in the collapsed bar (the dividers belong at the end of the trailing
-  area), or the snowflake itself landing at the left end of the bar.
-- Anything that looks like a macOS 26 section read from the bar: on 27 the sections are the arrangement only.
+- Hidden tiles remaining drawn beside the snowflake after collapse, or unrelated icons appearing in the panel.
+- The pointer staying over the panel's old position, returning while the pointer is on the moved icon, or a failed
+  return losing its persisted record.
+- Stale collapsed AX frames changing tile order, or a negative hit being treated as proof that an icon is hidden.
+- The macOS 26 1 pt constraint trick reappearing in a macOS 27 divider's resize callback.
 
 ### J12. A macOS version without a backend (notice only)
 

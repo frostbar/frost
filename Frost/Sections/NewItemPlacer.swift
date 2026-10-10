@@ -28,9 +28,8 @@ import Observation
 /// Retries later when moving isn't convenient (checked again before each item of a batch); a failed move is only logged
 /// (no retries).
 ///
-/// On macOS 27 it does none of this: moving a third-party item needs a ⌘-drag aimed at that item (`MenuBarBackend`),
-/// which is not available there, so the remembered sections can only describe where items are, never change it
-/// (`evaluate` returns at once).
+/// On macOS 27 it migrates remembered identities and recovers returns loaded at launch, but does not automatically
+/// place new or relaunched items. User-requested layout drops and click forwarding use the direct AX mechanism.
 @MainActor
 final class NewItemPlacer {
     private let scanner: MenuBarItemScanner
@@ -39,7 +38,7 @@ final class NewItemPlacer {
     private let permissions: PermissionsService
     private let preferences: Preferences
     private let presence: UserPresenceMonitor
-    /// Whether Frost may move items that belong to other apps (`MenuBarBackend`): 26 only.
+    /// Whether automatic new-item placement and section keeping are available: macOS 26 only.
     private let canMoveItems: Bool
 
     /// Called by SectionController when it first writes the AH seed.
@@ -154,11 +153,19 @@ final class NewItemPlacer {
         // Identity migration runs here on every backend: it moves remembered sections written under an earlier key
         // format (`IdentityMigration`) to the items' current identities, and on macOS 27 that memory is the only
         // thing the sections are read from — skipping it would show a user's arranged icons as Visible after an
-        // upgrade. Only the *moves* below are macOS 26 only.
+        // upgrade. General new-item placement and section keeping below remain macOS 26 only.
         let layout = SectionAssigner.layout(of: scanner.items, controls: controls)
         guard !layout.isEmpty else { return }
         store.migrateIdentities(scanner.items)
-        guard canMoveItems else { return }
+        guard canMoveItems else {
+            guard !store.keeper.pendingReturns.isEmpty else { return }
+            guard !mover.isBusy, !UserMouseButtons.isAnyHeld, !isPaused(), !ItemClicker.isMenuOnScreen() else {
+                schedule(after: Self.retryDelay)
+                return
+            }
+            await Task { @MainActor in await self.recoverAccessibilityReturns(controls: controls) }.value
+            return
+        }
         guard !mover.isBusy, !UserMouseButtons.isAnyHeld, !isPaused() else {
             // Not a good time to look or move (another move transaction running, mouse held down, the Frost Bar open):
             // check again later.
@@ -236,10 +243,40 @@ final class NewItemPlacer {
 
     /// The item recorded by `notePendingReturn` is back (or gone).
     func clearPendingReturn(_ identity: ItemIdentity?) {
-        store.clearPendingReturn(identity)
+        if !canMoveItems, let identity { store.completeVerifiedReturn(identity) }
+        else { store.clearPendingReturn(identity) }
     }
 
-    /// The user dropped `item` into `section` in the layout editor and the move succeeded: remember it.
+    /// Recover only Frost's own interrupted forwards on 27; ordinary section keeping remains 26-only.
+    private func recoverAccessibilityReturns(controls: FrostControlWindows) async {
+        do {
+            try await mover.transaction {
+                await sections.revealingForMove {
+                    for (identity, pending) in store.keeper.pendingReturns {
+                        await scanner.refreshOwnership()
+                        let matches = scanner.items.filter { $0.identity == identity }
+                        guard matches.count == 1, let item = matches.first, item.isMovable else { continue }
+                        @MainActor func currentLayout() -> MenuBarLayout {
+                            let own = Set(sections.ownItems().map { AXMenuBarInventory.ownWindowID(autosaveName: $0.autosaveName) })
+                            return ArrangedLayout.layout(of: scanner.items, own: own,
+                                                         remembered: { self.rememberedSection(of: $0) })
+                        }
+                        let plan = pending.restorePlan(for: item.windowID, in: currentLayout(), controls: controls)
+                        do {
+                            try await mover.move(item.windowID, to: plan.destination(in: currentLayout()), yieldingToMenus: true)
+                            await scanner.refreshOwnership()
+                            if plan.isInPlace(in: currentLayout()) { store.completeVerifiedReturn(identity) }
+                        } catch {
+                            FrostLog.newItems.error("pending AX return retained: \(error, privacy: .public)")
+                        }
+                    }
+                }
+            }
+        } catch {
+            FrostLog.newItems.error("pending AX recovery deferred: \(error, privacy: .public)")
+        }
+    }
+
     /// The section the user keeps `item` in, as remembered from an earlier drop (`ItemMemoryStore`); nil when
     /// Frost has never been told. This is the only source of the sections on macOS 27, where the bar itself doesn't
     /// report which icons it draws.
@@ -252,6 +289,7 @@ final class NewItemPlacer {
     /// an icon, or a macOS 26 run recorded sections).
     var hasRememberedSections: Bool { !store.keeper.memory.isEmpty }
 
+    /// The user dropped `item` into `section` in the layout editor and the move succeeded: remember it.
     func recordDrop(_ item: MenuBarItem, in section: MenuBarSection) {
         guard store.record(item, in: section, among: scanner.items) else {
             FrostLog.newItems.notice("""
