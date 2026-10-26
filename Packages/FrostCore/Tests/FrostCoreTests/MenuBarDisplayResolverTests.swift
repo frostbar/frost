@@ -342,6 +342,13 @@ import CoreGraphics
         #expect(resolveSingle([w(1, x: 500), w(2, x: 600, height: 24)], height: 0) == [1, 2])
     }
 
+    @Test func singleDisplayToleratesAMenuBarHeightOnePointAboveTheWindows() {
+        // Scaled built-in display (1352×878): frame.maxY − visibleFrame.maxY gives 31 pt, the status windows are 30 pt.
+        let windows = [w(1, x: -3900, height: 30, onScreen: false), w(2, x: 1150, height: 30), w(3, x: 600, height: 24)]
+        #expect(resolveSingle(windows, height: 31) == [1, 2])
+        #expect(resolveSingle([w(1, x: 500, height: 30)], height: 39).isEmpty)
+    }
+
     @Test func singleDisplayKeepsItemsUnderTheNotch() {
         let r = MenuBarDisplayResolver.resolve(windows: [w(1, x: 907, onScreen: false), w(2, x: 1558)],
                                                displays: [single], mainDisplayID: 1, controls: nil)

@@ -94,6 +94,11 @@ public enum MenuBarDisplayResolver {
 
     /// Tolerance for comparing real window and replica positions / widths (measured to be exactly equal).
     static let tolerance: CGFloat = 1
+    /// Tolerance for comparing a status window's height with a display's menu bar height, or two displays' menu bar
+    /// heights. `MenuBarDisplay.menuBarHeight` comes from `frame.maxY − visibleFrame.maxY`, which can exceed the real
+    /// bar by 1 pt in a scaled display mode (measured: 31 pt for 30 pt status windows on a built-in display at
+    /// 1352×878). The heights this filter must tell apart (30 vs 39 pt, or a 24 pt window) differ by much more.
+    static let heightTolerance: CGFloat = 2
     /// Upper bound on the deviation of an offset from the expected (right-aligned) one: the system items at the right
     /// end of the two screens' menu bars may differ slightly (2 pt measured on real hardware).
     static let maxOffsetDrift: CGFloat = 256
@@ -151,12 +156,12 @@ public enum MenuBarDisplayResolver {
 
     // MARK: - Active display and menu bar row
 
-    /// Status windows on a display's menu bar row: top edge aligned, height equal to that display's menu bar height (no
-    /// filtering when the height is 0).
+    /// Status windows on a display's menu bar row: top edge aligned, height equal to that display's menu bar height
+    /// within `heightTolerance` (no filtering when the height is 0).
     static func rowWindows(_ windows: [RawStatusWindow], of display: MenuBarDisplay) -> [RawStatusWindow] {
         windows.filter {
             abs($0.frame.minY - display.frame.minY) < 1
-                && (display.menuBarHeight <= 0 || abs($0.frame.height - display.menuBarHeight) < 1)
+                && (display.menuBarHeight <= 0 || abs($0.frame.height - display.menuBarHeight) <= heightTolerance)
         }
     }
 
@@ -165,7 +170,7 @@ public enum MenuBarDisplayResolver {
     static func isSameRowAndHeight(_ display: MenuBarDisplay, _ active: MenuBarDisplay) -> Bool {
         guard abs(display.frame.minY - active.frame.minY) < 1 else { return false }
         return display.menuBarHeight <= 0 || active.menuBarHeight <= 0
-            || abs(display.menuBarHeight - active.menuBarHeight) < 1
+            || abs(display.menuBarHeight - active.menuBarHeight) <= heightTolerance
     }
 
     /// The Frost icon's real window and its display: matched by frame (±2 pt), else by title (the real window's title
