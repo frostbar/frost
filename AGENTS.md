@@ -128,7 +128,9 @@ The bullets below are macOS 26 unless they say otherwise; macOS 27 is a separate
   Control Center's clock and Control Center button are recognized by their AX identifiers
   (`com.apple.menuextra.clock` / `.controlcenter`), see `SystemItemRules`.
 - `NSStatusBar.system.thickness` returns 22, which does not match the actual menu bar height (39 on notched
-  displays); use `screen.frame.maxY - screen.visibleFrame.maxY`.
+  displays); use `screen.frame.maxY - screen.visibleFrame.maxY`. On a display in a scaled mode, this derived height
+  can be 1 pt above the status item windows (31 pt for 30 pt windows), so comparisons against window heights use
+  `MenuBarDisplayResolver.heightTolerance`.
 - A separator with `length = 10_000` is clamped to a 5016 pt wide window, which is enough to push the items on its
   left off screen; `length = 0` still leaves 16 pt of blank space (narrowed to 1 pt with a constraint trick).
 - Windows off screen (pushed out, under the notch) cannot be captured (ScreenCaptureKit −3811), so only items with

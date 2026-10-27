@@ -6,6 +6,10 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+### Fixed
+- On some built-in displays in a scaled display mode, the Frost Bar always showed "Can't Read Menu Bar Icons";
+  it now finds the menu bar icons (thanks @RyanKim17920).
+
 ## [0.4.3] - 2026-10-21
 
 ### Fixed

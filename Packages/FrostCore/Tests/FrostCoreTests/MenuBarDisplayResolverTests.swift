@@ -70,6 +70,16 @@ import CoreGraphics
         #expect(legacy.count > Self.collapsedRightReal.count)
     }
 
+    @Test func twoDisplaysRemoveReplicasWhenMainMenuBarHeightIsOnePointHigher() {
+        var main = Self.main
+        main.menuBarHeight = 31
+        let all = Self.windows(Self.collapsedRight)
+        // A derived height of 31 pt must still pair and remove the replicas on the 30 pt right display.
+        let r = MenuBarDisplayResolver.resolve(windows: all, displays: [main, Self.right], mainDisplayID: 1,
+                                               controls: Self.controls(all, icon: 66, hidden: 68, alwaysHidden: 70))
+        #expect(Self.ids(r) == Self.collapsedRightReal)
+    }
+
     @Test func withoutControlFramesFallsBackToTitlesThenToTheModalOffset() {
         let all = Self.windows(Self.collapsedRight)
         // No frames: find FrostIcon / the separators by title.

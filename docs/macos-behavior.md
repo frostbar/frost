@@ -550,6 +550,16 @@ lists from `dump-status-windows.swift --all`. Method: see `docs/testing-vm.md`.
   icon; replicas on same-row, same-height displays are paired by per-segment offset and removed, unpaired ones are
   judged by contiguity), and `DisplayFilter.axItems` (by row, not by x range).
 
+### Scaled display menu bar height mismatch (2026-10-26)
+
+On a built-in display in a scaled 1352×878 pt mode, `screen.frame.maxY - screen.visibleFrame.maxY` was 31 pt,
+while every layer-25 status item window was 30 pt tall and the system "Menubar" window was 1352×30 pt.
+The strict height comparison (`abs(height - menuBarHeight) < 1`) dropped every status window, so the Frost Bar
+always showed "Can't Read Menu Bar Icons". `MenuBarDisplayResolver.heightTolerance` now allows an inclusive 2 pt
+difference in both window-height filtering and same-row display-height matching, so replicas are paired and removed
+even when one display reports 31 pt and another reports 30 pt. The tolerance stays at 2 pt because non-integer
+display scales can make the derived height fractional.
+
 ---
 
 ## macOS 27
