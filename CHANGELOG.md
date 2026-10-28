@@ -6,6 +6,13 @@ release notes on GitHub and in the in-app update window.
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-10-28
+
+### Fixed
+- An icon moved to another section in Settings → Layout could return to its old section later (when Frost or the
+  icon's app relaunched) if Settings was closed or the tab switched right after the drop; the new section is now
+  always remembered.
+
 ## [0.4.4] - 2026-10-26
 
 ### Fixed
