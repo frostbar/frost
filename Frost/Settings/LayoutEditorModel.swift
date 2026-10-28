@@ -529,6 +529,11 @@ final class LayoutEditorModel {
                                  comment: "Layout editor error toast when moving a menu bar icon fails; the argument is the icon's name"))
             }
         }
+        // Keep it in this section when its app or Frost relaunches (`SectionKeeper`). Recorded even when the editor
+        // closed during the move (Settings closed or the tab switched right after the drop): the item did move, and
+        // the section memory never sees Frost's own moves as the user's, so without this the next launch would move
+        // it back to the section it came from.
+        if succeeded { model.newItems.recordDrop(item, in: section) }
         // The editor closed (or reopened as a new session): don't modify state.
         guard self.session == session, isActive else { return }
         if succeeded {
@@ -537,8 +542,6 @@ final class LayoutEditorModel {
             // including new items not in `previous`, the live order, and earlier queued drops), so apply it to that
             // layout rather than `previous`.
             previous = LayoutReconciler.moving(windowID, to: section, at: index, in: layout)
-            // Keep it in this section when its app relaunches (`SectionKeeper`).
-            model.newItems.recordDrop(item, in: section)
             if model.backend == .accessibility { await sections.alignAccessibilityBoundaries() }
         }
         if let i = optimisticMoves.firstIndex(where: { $0.id == windowID }) { optimisticMoves.remove(at: i) }
